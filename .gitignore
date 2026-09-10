@@ -6,3 +6,4 @@ projects/*/05_images/
 projects/*/06_render/
 projects/_selftest/
 .env
+bridge/bridge.log

@@ -53,7 +53,7 @@ check('.env', () => {
 const needed = new Set([
   config.script.provider === 'claude-api' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY', // ขั้นที่ 4 (shot list) ใช้ Claude เสมอ
-  config.images.provider === 'gemini-api' ? 'GEMINI_API_KEY' : null,
+  config.images.provider === 'gemini-api' ? 'GEMINI_API_KEY' : null, // ทาง google-flow ใช้ browser ไม่ใช้ key
   config.tts.engine === 'elevenlabs' ? 'ELEVENLABS_API_KEY' : null,
 ].filter(Boolean))
 

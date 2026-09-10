@@ -29,8 +29,8 @@
   },
 
   "images": {
-    "provider": "gemini-api",
-    "_options": ["gemini-api", "google-flow"],
+    "provider": "google-flow",
+    "_options": ["google-flow", "gemini-api"],
     "model": "gemini-3-pro-image-preview",
     "aspectRatio": "16:9",
     "resolution": "1920x1080",
