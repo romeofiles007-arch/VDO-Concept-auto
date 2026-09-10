@@ -2,8 +2,8 @@
   "blueprint": "Cartoon_Storytelling_Blueprint.txt",
 
   "script": {
-    "provider": "claude-api",
-    "_options": ["claude-api", "chatgpt-extension"],
+    "provider": "chatgpt-extension",
+    "_options": ["chatgpt-extension", "claude-api"],
     "model": "claude-opus-5",
     "targetMinutes": 10,
     "wordsPerMinute": 150,

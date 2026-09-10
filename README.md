@@ -37,7 +37,7 @@ node pipeline/6_render.mjs my_topic --bgm assets\bgm.mp3
 | Blueprint | ที่นี่ | เหตุผล |
 |---|---|---|
 | ผู้ใช้ฟังแล้วพิมพ์ timestamp เอง / รัน Whisper | คำนวณจากความยาวไฟล์เสียงตอน TTS | แม่น 100% ฟรี ไม่มี ASR error |
-| Google Flow Agent + สั่งเปลี่ยนชื่อ shot + โหลดเอง | Gemini API ตั้งชื่อไฟล์เองตั้งแต่แรก | ตัด 3 ขั้นตอน manual ทิ้ง |
+| สั่ง agent เปลี่ยนชื่อ shot ก่อนโหลด | extension ตั้งชื่อจากลำดับ shot ตอนเซฟ | ตัดขั้นที่พังง่ายที่สุดทิ้ง (เปิดคืนได้ด้วย --rename) |
 | ตัดต่อใน DaVinci/CapCut | ffmpeg อ่านชื่อไฟล์ = timecode | deterministic รันซ้ำได้เหมือนเดิม |
 
 รายละเอียดการเลือก stack: [docs/STACK.md](docs/STACK.md)

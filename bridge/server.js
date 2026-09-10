@@ -70,6 +70,21 @@ function readBody(req) {
   })
 }
 
+/** เขียนไฟล์ที่ extension ส่งมา — ปลายทางถูกล็อกไว้ใน projects/ เท่านั้น */
+function writeFiles(job, files) {
+  const written = []
+  for (const f of files ?? []) {
+    // กัน path traversal — extension กำหนดชื่อไฟล์ได้ แต่ออกนอกโฟลเดอร์ที่สั่งไม่ได้
+    const safe = String(f.name).replace(/[\\/]/g, '_').replace(/^\.+/, '')
+    const dest = join(job.payload.outDir, safe)
+    if (!dest.startsWith(join(ROOT, 'projects'))) throw new Error('ปลายทางไม่ถูกต้อง')
+    mkdirSync(dirname(dest), { recursive: true })
+    writeFileSync(dest, Buffer.from(f.base64, 'base64'))
+    written.push(safe)
+  }
+  return written
+}
+
 /** ส่งงานให้ extension ที่กำลังรออยู่ ถ้าไม่มีคนรอก็ค้างในคิว */
 function dispatch(job) {
   const idx = waiting.findIndex((w) => w.agent === job.agent)
@@ -152,20 +167,33 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true })
     }
 
+    // เขียนไฟล์เป็นชุดๆ ระหว่างทาง โดยไม่ปิดงาน — สำหรับภาพ 30-40 ใบที่ส่งทีเดียวไม่ไหว
+    if (req.method === 'POST' && path === '/partial') {
+      const { id, files } = await readBody(req)
+      const job = jobs.get(id)
+      if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      let written
+      try {
+        written = writeFiles(job, files)
+      } catch (err) {
+        return json(res, 400, { error: err.message })
+      }
+      job.written = [...(job.written ?? []), ...written]
+      job.progress = { done: job.written.length, total: job.payload?.shots?.length ?? null }
+      log(`รับไฟล์ระหว่างทาง ${written.length} ไฟล์ (${job.id.slice(0, 8)}) รวม ${job.written.length}`)
+      return json(res, 200, { ok: true, total: job.written.length })
+    }
+
     if (req.method === 'POST' && path === '/result') {
       const { id, text, files, meta } = await readBody(req)
       const job = jobs.get(id)
       if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
 
-      const written = []
-      for (const f of files ?? []) {
-        // กัน path traversal — extension กำหนดชื่อไฟล์ได้ แต่ออกนอกโฟลเดอร์ที่สั่งไม่ได้
-        const safe = String(f.name).replace(/[\\/]/g, '_').replace(/^\.+/, '')
-        const dest = join(job.payload.outDir, safe)
-        if (!dest.startsWith(join(ROOT, 'projects'))) return json(res, 400, { error: 'ปลายทางไม่ถูกต้อง' })
-        mkdirSync(dirname(dest), { recursive: true })
-        writeFileSync(dest, Buffer.from(f.base64, 'base64'))
-        written.push(safe)
+      let written
+      try {
+        written = [...(job.written ?? []), ...writeFiles(job, files)]
+      } catch (err) {
+        return json(res, 400, { error: err.message })
       }
 
       job.status = 'done'

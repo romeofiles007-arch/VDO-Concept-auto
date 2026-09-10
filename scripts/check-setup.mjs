@@ -50,10 +50,10 @@ check('.env', () => {
 }, 'คัดลอกจาก .env.example → copy .env.example .env')
 
 // key ที่จำเป็นจริงขึ้นกับ provider ที่เลือกใน config — ที่เหลือแค่แนะนำ
+// ทาง chatgpt-extension กับ google-flow ขับผ่านเบราว์เซอร์ ไม่ต้องใช้ key เลย
 const needed = new Set([
-  config.script.provider === 'claude-api' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY', // ขั้นที่ 4 (shot list) ใช้ Claude เสมอ
-  config.images.provider === 'gemini-api' ? 'GEMINI_API_KEY' : null, // ทาง google-flow ใช้ browser ไม่ใช้ key
+  config.script.provider === 'claude-api' ? 'ANTHROPIC_API_KEY' : null,
+  config.images.provider === 'gemini-api' ? 'GEMINI_API_KEY' : null,
   config.tts.engine === 'elevenlabs' ? 'ELEVENLABS_API_KEY' : null,
 ].filter(Boolean))
 
@@ -63,6 +63,12 @@ for (const key of Object.keys(WHERE)) {
     return `ตั้งค่าแล้ว (${process.env[key].slice(0, 8)}...)`
   }, needed.has(key) ? `จำเป็น → ${WHERE[key]}` : `ไม่บังคับ → ${WHERE[key]}`, { optional: !needed.has(key) })
 }
+
+check('BRIDGE_TOKEN', () => {
+  if (!hasKey('BRIDGE_TOKEN')) throw new Error()
+  return 'ตั้งค่าแล้ว — กรอกค่าเดียวกันใน popup ของ extension'
+}, 'จำเป็นสำหรับ extension → generate ด้วย: node scripts/new-token.mjs',
+  { optional: config.script.provider !== 'chatgpt-extension' && config.images.provider !== 'google-flow' })
 
 check('Blueprint', () => {
   if (!existsSync(config.blueprint)) throw new Error()
