@@ -13,9 +13,29 @@ import { requireBridge, runJob } from './lib/bridge.mjs'
 import { topicsPrompt, scriptPrompt, cleanScript, parseTopics } from './lib/prompts.mjs'
 import { estimateMinutes } from './lib/segment.mjs'
 
-const [command, ...args] = process.argv.slice(2)
+const [command, ...rawArgs] = process.argv.slice(2)
 const config = loadConfig()
 const TOPICS_FILE = join(ROOT, 'projects', 'topics.json')
+
+// --lang th|en       ภาษาของ narration (ตัวที่จะเอาไปพากย์)
+// --title-lang th|en ภาษาของชื่อเรื่อง — แยกกันได้ เช่นชื่ออังกฤษ narration ไทย
+const args = []
+for (let i = 0; i < rawArgs.length; i++) {
+  const a = rawArgs[i]
+  if (a === '--lang') config.script.language = rawArgs[++i]
+  else if (a === '--title-lang') config.script.titleLanguage = rawArgs[++i]
+  else if (a === '--minutes') config.script.targetMinutes = Number(rawArgs[++i])
+  else args.push(a)
+}
+for (const [field, value] of [
+  ['language', config.script.language],
+  ['titleLanguage', config.script.titleLanguage],
+]) {
+  if (!['th', 'en'].includes(value)) {
+    console.error(`script.${field} ต้องเป็น th หรือ en (ได้ "${value}")`)
+    process.exit(1)
+  }
+}
 
 if (config.script.provider !== 'chatgpt-extension') {
   console.error(`ขั้นนี้รองรับเฉพาะ chatgpt-extension — ตอนนี้ config ตั้งเป็น ${config.script.provider}`)
@@ -35,7 +55,10 @@ async function ask(prompt, label) {
   return result.text
 }
 
+const LANG_NAME = { th: 'ไทย', en: 'อังกฤษ' }
+
 if (command === 'topics') {
+  console.log(`ชื่อหัวข้อ: ${LANG_NAME[config.script.titleLanguage]}`)
   const text = await ask(topicsPrompt(config), 'STAGE 1')
   const topics = parseTopics(text)
   if (!topics.length) {
@@ -70,6 +93,7 @@ if (command === 'topics') {
   }
 
   console.log(`หัวข้อ: ${title}`)
+  console.log(`narration: ${LANG_NAME[config.script.language]} · ${config.script.targetMinutes} นาที`)
   const raw = await ask(scriptPrompt(config, title), 'STAGE 2')
   const script = cleanScript(raw)
 
@@ -77,6 +101,11 @@ if (command === 'topics') {
   const file = join(projectDir(slug, 'script'), `script_${slug}.txt`)
   writeFileSync(file, script, 'utf8')
   writeFileSync(join(projectDir(slug, 'script'), 'title.txt'), title, 'utf8')
+  // ขั้นถัดไปต้องรู้ว่าสคริปต์เป็นภาษาอะไร เพื่อเลือก TTS engine ให้ถูก
+  writeFileSync(
+    join(projectDir(slug, 'script'), 'meta.json'),
+    JSON.stringify({ title, slug, language: config.script.language, titleLanguage: config.script.titleLanguage, targetMinutes: config.script.targetMinutes }, null, 2),
+  )
 
   const minutes = estimateMinutes(script, config.script.wordsPerMinute)
   console.log(`\n${file}`)
@@ -86,6 +115,15 @@ if (command === 'topics') {
   }
   console.log(`ขั้นต่อไป: node pipeline/2_tts.mjs ${slug}`)
 } else {
-  console.error('ใช้: node pipeline/1_script.mjs topics | script <เลข|ชื่อหัวข้อ>')
+  console.error(`ใช้: node pipeline/1_script.mjs topics | script <เลข|ชื่อหัวข้อ>
+
+ตัวเลือก:
+  --lang th|en         ภาษาของ narration (ตอนนี้ ${config.script.language})
+  --title-lang th|en   ภาษาของชื่อเรื่อง (ตอนนี้ ${config.script.titleLanguage})
+  --minutes <n>        ความยาวเป้าหมาย (ตอนนี้ ${config.script.targetMinutes})
+
+ตัวอย่าง:
+  node pipeline/1_script.mjs topics --title-lang th
+  node pipeline/1_script.mjs script 3 --lang en --minutes 12`)
   process.exit(1)
 }

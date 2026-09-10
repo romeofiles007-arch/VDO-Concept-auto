@@ -7,7 +7,10 @@
     "model": "claude-opus-5",
     "targetMinutes": 10,
     "wordsPerMinute": 150,
-    "language": "th"
+    "language": "th",
+    "_language": "ภาษาของ narration ที่จะเอาไปพากย์ — th | en",
+    "titleLanguage": "en",
+    "_titleLanguage": "ภาษาของชื่อเรื่องและหัวข้อ — th | en (แยกจาก narration ได้)"
   },
 
   "tts": {

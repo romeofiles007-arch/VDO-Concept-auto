@@ -7,19 +7,42 @@ export function blueprint(config) {
   return readFileSync(join(ROOT, config.blueprint), 'utf8')
 }
 
+const LANG = {
+  th: {
+    name: 'ภาษาไทย',
+    // ไทยไม่เว้นวรรคระหว่างคำ → นับเป็น "คำ" แบบไทย ไม่ใช่ token อังกฤษ
+    unit: 'คำ',
+    person: 'บุรุษที่ 2 ตลอด ใช้ "คุณ" ห้ามใช้ "เรา" หรือ "ผม/ฉัน"',
+  },
+  en: {
+    name: 'English',
+    unit: 'words',
+    person: 'second person throughout ("you", "your brain"), never "we" or "I"',
+  },
+}
+
+function lang(code) {
+  const l = LANG[code]
+  if (!l) throw new Error(`ไม่รองรับภาษา "${code}" — ใช้ได้แค่ th หรือ en`)
+  return l
+}
+
 export function topicsPrompt(config) {
+  const title = lang(config.script.titleLanguage ?? 'en')
   return `${blueprint(config)}
 
 ═══════════════════════════════════════
 ทำ STAGE 1 ตามเอกสารข้างบนเท่านั้น
 
 แสดง 5 หัวข้อ viral ในตาราง markdown ตาม format ที่กำหนด
+**ชื่อหัวข้อทั้ง 5 ต้องเป็น${title.name}เท่านั้น**
 ห้ามมีคำนำ ห้ามมีคำอธิบาย ห้ามมีอะไรปิดท้ายนอกจากบรรทัดให้เลือก
 ตอบเป็นข้อความในแชตเท่านั้น อย่าสร้างไฟล์`
 }
 
 export function scriptPrompt(config, title) {
   const words = Math.round(config.script.targetMinutes * config.script.wordsPerMinute)
+  const vo = lang(config.script.language ?? 'th')
   return `${blueprint(config)}
 
 ═══════════════════════════════════════
@@ -27,7 +50,10 @@ export function scriptPrompt(config, title) {
 
 "${title}"
 
-ความยาวเป้าหมาย ${config.script.targetMinutes} นาที ≈ ${words} คำ
+**ภาษาของ narration: ${vo.name}** — เขียนทั้งเรื่องเป็นภาษานี้ภาษาเดียว
+(ชื่อเรื่องเป็นคนละภาษากับ narration ได้ ไม่ต้องแปลชื่อเรื่อง)
+
+ความยาวเป้าหมาย ${config.script.targetMinutes} นาที ≈ ${words} ${vo.unit}
 
 ข้อกำหนดของ output — สำคัญมาก อ่านให้ครบ:
 - ตอบเป็น narration ล้วนในแชตโดยตรง อย่าสร้างไฟล์ให้ดาวน์โหลด
@@ -36,7 +62,7 @@ export function scriptPrompt(config, title) {
 - 1 บรรทัด = 1 ช่วงลมหายใจ (ประโยคสั้น 6-14 คำ)
 - ใช้ ... แทนช่วงพักสั้น, เว้นบรรทัดว่างแทนการขึ้นบทใหม่
 - ห้ามใส่ [pause] marker ใดๆ
-- บุรุษที่ 2 ตลอด ("คุณ") ห้ามใช้ "เรา" หรือ "ผม/ฉัน"`
+- ${vo.person}`
 }
 
 /** ขั้นที่ 4 — ให้ AI เติม prompt ภาพลงในช่อง shot ที่เราคำนวณจังหวะมาแล้ว */

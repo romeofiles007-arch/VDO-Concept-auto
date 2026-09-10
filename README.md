@@ -40,4 +40,25 @@ node pipeline/6_render.mjs my_topic --bgm assets\bgm.mp3
 | สั่ง agent เปลี่ยนชื่อ shot ก่อนโหลด | extension ตั้งชื่อจากลำดับ shot ตอนเซฟ | ตัดขั้นที่พังง่ายที่สุดทิ้ง (เปิดคืนได้ด้วย --rename) |
 | ตัดต่อใน DaVinci/CapCut | ffmpeg อ่านชื่อไฟล์ = timecode | deterministic รันซ้ำได้เหมือนเดิม |
 
+## เลือกภาษา (ไทย / อังกฤษ)
+
+ชื่อเรื่องกับ narration แยกภาษากันได้ — คู่ที่ใช้บ่อยคือชื่ออังกฤษ (ติด search) narration ไทย
+
+ตั้งถาวรใน `config/project.config.json`:
+
+```json
+"language": "th",        // narration ที่จะเอาไปพากย์
+"titleLanguage": "en"    // ชื่อเรื่องและหัวข้อ
+```
+
+หรือสั่งเฉพาะครั้งด้วย flag:
+
+```powershell
+node pipeline/1_script.mjs topics --title-lang th
+node pipeline/1_script.mjs script 3 --lang en --minutes 12
+```
+
+ภาษาถูกบันทึกลง `01_script/meta.json` เพื่อให้ขั้นที่ 2 เลือก TTS engine ให้ถูก
+(engine ไทย `f5-tts-thai` / อังกฤษ `chatterbox` — ถ้าตั้งไม่เข้าคู่กัน ขั้นที่ 2 จะเตือนก่อน gen)
+
 รายละเอียดการเลือก stack: [docs/STACK.md](docs/STACK.md)

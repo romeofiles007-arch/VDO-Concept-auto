@@ -30,9 +30,19 @@ if (!scriptFile) {
   process.exit(1)
 }
 
+const metaFile = join(scriptDir, 'meta.json')
+const meta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, 'utf8')) : {}
+const language = meta.language ?? config.script.language
+
+// engine ไทยกับอังกฤษคนละตัวกัน — เตือนก่อนเสียเวลา gen ทั้งคลิป
+if (language === 'en' && config.tts.engine === 'f5-tts-thai') {
+  console.warn('สคริปต์เป็นภาษาอังกฤษแต่ engine ตั้งไว้เป็น f5-tts-thai')
+  console.warn('แนะนำสลับเป็น chatterbox หรือ elevenlabs ใน config ก่อน')
+}
+
 const script = readFileSync(join(scriptDir, scriptFile), 'utf8')
 const segments = segmentScript(script)
-console.log(`script: ${scriptFile}`)
+console.log(`script: ${scriptFile} · ภาษา ${language}`)
 console.log(`${segments.length} segments · ประมาณ ${estimateMinutes(script, config.script.wordsPerMinute).toFixed(1)} นาที`)
 
 const audioDir = projectDir(slug, 'audio')
@@ -54,7 +64,7 @@ writeFileSync(
       engine: config.tts.engine,
       ref_audio: refAudio,
       ref_text: config.tts.referenceText,
-      language: config.script.language,
+      language,
       sample_rate: config.tts.sampleRate,
       segments: segments.map((s) => ({
         index: s.index,
