@@ -1,0 +1,50 @@
+{
+  "blueprint": "Cartoon_Storytelling_Blueprint.txt",
+
+  "script": {
+    "provider": "claude-api",
+    "_options": ["claude-api", "chatgpt-extension"],
+    "model": "claude-opus-5",
+    "targetMinutes": 10,
+    "wordsPerMinute": 150,
+    "language": "th"
+  },
+
+  "tts": {
+    "engine": "f5-tts-thai",
+    "_options": ["f5-tts-thai", "chatterbox", "elevenlabs"],
+    "pythonVenv": "tts/.venv",
+    "referenceVoice": "tts/voices/narrator_ref.wav",
+    "referenceText": "",
+    "sampleRate": 24000,
+    "segmentGapMs": 180,
+    "paragraphGapMs": 500
+  },
+
+  "timecode": {
+    "targetShotSeconds": 2.5,
+    "minShotSeconds": 2.0,
+    "maxShotSeconds": 3.0,
+    "silenceThresholdSeconds": 0.25
+  },
+
+  "images": {
+    "provider": "gemini-api",
+    "_options": ["gemini-api", "google-flow"],
+    "model": "gemini-3-pro-image-preview",
+    "aspectRatio": "16:9",
+    "resolution": "1920x1080",
+    "concurrency": 4,
+    "characterLockRefs": true
+  },
+
+  "render": {
+    "resolution": "1920x1080",
+    "fps": 30,
+    "voiceoverDb": 0,
+    "bgmDb": -21,
+    "bgmFile": "",
+    "burnSubtitles": false,
+    "crossfadeOnChapter": true
+  }
+}

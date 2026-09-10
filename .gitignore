@@ -1,0 +1,8 @@
+node_modules/
+tts/.venv/
+tts/voices/*.wav
+projects/*/02_audio/segments/
+projects/*/05_images/
+projects/*/06_render/
+projects/_selftest/
+.env

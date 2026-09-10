@@ -1,0 +1,11 @@
+# ติดตั้งด้วย scripts/setup-tts.ps1 (ต้องใช้ Python 3.11)
+# PyTorch CUDA ลงแยกจาก index ของ pytorch.org — ดูใน setup-tts.ps1
+
+# ทางหลัก: F5-TTS-THAI (fine-tune ภาษาไทย)
+f5-tts @ git+https://github.com/VIZINTZOR/F5-TTS-THAI.git
+
+# ทางสำรอง: Chatterbox Multilingual (ปลดคอมเมนต์ถ้าจะใช้)
+# chatterbox-tts
+
+soundfile
+numpy

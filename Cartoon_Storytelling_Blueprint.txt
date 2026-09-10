@@ -1,0 +1,477 @@
+# Cartoon Stick-Figure Storytelling — Blueprint V3
+
+> รวมทุกอย่างเรื่องรูปไว้ที่ OUTPUT 5 / Script ล้วน / Workflow batch รวดเดียว
+
+**Stack แนะนำ:**
+- **สคริปต์:** Claude
+- **เสียง:** ElevenLabs  
+- **Timecode:** ผู้ใช้ส่ง segment-level เอง (`[M:SS] ข้อความ`)
+- **ภาพ:** Google Flow Agent (batch mode)
+- **ตัดต่อ:** DaVinci Resolve / CapCut
+
+---
+
+## ⚡ หัวใจของระบบ V3 — "Rhythm-First + Agent Batch"
+
+> เปลี่ยนภาพตอน "คนพูดหยุดหายใจ" → ดูเป็นธรรมชาติ
+> สร้างภาพรวดเดียวด้วย Google Flow Agent → ตัวละครไม่หลุด
+
+### Pipeline 7 ขั้น
+
+```
+[1] หัวข้อ + บทพากย์         (Claude)
+        ↓
+[2] เสียงพากย์ MP3/WAV         (ElevenLabs / Botnoi)
+        ↓
+[3] 🎯 Timecode Map           (ผู้ใช้ส่ง segment-level timestamp → Claude แปลงเป็นตาราง)
+        ↓
+[4] Shot List (Agent Brief)   (Claude สร้าง brief + 30-40 shots พร้อม filename)
+        ↓
+[5] Batch Generate ภาพ        (Google Flow Agent — รันรวดเดียว)
+        ↓
+[6] ตัดต่อ + ใส่ BGM          (DaVinci Resolve / CapCut)
+        ↓
+[7] Metadata + Thumbnail       (Claude generate title, desc, tag, thumb concept)
+```
+
+---
+
+## 📦 โครงสร้าง OUTPUT (V3)
+
+```
+OUTPUT 1 — Chapter Outline           โครงเรื่องแบ่งบท
+OUTPUT 2 — VO Script (สคริปต์ล้วน)   ส่ง TTS ได้ทันที
+OUTPUT 3 — Timecode Map              ผู้ใช้ส่ง segment-level → Claude แปลงเป็นตาราง
+OUTPUT 4 — Metadata + Thumbnail      title / desc / tag / thumb concept
+OUTPUT 5 — Image Production ⭐        รวมทุกอย่างเกี่ยวกับรูป
+   ├── 5.1  Style Bible              สไตล์การวาดโดยรวม
+   ├── 5.2  Character Bible          ตัวละคร locked พร้อม @ref tags
+   └── 5.3  Shot List (Agent Brief)  brief + 30-40 shots สำหรับ Google Flow
+```
+
+---
+
+## 1. กฎทอง 8 ข้อ
+
+**กฎ 1 — Voice First, Image Second**
+อัดเสียงพากย์ให้เสร็จก่อนเสมอ ภาพมาทีหลัง — เพราะ rhythm มาจากเสียง
+
+**กฎ 2 — Style Bible Lock**
+แปะ Style Bible ใน System Prompt ของ Flow Agent ครั้งเดียว → ใช้ตลอด session
+
+**กฎ 3 — Character Lock (@ref tags)**
+ทุกตัวละครต้องมี `@TAG` (เช่น `@sapiens`, `@Neanderthal`) — agent อ้างชื่อนี้ทุก shot
+
+**กฎ 4 — Filename = Timecode**
+ตั้งชื่อไฟล์ภาพเป็น `HH_MM_SS.png` เช่น `00_00_05.png` = ปรากฏที่วินาทีที่ 5
+
+**กฎ 5 — One Beat Per Image (2–3 วิ/ภาพ)**
+1 ภาพ = 1 จังหวะ — เปลี่ยนภาพทุก **2–3 วินาที** (เร็วพอให้คนดูไม่เบื่อ)
+ถ้าจะ "ขยับ" ทำเป็น mini-sequence 2–4 ภาพ ห่าง 0.3–0.5 วิ
+
+**กฎ 6 — Hook ทุก 15–30 วินาที**
+ใส่ pattern interrupt (ภาพแฟนตาซีสีจัด / คำถาม / twist) ทุก 15–30 วิ กันคนเลื่อนผ่าน
+
+**กฎ 7 — Text in Image: ALL CAPS English เท่านั้น**
+อนุญาตให้มี on-screen text แบบ ALL CAPS marker font (RED/BLACK/YELLOW) ตาม Visual Style DNA
+ห้าม bake ข้อความไทย/ตัวพิมพ์เล็ก — AI gen เพี้ยน ถ้าอยากใส่ subtitle ไทยให้ทำตอนตัดต่อ
+
+**กฎ 8 — Subtle Transitions**
+ใช้ cut อย่างเดียวเป็นหลัก fade/dissolve เฉพาะเปลี่ยน chapter เท่านั้น
+
+---
+
+## 2. STEP-BY-STEP — Workflow ทำงานกับผู้ใช้
+
+> **หลัก:** ลุยก่อน ถามทีหลัง — เปิดด้วย 5 หัวข้อ viral ให้ผู้ใช้เลือก แล้วลุยเขียนสคริปต์เต็มเลย
+
+---
+
+### 🧬 CONTENT & SCRIPT DNA
+
+- **Niche:** Human history, evolution, anthropology, psychology
+- **Format:** 10–14 minute educational explainer narrated in calm 2nd-person ("คุณ", "สมองของคุณ", "บรรพบุรุษของคุณ") — never "เรา" or "ผม/ฉัน"
+- **Hook formula:** เปิดด้วยโมเมนต์ปัจจุบันที่คนเชื่อมโยงได้ → ตามด้วย "แต่ความจริงแปลกกว่านั้นเยอะ" → reframe ใหม่หมด
+- **Script rhythm:** ประโยคสั้น. ประโยคสั้น. ประโยคยาวหนึ่งประโยคที่สร้างความลึก. ประโยคสั้น. คำถาม?
+- **Narrative arc:** Hook → Reframe → Historical/Scientific Deep Dive → Counterintuitive Twist → Modern Mirror → ปิดด้วยประโยคที่ echo ประโยคเปิด
+- **No jargon without plain-language explanation** — ทุกศัพท์วิทยาศาสตร์ต้องแปลทันที
+- **Always ends** ด้วยการสะท้อนความจริงโบราณ/วิทยาศาสตร์กลับมาสู่สิ่งที่คนดูรู้สึกหรือทำในปัจจุบัน
+
+---
+
+### 🔥 PROVEN VIRAL TOPIC ANGLES
+
+1. **"What did ancient humans actually ___?"** — เชื่อมพฤติกรรมยุคก่อนประวัติศาสตร์กับชีวิตปัจจุบัน
+2. **"Why do/can't you ___?"** — อธิบายประสบการณ์มนุษย์สากลด้วยวิทยาศาสตร์/วิวัฒนาการ
+3. **"What if we are ___?"** — ตั้งคำถาม existential แหลมๆ บน data จริง
+4. **"The ___ Effect"** — ตั้งชื่อการทดลองจริงแล้วโยงสู่สังคมปัจจุบัน
+5. **"You never noticed that ___"** — เปิดเผยความจริงซ่อนอยู่ในสิ่งที่คนดูทำทุกวัน
+
+---
+
+### STAGE 1 — Generate 5 Viral Topic Ideas
+
+ทันทีที่ผู้ใช้ activate prompt ให้ Claude แสดง 5 หัวข้อ viral ในตารางนี้เลย — ไม่มีอะไรนำ ไม่มีอะไรปิดท้ายนอกจากคำถามให้เลือก:
+
+| # | Video Title |
+|---|-------------|
+| 1 | [Title] |
+| 2 | [Title] |
+| 3 | [Title] |
+| 4 | [Title] |
+| 5 | [Title] |
+
+แล้วปิดด้วยบรรทัดนี้เป๊ะๆ:
+
+> **เลือกหัวข้อที่อยากพัฒนา? ตอบเป็นเลข (1–5)**
+
+แล้วหยุด รอผู้ใช้ตอบ
+
+---
+
+### STAGE 2 — Generate Full Narration Script
+
+เมื่อผู้ใช้เลือกเลข ให้ Claude สร้างสคริปต์เต็มตามกฎนี้:
+
+**SCRIPT RULES:**
+- **ความยาว:** 1,800–2,500 คำ (สำหรับ 10–14 นาที)
+- **เนื้อหา narration ล้วน** — ไม่มี header, bullet, visual cue, stage direction, parenthetical
+- **Voice:** Calm, intelligent, บุรุษที่ 2 ตลอด
+- **Rhythm:** ประโยคสั้น. ประโยคสั้น. ประโยคยาวเพิ่มความลึก. ประโยคสั้น. คำถามทุกๆ 4–6 ประโยค
+- **มีนักวิจัย/งานวิจัยจริง** อ้างชื่ออย่างน้อย 3 จุด สอดแทรกธรรมชาติ
+- **เปิดด้วย hook** ที่ทำให้ 4 บรรทัดแรกหยุดอ่านไม่ได้
+- **ปิดด้วยประโยค** ที่ echo ประโยคแรก reframe ใหม่หมด
+
+**OUTPUT FORMAT:**
+
+ห้ามวาง script ใน code block หรือ inline ในแชต — สร้างไฟล์ .txt ดาวน์โหลดได้ให้ผู้ใช้
+
+- **File name:** `script_[topic].txt` — แทน `[topic]` ด้วย slug ตัวเล็กคั่นด้วย underscore
+  (เช่น `script_why_you_fear_the_dark.txt`)
+- **File contents:** narration ล้วน — ไม่มี markdown, asterisks, brackets, stage direction, title heading ในไฟล์ มีแต่ narration
+
+โชว์ title video เป็น heading ในแชต → สร้างไฟล์ → present ให้ download
+
+**[FULL VIDEO TITLE]**
+
+หลัง present ไฟล์ ให้ปิดด้วยบรรทัดนี้เป๊ะๆ:
+
+> **Script พร้อมแล้ว ดาวน์โหลด `script_[topic].txt` ด้านบน แล้วเอาไปวาง ElevenLabs (หรือ TTS ที่ใช้) เพื่อ gen เสียง**
+
+---
+
+### STEP 3 — อัดเสียงพากย์
+ผู้ใช้เอาสคริปต์ → ส่ง ElevenLabs/Botnoi → ได้ `voiceover.wav`
+
+### STEP 4 — Timecode Map
+ผู้ใช้ฟัง+พิมพ์ segment-level timestamp ส่งให้ Claude → ได้ **OUTPUT 3**
+
+### STEP 5 — สร้าง Image Production
+Claude สร้าง **OUTPUT 5** ครบ:
+- 5.1 Style Bible (Visual Style DNA)
+- 5.2 Character Bible (lock @tags)
+- 5.3 Shot List (filename ตรงกับ Timecode Map)
+
+### STEP 6 — Google Flow Agent + ตัดต่อ
+- ผู้ใช้เอา OUTPUT 5 → Google Flow Agent → ได้ภาพครบ
+- import เข้า DaVinci/CapCut ตามชื่อไฟล์ (timecode)
+
+### STEP 7 — Metadata + ปิดงาน
+Claude สร้าง **OUTPUT 4** (title, desc, tag, thumbnail) → publish
+
+---
+
+## 3. OUTPUT รายละเอียด
+
+### OUTPUT 1 — Chapter Outline
+
+ตัวอย่างสำหรับวิดีโอ 5 นาที (6 บท):
+
+| # | Chapter | Time | Beats |
+|---|---|---|---|
+| 0 | Cold Open | 0:00–0:25 | Hook 1 ประโยค |
+| 1 | Setup | 0:25–1:10 | แนะนำโลก/ปัญหา |
+| 2 | Body 1 | 1:10–2:20 | แนะนำตัวละคร/ข้อมูล |
+| 3 | Body 2 | 2:20–3:20 | Conflict / Twist |
+| 4 | Climax | 3:20–4:10 | จุดทึ่ง / Reveal |
+| 5 | Resolution + CTA | 4:10–5:00 | บทเรียน + ปิด |
+
+ความยาวอื่นๆ (เพิ่ม chapter):
+- 10 นาที = 7-8 บท
+- 15 นาที = 8-9 บท
+- 20 นาที = 10-12 บท
+
+---
+
+### OUTPUT 2 — VO Script (สคริปต์พูดล้วน)
+
+> **กฎเขียน:**
+> - ประโยคสั้น 6–14 คำ
+> - ใช้ `...` แทนช่วงพักสั้น เว้นบรรทัดแทนช่วงพักยาว
+> - **ไม่ใส่ `[pause Xs]` markers** — TTS จัดการเองจาก ... และเว้นบรรทัด
+> - 150 wpm × นาที = จำนวนคำพอดี (5 นาที ≈ 750 คำ)
+
+ตัวอย่าง format:
+
+```
+ลองจินตนาการว่าคุณกำลังยืนอยู่ในป่า... เมื่อสี่หมื่นปีก่อน
+
+อากาศหนาวจับขั้วหัวใจ... แล้วจู่ๆ คุณก็รู้สึกว่ามีบางสิ่งจ้องคุณอยู่
+
+จากแนวต้นไม้... มีร่างล่ำสันยืนนิ่ง... ไม่ใช่หมาป่า ไม่ใช่หมี... แต่เป็น... คน
+
+(เว้นบรรทัด = ขึ้นบทใหม่ / พักนาน)
+
+แต่ไม่ใช่คนแบบคุณ...
+```
+
+ส่งให้ ElevenLabs / Botnoi ได้ทันที
+
+---
+
+### OUTPUT 3 — Timecode Map
+
+**ผู้ใช้ส่ง segment-level เอง (ฟัง+พิมพ์เอง)**
+
+ส่งให้ Claude ในรูปแบบนี้:
+```
+[0:00] กรีดรส งัดบ้าน กินแซนวิชในตู้เย็นผม
+[0:04] นี่แค่ของเล่นที่แฟนเก่าผมเคยทำ
+[0:07] วันนี้ผมจะเล่าเรื่อง ผู้หญิงที่บ้าที่สุดในชีวิตผม
+...
+[3:56] โปรดติดตามตอนต่อไป   ← บรรทัดสุดท้าย = วินาทีจบคลิป
+```
+
+**Claude จะจัดการให้:**
+- Segment ยาว (>3 วิ) → ซอยเป็นหลาย shot
+- Segment สั้น (<2 วิ) → รวมกับอันถัดไป
+- คืนเป็น Shot List พร้อมชื่อไฟล์ `HH_MM_SS.png`
+
+**Format รับได้:** `[M:SS]` หรือ `[MM:SS]` หรือ `[H:MM:SS]`
+
+**ค่าพื้นฐานหา cut (เป้า: เปลี่ยนภาพทุก 2–3 วิ):**
+- Target shot duration: **2.5s** (เฉลี่ย — เร็วพอให้ดูไม่เบื่อ)
+- Min shot duration: **2.0s** (ภาพอย่างน้อยอยู่นานเท่านี้ กันกระตุก)
+- Max shot duration: **3.0s** (เกินนี้บังคับเปลี่ยน แม้ไม่เงียบ)
+- Silence threshold: 0.25s (ถ้าเงียบเกินนี้ + ครบ min → เปลี่ยน)
+
+**ทำไม 2–3 วิ:** retention algorithm ของ YouTube/TikTok ชอบภาพเปลี่ยนเร็ว
+สมองคนดูจะรู้สึก "เนื้อหาแน่น" เลื่อนผ่านยาก — สูตรช่อง viral 14M ใช้จังหวะนี้
+
+---
+
+### OUTPUT 4 — Metadata + Thumbnail
+
+หลังตัดเสร็จ ขอ Claude generate:
+
+- **Title** ≤ 60 ตัวอักษร (clickbait แต่จริง)
+- **Description** 200–300 คำ + timestamps แต่ละ chapter
+- **Tags** 10–15 คำ
+- **Thumbnail concept** 3 แบบ (พร้อม image prompt)
+
+---
+
+### OUTPUT 5 — Image Production ⭐
+
+> รวมทุกอย่างเรื่องรูปไว้ตรงนี้ — Style + Character + Shot List
+
+#### 5.1 — Style Bible / Visual Style DNA (ใส่ใน System Prompt ของ Flow)
+
+```
+=== VISUAL STYLE DNA ===
+
+ART STYLE:
+- Hand-drawn 2D doodle cartoon animation
+- Flat colors, bold black outlines
+- Slightly imperfect sketchy lines (drawn fast with a marker)
+
+CHARACTERS:
+- Simple stick figures with large circular heads
+- Dot eyes, expressive thick brow lines
+- Sometimes fully colored heads/bodies
+  (red = hot/embarrassed, white = neutral)
+
+ANIMALS & OBJECTS:
+- Chunky simplified cartoon shapes
+- Big, bold, flat single-color fills with thick black outlines
+
+BACKGROUNDS:
+- Flat solid color blocks only
+- White background = default
+- Green strip along bottom = ground
+- Blue sky + green ground = outdoor
+- Solid orange = sunset/fire/ancient
+- Solid blue = underwater
+- Tan = desert/cave
+- ZERO gradients · ZERO shadows · ZERO textures
+
+ON-SCREEN TEXT:
+- Bold ALL CAPS hand-lettered marker font
+- Placed at top of frame
+- Color = RED, BLACK, or YELLOW
+
+LABELS & ARROWS:
+- Black or yellow diagonal arrows pointing at objects
+- Short ALL CAPS word beside arrowhead
+
+THOUGHT BUBBLES:
+- Classic cloud-shape
+- ALL CAPS text inside (e.g., "HMMMM", "?", "WAIT...")
+
+COLOR PALETTE:
+- Orange #F5820D
+- Cobalt blue #2D5FBF
+- Grass green #3A9E3A
+- Golden yellow #F5C518
+- Red #D94040
+- Brown #8B5E3C
+- Sky blue #6EB5E8
+- Tan #C4965A
+- White #FFFFFF
+
+ASPECT RATIO: Always 16:9
+```
+
+#### 5.2 — Character Bible (Locked with @ref tags)
+
+```
+=== CHARACTER BIBLE ===
+
+@<TAG1> = <ชื่อตัวละคร / บทบาท>
+  - <รูปร่าง>
+  - <สีและเครื่องแต่งกาย>
+  - <อุปกรณ์ประจำตัว>
+
+@<TAG2> = <ชื่อตัวละคร / บทบาท>
+  - ...
+
+USAGE RULES:
+- เรียกตัวละครด้วย @TAG เสมอ
+- ห้ามแก้สี/รูปร่าง/อุปกรณ์ข้ามช็อต
+```
+
+**ตัวอย่าง (โปรเจกต์ "มนุษย์ 7 สายพันธุ์"):**
+
+```
+@sapiens   = Homo sapiens (ตัวหลัก)
+  - Tall slim stick figure
+  - Brown-red shoulder cloak
+  - Wooden spear with grey stone tip
+
+@Neanderthal  = Neanderthal
+  - Stocky stick figure 30% wider
+  - Dark brown fur hatches on limbs
+  - Beige hide cloak, wooden club
+```
+
+#### 5.3 — Shot List (Agent Brief สำหรับ Google Flow)
+
+> **Format:** brief เดียวบนหัว + shot list (filename ขึ้นต้นทุก shot)
+> Flow Agent อ่านครั้งเดียว → ทำให้ครบรวดเดียว
+
+```
+═══════════════════════════════════════════════
+AGENT BRIEF
+═══════════════════════════════════════════════
+
+[STYLE BIBLE]
+<วาง 5.1 ทั้งหมด>
+
+[CHARACTER LOCK]
+<วาง 5.2 ทั้งหมด>
+
+[RULES]
+- Keep character appearance IDENTICAL across all shots
+- Use the EXACT filename given for each shot
+- No text/letters baked into images
+- Aspect ratio 16:9 for ALL images
+- Apply STYLE BIBLE to every single image
+
+00_00_00.png SHOT 01 | Chars: @sapiens | Env: snowy pine forest, pastel blue sky | Action: @sapiens stands center, neutral face, spear over shoulder | Frame: wide shot
+
+00_00_02_5.png SHOT 02 | Chars: @sapiens | Env: same forest | Action: @sapiens looks up, 4 small suns in sky (time passing) | Frame: medium wide
+
+00_00_05.png SHOT 03 | Chars: @sapiens, @Neanderthal | Env: forest edge | Action: @Neanderthal peeks from tree | Frame: medium
+
+... (จนครบทุก timecode)
+```
+
+**กฎเขียน shot prompt:**
+- ขึ้นต้นด้วย `filename.png` ทุก shot
+- ใช้ `|` คั่น field แทนการขึ้นบรรทัด
+- **เว้น 1 บรรทัดว่างระหว่าง shot** เพื่อแยก prompt
+
+---
+
+## 4. Google Flow Agent — Batch Mode
+
+### วิธีใช้
+
+```
+1. เปิด Google Flow agent
+2. วาง AGENT BRIEF (Style + Character + Rules) ใน system/context
+3. วาง SHOT LIST ทั้งหมดเป็น user prompt
+4. กด Run → Flow gen ภาพรวดเดียวทั้ง batch
+5. ดาวน์โหลดภาพ ตั้งชื่อตาม filename ใน shot list
+```
+
+### ทำไม Agent Mode ดีกว่ายิงทีละ prompt
+
+| ปัญหา | ยิงทีละ prompt | Agent batch |
+|---|---|---|
+| Style drift | สูง (ลืม style ระหว่างภาพ) | ต่ำ (จำ context ทั้งหมด) |
+| Character ไม่ตรง | สูง | ต่ำ (lock ด้วย @ref) |
+| ต้อง copy-paste ซ้ำ 38 ครั้ง | ใช่ | ไม่ใช่ (รันเดียว) |
+| ลำดับเพี้ยน | ต้องเรียงเอง | เรียงตาม SHOT 01-38 |
+
+---
+
+## 5. เช็คลิสต์ V3
+
+**ก่อนอัดเสียง:**
+- [ ] บท VO ล้วน ใช้ `...` คั่นจุดสำคัญแล้ว
+- [ ] 150 wpm × นาที = จำนวนคำพอดี
+
+**หลังอัดเสียง:**
+- [ ] รัน Whisper ได้ JSON แล้ว
+- [ ] Claude แปลง JSON → Timecode Map ได้ตารางครบ
+
+**ก่อน gen ภาพ:**
+- [ ] OUTPUT 5.1 (Style) ใส่ system prompt แล้ว
+- [ ] OUTPUT 5.2 (Character) ใส่ system prompt แล้ว
+- [ ] OUTPUT 5.3 (Shot List) เตรียม batch เรียบร้อย
+- [ ] ชื่อไฟล์ใน shot list = timecode ตรงกับ Map
+
+**ก่อนตัดต่อ:**
+- [ ] ภาพทุกใบมาครบ ชื่อตรง timecode
+- [ ] import ภาพเข้า editor ตามชื่อไฟล์
+
+**ก่อน publish:**
+- [ ] Metadata + thumbnail พร้อม
+- [ ] BGM ใส่แล้ว (–18 to –24 dB ใต้เสียงพากย์)
+
+---
+
+## 6. สูตร Hook ทุก 15–30 วิ
+
+แทรกอย่างน้อย 1 อย่างทุก 15–30 วินาที:
+1. **คำถามตรงคนดู** — "แล้วถ้าเป็นคุณ?"
+2. **Pattern break visual** — ภาพแฟนตาซีสีจัด แทรกฉับ
+3. **Twist วาจา** — "แต่...สิ่งที่เขาไม่รู้คือ..."
+4. **Number/Stat** — "97% ของคนทำพลาดข้อนี้"
+5. **Callback** — เอา visual จาก Cold Open กลับมา
+6. **Silent beat** — เงียบ 2–3 วิ + ภาพค้าง
+
+---
+
+## สรุป V3 — จำ 5 ข้อ
+
+1. **เสียงมาก่อน** — อัดพากย์เสร็จก่อนทำภาพ
+2. **Whisper หา timecode** — local, ฟรี, ไทยแม่นพอใช้
+3. **ชื่อไฟล์ = timecode** — `00_00_05.png` ลากเข้า timeline ตำแหน่งเป๊ะ
+4. **OUTPUT 5 รวมเรื่องรูป** — Style + Character + Shot List ที่เดียว
+5. **Google Flow Agent batch** — รันเดียวจบ ตัวละครไม่หลุด
+
+---
+
+*Cartoon Stick-Figure Storytelling Blueprint V3 · Rhythm-First + Agent Batch · เอกสารประกอบการเรียน*
