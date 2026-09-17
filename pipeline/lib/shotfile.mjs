@@ -19,7 +19,7 @@ export function collectImages(dir) {
   for (const name of all) {
     const start = parseTimecodeFilename(name)
     if (start == null) {
-      if (/\.(png|jpg|jpeg|webp)$/i.test(name)) ignored.push(name)
+      if (/\.(png|jpg|jpeg|webp)$/i.test(name) && !/^cover\./i.test(name)) ignored.push(name) // cover.png = ภาพปก ไม่อยู่ในไทม์ไลน์
       continue
     }
     images.push({ file: join(dir, name), name, start })

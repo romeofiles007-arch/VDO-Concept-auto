@@ -55,10 +55,5 @@ export function segmentScript(script) {
   return segments
 }
 
-/** ประมาณความยาวคลิปก่อนยิง TTS จริง — ใช้เช็คว่าสคริปต์ยาวพอสำหรับ n นาทีไหม */
-export function estimateMinutes(script, wordsPerMinute = 150) {
-  // ไทยไม่เว้นวรรคระหว่างคำ → นับตัวอักษรไทยแล้วหารด้วยความยาวคำเฉลี่ย (~4.5 ตัว/คำ)
-  const thaiChars = (script.match(/[฀-๿]/g) || []).length
-  const otherWords = (script.replace(/[฀-๿]/g, ' ').match(/\S+/g) || []).length
-  return (thaiChars / 4.5 + otherWords) / wordsPerMinute
-}
+// ใช้ร่วมกับแผงข้างของ extension — ตัวจริงอยู่ที่ extension/prompts.js
+export { estimateMinutes } from '../../extension/prompts.js'

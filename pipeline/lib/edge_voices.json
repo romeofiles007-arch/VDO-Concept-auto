@@ -1,0 +1,570 @@
+[
+ {
+  "id": "en-AU-WilliamMultilingualNeural",
+  "gender": "Male",
+  "locale": "en-AU",
+  "localeName": "English (Australia)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-AU-NatashaNeural",
+  "gender": "Female",
+  "locale": "en-AU",
+  "localeName": "English (Australia)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-CA-ClaraNeural",
+  "gender": "Female",
+  "locale": "en-CA",
+  "localeName": "English (Canada)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-CA-LiamNeural",
+  "gender": "Male",
+  "locale": "en-CA",
+  "localeName": "English (Canada)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-HK-YanNeural",
+  "gender": "Female",
+  "locale": "en-HK",
+  "localeName": "English (Hong Kong SAR)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-HK-SamNeural",
+  "gender": "Male",
+  "locale": "en-HK",
+  "localeName": "English (Hong Kong SAR)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-IN-NeerjaExpressiveNeural",
+  "gender": "Female",
+  "locale": "en-IN",
+  "localeName": "English (India)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-IN-NeerjaNeural",
+  "gender": "Female",
+  "locale": "en-IN",
+  "localeName": "English (India)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-IN-PrabhatNeural",
+  "gender": "Male",
+  "locale": "en-IN",
+  "localeName": "English (India)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-IE-ConnorNeural",
+  "gender": "Male",
+  "locale": "en-IE",
+  "localeName": "English (Ireland)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-IE-EmilyNeural",
+  "gender": "Female",
+  "locale": "en-IE",
+  "localeName": "English (Ireland)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-KE-AsiliaNeural",
+  "gender": "Female",
+  "locale": "en-KE",
+  "localeName": "English (Kenya)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-KE-ChilembaNeural",
+  "gender": "Male",
+  "locale": "en-KE",
+  "localeName": "English (Kenya)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-NZ-MitchellNeural",
+  "gender": "Male",
+  "locale": "en-NZ",
+  "localeName": "English (New Zealand)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-NZ-MollyNeural",
+  "gender": "Female",
+  "locale": "en-NZ",
+  "localeName": "English (New Zealand)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-NG-AbeoNeural",
+  "gender": "Male",
+  "locale": "en-NG",
+  "localeName": "English (Nigeria)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-NG-EzinneNeural",
+  "gender": "Female",
+  "locale": "en-NG",
+  "localeName": "English (Nigeria)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-PH-JamesNeural",
+  "gender": "Male",
+  "locale": "en-PH",
+  "localeName": "English (Philippines)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-PH-RosaNeural",
+  "gender": "Female",
+  "locale": "en-PH",
+  "localeName": "English (Philippines)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-US-AvaNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Expressive",
+   "Caring",
+   "Pleasant",
+   "Friendly"
+  ]
+ },
+ {
+  "id": "en-US-AndrewNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Warm",
+   "Confident",
+   "Authentic",
+   "Honest"
+  ]
+ },
+ {
+  "id": "en-US-EmmaNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Cheerful",
+   "Clear",
+   "Conversational"
+  ]
+ },
+ {
+  "id": "en-US-BrianNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Approachable",
+   "Casual",
+   "Sincere"
+  ]
+ },
+ {
+  "id": "en-SG-LunaNeural",
+  "gender": "Female",
+  "locale": "en-SG",
+  "localeName": "English (Singapore)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-SG-WayneNeural",
+  "gender": "Male",
+  "locale": "en-SG",
+  "localeName": "English (Singapore)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-ZA-LeahNeural",
+  "gender": "Female",
+  "locale": "en-ZA",
+  "localeName": "English (South Africa)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-ZA-LukeNeural",
+  "gender": "Male",
+  "locale": "en-ZA",
+  "localeName": "English (South Africa)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-TZ-ElimuNeural",
+  "gender": "Male",
+  "locale": "en-TZ",
+  "localeName": "English (Tanzania)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-TZ-ImaniNeural",
+  "gender": "Female",
+  "locale": "en-TZ",
+  "localeName": "English (Tanzania)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-GB-LibbyNeural",
+  "gender": "Female",
+  "locale": "en-GB",
+  "localeName": "English (United Kingdom)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-GB-MaisieNeural",
+  "gender": "Female",
+  "locale": "en-GB",
+  "localeName": "English (United Kingdom)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-GB-RyanNeural",
+  "gender": "Male",
+  "locale": "en-GB",
+  "localeName": "English (United Kingdom)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-GB-SoniaNeural",
+  "gender": "Female",
+  "locale": "en-GB",
+  "localeName": "English (United Kingdom)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-GB-ThomasNeural",
+  "gender": "Male",
+  "locale": "en-GB",
+  "localeName": "English (United Kingdom)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "en-US-AnaNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Cute"
+  ]
+ },
+ {
+  "id": "en-US-AndrewMultilingualNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Warm",
+   "Confident",
+   "Authentic",
+   "Honest"
+  ]
+ },
+ {
+  "id": "en-US-AriaNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Positive",
+   "Confident"
+  ]
+ },
+ {
+  "id": "en-US-AvaMultilingualNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Expressive",
+   "Caring",
+   "Pleasant",
+   "Friendly"
+  ]
+ },
+ {
+  "id": "en-US-BrianMultilingualNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Approachable",
+   "Casual",
+   "Sincere"
+  ]
+ },
+ {
+  "id": "en-US-ChristopherNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Reliable",
+   "Authority"
+  ]
+ },
+ {
+  "id": "en-US-EmmaMultilingualNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Cheerful",
+   "Clear",
+   "Conversational"
+  ]
+ },
+ {
+  "id": "en-US-EricNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Rational"
+  ]
+ },
+ {
+  "id": "en-US-GuyNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Passion"
+  ]
+ },
+ {
+  "id": "en-US-JennyNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Friendly",
+   "Considerate",
+   "Comfort"
+  ]
+ },
+ {
+  "id": "en-US-MichelleNeural",
+  "gender": "Female",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Friendly",
+   "Pleasant"
+  ]
+ },
+ {
+  "id": "en-US-RogerNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Lively"
+  ]
+ },
+ {
+  "id": "en-US-SteffanNeural",
+  "gender": "Male",
+  "locale": "en-US",
+  "localeName": "English (United States)",
+  "personalities": [
+   "Rational"
+  ]
+ },
+ {
+  "id": "fr-FR-VivienneMultilingualNeural",
+  "gender": "Female",
+  "locale": "fr-FR",
+  "localeName": "French (France)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "fr-FR-RemyMultilingualNeural",
+  "gender": "Male",
+  "locale": "fr-FR",
+  "localeName": "French (France)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "de-DE-SeraphinaMultilingualNeural",
+  "gender": "Female",
+  "locale": "de-DE",
+  "localeName": "German (Germany)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "de-DE-FlorianMultilingualNeural",
+  "gender": "Male",
+  "locale": "de-DE",
+  "localeName": "German (Germany)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "it-IT-GiuseppeMultilingualNeural",
+  "gender": "Male",
+  "locale": "it-IT",
+  "localeName": "Italian (Italy)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "ko-KR-HyunsuMultilingualNeural",
+  "gender": "Male",
+  "locale": "ko-KR",
+  "localeName": "Korean (Korea)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "pt-BR-ThalitaMultilingualNeural",
+  "gender": "Female",
+  "locale": "pt-BR",
+  "localeName": "Portuguese (Brazil)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "th-TH-NiwatNeural",
+  "gender": "Male",
+  "locale": "th-TH",
+  "localeName": "Thai (Thailand)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ },
+ {
+  "id": "th-TH-PremwadeeNeural",
+  "gender": "Female",
+  "locale": "th-TH",
+  "localeName": "Thai (Thailand)",
+  "personalities": [
+   "Friendly",
+   "Positive"
+  ]
+ }
+]

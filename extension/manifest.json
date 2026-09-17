@@ -1,28 +1,69 @@
 {
   "manifest_version": 3,
   "name": "Cartoon Auto Bridge",
-  "version": "0.1.0",
+  "version": "0.20.0",
   "description": "ขับ ChatGPT และ Google Flow ให้ pipeline ทำคลิปการ์ตูนอัตโนมัติ",
-  "permissions": ["storage", "tabs", "scripting", "alarms"],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnrVaa60BRpJnRne+ZixACw2J+KnxeDbhNOAfQ4NzDeDqDT/mWQoTe0ZRhpniugxS7D0BNFCJyK+1Fxi10z3v3sGuB9Cl06SyQxh5KLPh5nbew5MwE1fC8QtizQKkijzd1QxK+t6ANt21ODgRy+0rRHdbk3j58fwwXdoaZLBkJJVU/Bi3MaxkPKWbACWIna6vWFg6uTcvVwJ+9kIOEDQzAU8HezWQQ0y1FNC9zNJ2rSNl2KDyGZkuhr/c0y9nHT0UYDltdV8uudA7K3WeftbFxb18Ax+MHtM6KWdjvTl1o//YIE2fduHGJThfvH/KoPV06wm6hXW6eAfrRL1yWdDkXwIDAQAB",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms",
+    "nativeMessaging",
+    "sidePanel",
+    "notifications"
+  ],
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
+    "https://flow.google.com/*",
     "https://labs.google/*",
     "https://*.googleusercontent.com/*",
     "http://127.0.0.1/*"
   ],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
-      "js": ["selectors.js", "content-common.js", "content-chatgpt.js"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "selectors.js",
+        "content-common.js",
+        "content-chatgpt.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://labs.google/fx/tools/flow*"],
-      "js": ["selectors.js", "content-common.js", "content-flow.js"],
+      "matches": [
+        "https://flow.google.com/*"
+      ],
+      "js": [
+        "content-flow-agent.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "Cartoon Auto Bridge" }
+  "action": {
+    "default_title": "Cartoon Auto — เปิดแผงทำคลิป",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
 }

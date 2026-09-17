@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8" />
+<title>Cartoon Auto</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="icons/cartoon-auto.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="icons.css" />
+<link rel="stylesheet" href="agents.css" />
+<style>
+  /* ธีมทะเล: สว่าง = ชายหาดกลางวัน (ทราย · น้ำตื้น · เปลือกหอย) · มืด = มหาสมุทรยามค่ำ (น้ำลึก · แสงเรือง)
+     ตรวจ contrast แล้ว ข้อความทุกสีบนพื้นกล่อง ≥ 4.5:1 */
+  :root {
+    color-scheme: light;
+    --bg: #f5eddd; --panel: #fffcf5; --ink: #123b42; --muted: #526c6d; --line: #82765f;
+    --accent: #006d77; --accent-ink: #fff; --ok: #24724f; --warn: #875000; --pick: #d9eeea;
+    --danger: #ae402f; --sea-top: #b8e0dd; --sand-deep: #dcc391; --panel-shadow: 0 3px 12px rgba(18, 59, 66, .08);
+    --studio-tint: #214d42; --studio-sand: #e9c991; --world-wash: rgba(239, 242, 219, .12); --world-image: url('agents/ocean-world.png');
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #07242b; --panel: #10363e; --ink: #edf6f1; --muted: #a5c2c2; --line: #6d9495;
+      --accent: #78d9cd; --accent-ink: #07363b; --ok: #87d9ac; --warn: #ebc17a; --pick: #194850;
+      --danger: #ffa18b; --sea-top: #164b53; --sand-deep: #d9ba84; --panel-shadow: 0 3px 16px rgba(0, 15, 20, .28);
+      --studio-sand: #e9c991; --world-wash: rgba(3, 24, 31, .48);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif; }
+  /* ฉากใหญ่เต็มหน้าต่าง อยู่หลังเนื้อหาและไม่กีดขวางการกด */
+  body { background: var(--bg); min-height: 100vh; position: relative; isolation: isolate; }
+  body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(var(--world-wash), var(--world-wash)), var(--world-image) center / cover no-repeat, url('agents/ocean-world.png') center / cover no-repeat, var(--bg); }
+  html { scrollbar-color: var(--accent) var(--bg); scrollbar-width: thin; }
+  input, textarea { caret-color: var(--accent); }
+  input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  main { padding: 14px 12px 40px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 14px; margin-bottom: 12px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .lede { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { border: 0; background: var(--bg); color: var(--muted); padding: 8px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .field input { width: 58px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
+  .primary { border: 0; background: var(--accent); color: var(--accent-ink); padding: 10px 16px; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer; }
+  .wide { width: 100%; }
+  .stop { border: 1px solid var(--accent); background: transparent; color: var(--accent); padding: 9px 14px; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer; }
+  .projectBar { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .project { display: block; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; color: inherit; cursor: pointer; }
+  .project:hover:not(:disabled) { border-color: var(--accent); }
+  .project .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.done { border-color: var(--ok); color: var(--ok); }
+  .next { font-size: 12px; margin-top: 6px; color: var(--accent); font-weight: 600; }
+  .pick { display: grid; gap: 4px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .pick select, .pick input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+  .pickRow { display: flex; gap: 6px; align-items: center; }
+  .pickRow select, .pickRow input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+  .pickRow .ghost { flex: none; }
+  #trainBox { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin: 4px 0 0; }
+  #trainBox > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .train { margin-top: 10px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .filebtn { display: inline-block; margin-bottom: 8px; }
+  .filebtn input { display: none; }
+  .files { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+  .files li { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 4px 4px 10px; }
+  .files li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .files button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 8px; }
+  .shots { margin: 6px 0 0; padding-left: 0; list-style: none; display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+  .shots li { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+  .shots li.miss { border-color: var(--warn); }
+  .shots .fn { font-weight: 700; font-family: ui-monospace, Consolas, monospace; }
+  .shots .say { color: var(--muted); }
+  .run { display: flex; gap: 8px; }
+  .run .primary { flex: 1; }
+  .ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 8px 12px; border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; }
+  a.ghost { display: inline-block; text-decoration: none; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .status { font-size: 13px; color: var(--muted); min-height: 20px; margin-bottom: 8px; }
+  .status.err, .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+  .spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+  .question { font-weight: 600; font-size: 14px; margin: 4px 0 8px; }
+  .list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .topic { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; color: inherit; cursor: pointer; }
+  .topic[aria-checked="true"] { border-color: var(--accent); background: var(--pick); box-shadow: inset 0 0 0 1px var(--accent); }
+  .num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); margin-top: 1px; }
+  .topic[aria-checked="true"] .num { background: var(--accent); color: var(--accent-ink); }
+  .title { font-weight: 600; }
+  .facts { font-size: 13px; margin-bottom: 8px; }
+  .warn { color: var(--warn); font-size: 13px; margin: 0 0 8px; }
+  .script { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 50vh; overflow: auto; line-height: 1.75; margin: 0 0 10px; font-size: 14px; }
+  details { font-size: 13px; margin-top: 6px; }
+  details pre { white-space: pre-wrap; max-height: 200px; overflow: auto; }
+  #appView { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; }
+  #appView .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  #appView iframe { flex: 1; width: 100%; border: 0; }
+  .overlay { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; z-index: 20; }
+  .overlay .bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .overlayBody { flex: 1; overflow: auto; padding: 12px; }
+  /* ── คลังวิดีโอแบบชั้นวางหนังสือ: ปกเรียงบนแผ่นไม้ ชื่อเรื่องเป็นป้ายใต้ชั้น ── */
+  .shelf { list-style: none; margin: 0; padding: 4px 2px 8px; display: grid; gap: 26px; --cols: 3; }
+  .shelfRow { display: grid; gap: 0; }
+  .shelfBooks, .shelfLabels { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px; padding: 0 10px; }
+  .shelfBooks { align-items: end; }
+  .book { position: relative; display: block; width: 100%; aspect-ratio: 9 / 16; padding: 0; border: 0; border-radius: 3px 7px 7px 3px; overflow: hidden; isolation: isolate; cursor: pointer; background: #10262b;
+    box-shadow: inset 5px 0 7px -3px rgba(0, 0, 0, .55), 0 10px 12px -8px rgba(0, 0, 0, .7), 2px 0 0 rgba(0, 0, 0, .18);
+    transform-origin: 50% 100%; transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s ease; }
+  .book::before { content: ''; position: absolute; inset: -12px; z-index: -1; background: var(--thumb) center / cover no-repeat; filter: blur(12px) brightness(.55); }
+  .book img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  /* สันหนังสือ: แสงเงาแนวตั้งทางซ้าย ให้ปกดูเป็นเล่ม */
+  .book::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 9px; background: linear-gradient(90deg, rgba(0, 0, 0, .45), rgba(255, 255, 255, .16) 55%, transparent); pointer-events: none; }
+  .book .dur { position: absolute; right: 5px; bottom: 5px; background: rgba(0, 0, 0, .78); color: #fff; font-size: 11px; padding: 0 5px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+  .book:hover, .book:focus-visible { transform: translateY(-6px) rotate(-1.2deg); box-shadow: inset 5px 0 7px -3px rgba(0, 0, 0, .55), 0 16px 18px -8px rgba(0, 0, 0, .7), 2px 0 0 rgba(0, 0, 0, .18); }
+  .book:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .book .noCover { display: grid; place-items: center; height: 100%; padding: 8px; color: #e8f1ee; font-size: 12px; font-weight: 700; line-height: 1.35; text-align: center; background: linear-gradient(160deg, #1f5a63, #0d2f35); }
+  .plank { height: 16px; margin-top: -2px; border-radius: 3px; position: relative;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--sand-deep) 88%, #fff) 0 3px, color-mix(in srgb, var(--sand-deep) 72%, #6b4a24) 3px 11px, color-mix(in srgb, var(--sand-deep) 45%, #3b2712) 11px);
+    box-shadow: 0 8px 14px -6px rgba(0, 0, 0, .55); }
+  .shelfLabels { margin-top: 8px; align-items: start; }
+  .shelfLabels span { font-size: 12px; line-height: 1.35; color: var(--ink); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; text-shadow: 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); }
+  .bookSheet { text-align: left; max-width: 480px; }
+  .bookSheet .sheetHead { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: start; margin-bottom: 12px; }
+  .bookSheet .sheetHead .book { cursor: default; transform: none; }
+  .bookSheet h2 { font-size: 16px; line-height: 1.4; margin: 0 0 4px; }
+  .bookSheet .meta { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .bookSheet select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; margin-bottom: 8px; }
+  .bookSheet .controls { justify-content: flex-start; margin: 0 0 8px; }
+  .bookSheet .sheetClose { position: sticky; bottom: 0; width: 100%; margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) { .book { transition: none; } .book:hover, .book:focus-visible { transform: none; } }
+  .videoCard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .videoCard .thumb { position: relative; aspect-ratio: 16 / 9; background: #000; display: block; width: 100%; border: 0; padding: 0; cursor: pointer; overflow: hidden; isolation: isolate; }
+  /* ปกเต็มภาพไม่ตัดขอบ — ช่องว่างข้างๆ เติมด้วยภาพเดียวกันแบบเบลอ (ปกแนวตั้งในการ์ดแนวนอน) */
+  .videoCard .thumb::before { content: ''; position: absolute; inset: -12px; z-index: -1; background: var(--thumb) center / cover no-repeat; filter: blur(14px) brightness(.55); }
+  .videoCard .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .videoCard .thumb .dur { position: absolute; right: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.75); color: #fff; font-size: 12px; padding: 1px 6px; border-radius: 6px; }
+  .videoCard .thumb .play { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+  .videoCard .body { padding: 10px 12px 12px; }
+  .videoCard .meta { font-size: 12px; color: var(--muted); margin: 2px 0 8px; }
+  .videoCard select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; margin-bottom: 8px; }
+  .videoCard .controls { margin: 0; }
+  .danger { border: 1px solid var(--danger); background: transparent; color: var(--danger); padding: 8px 12px; border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; }
+  .modalBack { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; padding: 12px; z-index: 30; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; width: 100%; max-width: 560px; max-height: 100%; overflow: auto; text-align: center; }
+  .modal video { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: #000; margin: 6px 0 10px; }
+  .modal .viewActions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: -2px 0 10px; }
+  .modal .controls { justify-content: center; }
+  .successMark { width: 44px; height: 44px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center; background: var(--ok); color: var(--accent-ink); font-size: 24px; font-weight: 700; }
+  #autoSection { border-color: var(--accent); }
+  .depts { list-style: none; margin: 10px 0 8px; padding: 0; display: grid; gap: 6px; }
+  .dept { display: grid; grid-template-columns: 26px 1fr; gap: 2px 8px; align-items: start; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .dept .mark { grid-row: span 2; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; border: 1.5px solid var(--line); color: var(--muted); margin-top: 1px; }
+  .dept .name { font-weight: 600; font-size: 14px; }
+  .dept .name small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .dept .detail { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .dept.working { border-color: var(--accent); }
+  .dept.working .mark { border-color: var(--accent); border-top-color: transparent; animation: spin 1s linear infinite; }
+  .dept.done .mark { background: var(--ok); border-color: var(--ok); color: var(--accent-ink); }
+  .dept.failed { border-color: var(--danger); }
+  .dept.failed .mark { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
+  .dept.failed .detail { color: var(--danger); }
+  @media (prefers-reduced-motion: reduce) { .dept.working .mark { animation: none; border-top-color: var(--accent); } }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .dot.working { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .dot.waiting { background: var(--warn); }
+  .dot.idle { background: var(--ok); }
+  .dot.offline { background: transparent; border: 1.5px solid var(--muted); }
+  .checks { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+  .checkGroup { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; text-transform: none; }
+  .check { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; }
+  .check .icon { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; border: 1.5px solid var(--line); color: var(--muted); }
+  .check.ok .icon { background: var(--ok); border-color: var(--ok); color: var(--accent-ink); }
+  .check.missing { border-color: var(--danger); }
+  .check.missing .icon { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
+  .check.warn .icon { border-color: var(--warn); color: var(--warn); }
+  .check .label { font-weight: 600; font-size: 14px; }
+  .check .label small { font-weight: 400; color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .check .detail { grid-column: 2; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .check .fix { grid-column: 2; margin-top: 6px; font-size: 13px; }
+  .check .fix .controls { margin: 6px 0 0; }
+  .check code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; overflow-wrap: anywhere; }
+  .summary { border-radius: 10px; padding: 10px 12px; font-weight: 600; margin-bottom: 4px; background: var(--bg); border: 1px solid var(--line); }
+  .summary.ok { border-color: var(--ok); color: var(--ok); }
+  .summary.missing { border-color: var(--danger); color: var(--danger); }
+  .clipSettings { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; }
+  .clipSettings > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .clipSettings .seg { width: fit-content; }
+  .pasteZone { border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center; color: var(--ink); font-size: 13px; cursor: text; background: var(--bg); }
+  .pasteZone:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .pasteZone.drag { border-color: var(--accent); background: var(--pick); }
+  .pasteZone .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .pasteZone kbd { font: inherit; font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--panel); }
+  .linkish { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  .charThumbs { list-style: none; margin: 8px 0 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .charThumbs:empty { display: none; }
+  .charThumbs li { position: relative; }
+  .charThumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+  .charThumbs button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+  .clipSettings textarea { width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
+  .projectRow { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .projectCover { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
+  .projectCover img { width: 96px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+  .projectCover img.portrait { aspect-ratio: 9 / 16; width: 54px; justify-self: center; }
+  .coverActions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .coverActions button { font-size: 12px; padding: 5px 10px; }
+  [hidden] { display: none !important; }
+</style>
+
+<main>
+  <h1 class="brand-lockup"><img class="brand-icon" src="icons/cartoon-auto.svg" alt="" width="42" height="42" />Cartoon Auto</h1>
+
+  <!-- ฉากและอุปกรณ์อยู่ในส่วนขยาย เปลี่ยนตามแผนก -->
+  <section class="studioHero" id="studioHero" aria-label="สถานะทีมงาน">
+    <div class="heroBanner">
+      <div class="heroActor" id="heroActor" data-state="idle" aria-hidden="true"></div>
+      <div class="heroText" role="status" aria-live="polite">
+        <p class="heroStep" id="heroStep" hidden></p>
+        <p class="heroTitle" id="heroTitle">ทีมงานพร้อมเริ่ม</p>
+        <p class="heroSub" id="heroSub">สถานะจะอัปเดตเมื่อทีมเริ่มทำงาน</p>
+        <div class="heroProgress" id="heroProgress" hidden>
+          <div class="progressTrack" role="progressbar" aria-label="ความคืบหน้ารวม" aria-valuemin="0" aria-valuemax="100" id="heroProgressBar"><i id="heroBar"></i></div>
+          <span class="heroPct" id="heroPct">0%</span>
+        </div>
+      </div>
+      <div class="heroProps" aria-hidden="true"></div>
+    </div>
+    <ul class="heroCrew" id="heroCrew" aria-label="ทีมงานแต่ละแผนก"></ul>
+  </section>
+
+  <section>
+    <div class="projectBar">
+      <div>
+        <div class="lede" style="margin:0">Project ที่กำลังทำ</div>
+        <div class="title" id="currentProject">ยังไม่มี — เริ่มจากหาหัวข้อ</div>
+      </div>
+      <div class="controls" style="margin:0;justify-content:flex-end">
+        <button class="ghost" id="openChecklist" title="ดูว่าเครื่องนี้ต้องลงอะไรเพิ่มบ้าง">🧰 ตรวจความพร้อม</button>
+        <button class="ghost" id="openLibrary">🎬 คลังวิดีโอ</button>
+        <button class="ghost" id="openProjects">📂 เปิด project เก่า</button>
+      </div>
+    </div>
+    <div class="status" id="projectsStatus" role="status" aria-live="polite" style="margin:8px 0 0"></div>
+    <ul class="list" id="projectList" hidden style="margin-top:8px"></ul>
+  </section>
+
+  <section id="autoSection">
+    <h2>⚡ ทำคลิปอัตโนมัติ</h2>
+    <p class="lede">เลือกหัวข้อแล้วกดปุ่มเดียว ทุกแผนกทำงานต่อกันจนได้ MP4 · พลาดตรงไหนระบบลองใหม่เอง · กดซ้ำด้วยหัวข้อเดิม = ทำต่อจากที่ค้าง</p>
+    <div class="pick">หัวข้อคลิป
+      <div class="seg topicMode" id="autoTopicMode" role="group" aria-label="วิธีเลือกหัวข้อ">
+        <button type="button" data-value="manual">✍️ พิมพ์เอง</button>
+        <button type="button" data-value="suggest">💡 ให้ AI เสนอ</button>
+        <button type="button" data-value="auto">🎲 เลือกให้เลย</button>
+      </div>
+    </div>
+    <label class="pick" id="genreBox" hidden>แนวคลิป
+      <select id="topicGenre" aria-label="แนวคลิป"></select>
+    </label>
+    <div id="topicSuggestBox" hidden>
+      <div class="controls" style="margin:0 0 8px">
+        <button type="button" class="ghost" id="suggestTopics">💡 เสนอ 5 หัวข้อพร้อมคะแนน</button>
+      </div>
+      <div class="status" id="suggestStatus" role="status" aria-live="polite"></div>
+      <ul class="scoredTopics" id="scoredTopics" role="radiogroup" aria-label="หัวข้อที่ AI เสนอ"></ul>
+    </div>
+    <p class="hint topicAutoHint" id="topicAutoHint" hidden>🎲 ระบบจะให้ ChatGPT เสนอ 5 หัวข้อ ให้คะแนน แล้วเลือกเรื่องที่คะแนนสูงสุดและยังไม่เคยทำ — ดูคะแนนทุกเรื่องได้ในรายละเอียดระหว่างทำงาน</p>
+    <label class="pick" id="autoTitleBox">หัวข้อคลิป (แก้ได้)
+      <input id="autoTitle" maxlength="200" placeholder="เช่น ถ้าคุณตกลงไปในหลุมดำ จะเกิดอะไรขึ้น" autocomplete="off" />
+    </label>
+    <div class="controls">
+      <div class="seg" id="autoLang" role="group" aria-label="ภาษาพากย์">
+        <button type="button" data-value="th">พากย์ไทย</button>
+        <button type="button" data-value="en">พากย์อังกฤษ</button>
+      </div>
+      <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="5" /> นาที</label>
+    </div>
+    <details class="clipSettings" id="clipSettingsBox">
+      <summary id="clipSettingsSummary">ตั้งค่าคลิป</summary>
+      <div class="pick" style="margin-top:10px">รูปแบบภาพและวิดีโอ
+        <div class="seg" id="clipOrientation" role="group" aria-label="แนวภาพ">
+          <button type="button" data-value="landscape">▭ แนวนอน 16:9</button>
+          <button type="button" data-value="portrait">▯ แนวตั้ง 9:16</button>
+        </div>
+      </div>
+      <label class="pick">ซับไตเติลในวิดีโอ (พื้นทึบ)
+        <select id="clipSubtitles"></select>
+      </label>
+      <div class="pick">ภาพเคลื่อนไหว (ซูม/เลื่อนกล้อง ไม่ใช้ AI)
+        <div class="seg" id="clipMotion" role="group" aria-label="ภาพเคลื่อนไหว"></div>
+      </div>
+      <div class="pick">ช่วงเงียบระหว่างประโยค
+        <div class="seg" id="clipPause" role="group" aria-label="ช่วงเงียบ"></div>
+      </div>
+      <div class="pick">ตัวละครของฉัน
+        <div class="pasteZone" id="charPaste" tabindex="0" role="button" aria-describedby="charHint">
+          📋 คลิกตรงนี้แล้วกด <kbd>Ctrl</kbd>+<kbd>V</kbd> วางรูปตัวละคร
+          <span class="sub">หรือ <label class="linkish">เลือกไฟล์<input type="file" id="charFile" accept="image/png,image/jpeg,image/webp" multiple hidden /></label> · สูงสุด 4 รูป</span>
+        </div>
+        <ul class="charThumbs" id="charThumbs"></ul>
+        <textarea id="charDesc" rows="2" maxlength="4000" placeholder="คำอธิบายตัวละคร (ไม่บังคับ) เช่น เด็กผู้หญิงผมบ๊อบสีดำ ใส่เสื้อฮู้ดสีเหลือง ตาโต"></textarea>
+        <div class="controls" style="margin:6px 0 0">
+          <label class="field"><input type="checkbox" id="charEnabled" /> ใช้ตัวละครนี้กับคลิปใหม่</label>
+          <button type="button" class="ghost" id="charClear">ล้างตัวละคร</button>
+        </div>
+        <p class="hint" id="charHint" style="margin:4px 0 0">ยังไม่ได้ตั้ง — ใช้ตัวละครตาม Blueprint</p>
+      </div>
+      <p class="hint" style="margin:0">แนวภาพและตัวละครใช้กับ prompt/ภาพที่สร้างใหม่ · ซับไตเติลใช้ตอนตัดต่อ · ช่วงเงียบใช้ตอนทำเสียง (คลิปเดิมปรับได้ในขั้นที่ 6)</p>
+    </details>
+    <p class="hint" id="autoVoice"></p>
+    <div class="run">
+      <button class="primary" id="startAuto">▶ ทำคลิปอัตโนมัติ</button>
+      <button class="stop" id="stopAuto" disabled>หยุด</button>
+    </div>
+    <div class="autoProgress" id="autoProgress" hidden>
+      <div class="autoProgressHead"><strong id="autoPct">0%</strong><span id="autoProgressText"></span></div>
+      <div class="progressTrack" role="progressbar" aria-label="ความคืบหน้าทำคลิปอัตโนมัติ" aria-valuemin="0" aria-valuemax="100" id="autoProgressBar"><i id="autoBar"></i></div>
+    </div>
+    <ol class="depts" id="autoDepts" hidden aria-label="ความคืบหน้าแต่ละแผนก"></ol>
+    <div class="status" id="autoStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <details id="autoLogBox" hidden><summary>รายละเอียด</summary><pre id="autoLog"></pre></details>
+  </section>
+
+  <p class="groupDivider"><span>หรือทำทีละขั้นเอง</span></p>
+
+  <section class="step" aria-label="ขั้นที่ 1 หัวข้อ">
+    <h2><span class="stepNo" aria-hidden="true">1</span>หัวข้อ</h2>
+    <p class="lede">สั่ง ChatGPT คิดหัวข้อ viral 5 ข้อตาม Blueprint แล้วคลิกเลือก</p>
+    <div class="controls">
+      <div class="seg" id="titleLang" role="group" aria-label="ภาษาชื่อหัวข้อ">
+        <button type="button" data-value="en">ชื่ออังกฤษ</button>
+        <button type="button" data-value="th">ชื่อไทย</button>
+      </div>
+      <button class="primary" id="askTopics">▶ เริ่มหาหัวข้อ</button>
+      <button class="stop" id="stopTopics" disabled>■ หยุด</button>
+    </div>
+    <div class="status" id="topicsStatus" role="status" aria-live="polite"></div>
+    <details id="topicsRawBox" hidden><summary>คำตอบดิบจาก ChatGPT</summary><pre id="topicsRaw"></pre></details>
+    <p class="question" id="question" hidden>คลิกเลือกหัวข้อที่อยากทำ</p>
+    <ul class="list" id="topicList" role="radiogroup" aria-label="หัวข้อ"></ul>
+  </section>
+
+  <section class="step" id="scriptSection" aria-label="ขั้นที่ 2 บทพากย์" hidden>
+    <h2><span class="stepNo" aria-hidden="true">2</span>บทพากย์</h2>
+    <p class="lede" id="pickedTitle"></p>
+    <div class="controls">
+      <div class="seg" id="voLang" role="group" aria-label="ภาษาพากย์">
+        <button type="button" data-value="th">พากย์ไทย</button>
+        <button type="button" data-value="en">พากย์อังกฤษ</button>
+      </div>
+      <label class="field">ยาว <input type="number" id="minutes" min="1" max="60" value="10" /> นาที</label>
+    </div>
+    <div class="run">
+      <button class="primary" id="askScript">▶ เริ่มเขียนบทพากย์</button>
+      <button class="stop" id="stopScript" disabled>■ หยุด</button>
+    </div>
+    <div class="status" id="scriptStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <details id="scriptRawBox" hidden><summary>คำตอบดิบจาก ChatGPT</summary><pre id="scriptRaw"></pre></details>
+    <div id="scriptResult" hidden>
+      <div class="facts">ประมาณ <b id="estMinutes"></b> นาที (เป้า <span id="target"></span>)</div>
+      <p class="warn" id="offTarget" hidden>ความยาวห่างจากเป้าเกิน 25% — ลองกดเขียนใหม่</p>
+      <pre class="script" id="scriptText"></pre>
+      <div class="controls">
+        <button class="ghost" id="copyScript">คัดลอก</button>
+        <button class="ghost" id="downloadScript">ดาวน์โหลด .txt</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="step" id="voiceSection" aria-label="ขั้นที่ 3 เสียงพากย์">
+    <h2><span class="stepNo" aria-hidden="true">3</span>เสียงพากย์ (เสียงของเรา)</h2>
+    <p class="lede">สร้างเสียงด้วยโมเดลที่เทรนจากเสียงเราเอง — ทำในเครื่องด้วยการ์ดจอ ไม่ใช้ API</p>
+    <label class="pick">เสียงที่ใช้
+      <span class="pickRow">
+        <select id="voicePick" aria-label="เสียงที่ใช้"><option>กำลังโหลดรายการเสียง…</option></select>
+        <button class="ghost" id="previewVoice" type="button" title="ฟังตัวอย่างเสียงนี้">🔊 ฟัง</button>
+      </span>
+    </label>
+    <p class="hint" id="voiceNote"></p>
+    <audio controls id="previewAudio" preload="none" hidden style="width:100%;margin-bottom:8px"></audio>
+    <div id="geminiKeyRow" hidden>
+      <p class="hint">Gemini ต้องใช้ API key ของคุณเอง — สร้างฟรีที่ aistudio.google.com/apikey (key จะถูกเก็บในไฟล์ .env ในเครื่องเท่านั้น)</p>
+      <div class="pickRow" style="margin-bottom:10px">
+        <input type="password" id="geminiKey" placeholder="วาง Gemini API key" autocomplete="off" />
+        <button class="ghost" id="saveGeminiKey" type="button">บันทึก</button>
+      </div>
+    </div>
+
+    <details id="trainBox">
+      <summary>＋ เทรนเสียงใหม่</summary>
+      <div class="train">
+        <label class="pick">เสียงที่จะเทรน
+          <select id="trainTarget" aria-label="เสียงที่จะเทรน"></select>
+        </label>
+        <label class="pick" id="newVoiceRow">ชื่อเสียง
+          <input type="text" id="newVoiceName" placeholder="เช่น เสียงผม โทนเล่าเรื่อง" maxlength="60" />
+        </label>
+        <p class="hint">ใช้เสียงพูดคนเดียว ไม่มีเพลงหรือเสียงรบกวน รวมกัน 10 นาทีขึ้นไปจะดี (ขั้นต่ำประมาณ 4 นาที) — รองรับ wav, mp3, m4a, flac, ogg, aac, opus</p>
+        <label class="ghost filebtn">เลือกไฟล์เสียง…<input type="file" id="trainFiles" multiple accept=".wav,.mp3,.m4a,.flac,.ogg,.aac,.opus,audio/*" /></label>
+        <ul class="files" id="trainFileList"></ul>
+        <label class="field">รอบเทรน (epochs) <input type="number" id="trainEpochs" min="1" max="200" value="40" /></label>
+        <p class="hint">เทรนนานหลายชั่วโมง ระหว่างนั้นสร้างเสียงพากย์ไม่ได้ · กดหยุดแล้วเริ่มใหม่ จะเทรนต่อจากจุดเดิม</p>
+        <div class="run">
+          <button class="primary" id="startTrain">▶ เริ่มเทรน</button>
+          <button class="stop" id="stopTrain" disabled>■ หยุด</button>
+        </div>
+        <div class="status" id="trainStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+        <details id="trainLogBox" hidden><summary>รายละเอียด</summary><pre id="trainLog"></pre></details>
+      </div>
+    </details>
+
+    <div class="controls" style="margin-top:12px">
+      <div class="seg" id="emotion" role="group" aria-label="อารมณ์เสียง">
+        <button type="button" data-value="calm">ปกติ</button>
+        <button type="button" data-value="excited">ตื่นเต้น</button>
+        <button type="button" data-value="serious">จริงจัง</button>
+        <button type="button" data-value="soft">นุ่ม</button>
+      </div>
+      <label class="field">ความเร็ว <input type="number" id="speed" min="0.7" max="1.5" step="0.05" value="1" /></label>
+    </div>
+    <div class="run">
+      <button class="primary" id="startVoice">▶ เริ่มสร้างเสียง</button>
+      <button class="stop" id="stopVoice" disabled>■ หยุด</button>
+    </div>
+    <div class="status" id="voiceStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <details id="voiceLogBox" hidden><summary>รายละเอียด</summary><pre id="voiceLog"></pre></details>
+    <audio controls id="voiceAudio" preload="metadata" hidden style="width:100%;margin-top:8px"></audio>
+
+    <details id="importBox">
+      <summary>หรือ นำเข้าไฟล์เสียงพากย์ที่ทำไว้แล้ว (ElevenLabs, อัดเอง)</summary>
+      <div class="train">
+        <p class="hint">ถอดเสียงด้วย Whisper ในเครื่อง → ได้ข้อความพร้อมเวลาแบบ SayToWords (.srt / .txt) แล้วใช้ต่อทำ prompt ภาพได้เลย</p>
+        <label class="pick" id="importTitleRow">ชื่อเรื่อง (สร้าง project ใหม่)
+          <input type="text" id="importTitle" placeholder="เช่น ทำไมสมองของคุณยังกลัวความมืด" maxlength="120" />
+        </label>
+        <div class="controls">
+          <div class="seg" id="importLang" role="group" aria-label="ภาษาของเสียง">
+            <button type="button" data-value="th" aria-pressed="true">ไทย</button>
+            <button type="button" data-value="en" aria-pressed="false">อังกฤษ</button>
+          </div>
+          <label class="ghost filebtn" style="margin:0">เลือกไฟล์เสียง…<input type="file" id="importFile" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.mp4,.webm" /></label>
+        </div>
+        <div class="status" id="importStatus" role="status" aria-live="polite"></div>
+      </div>
+    </details>
+
+    <div id="transcriptBox" hidden style="margin-top:12px">
+      <h3 style="font-size:14px;margin:0 0 4px">ข้อความ + เวลาของเสียงพากย์</h3>
+      <p class="hint" id="transcriptNote"></p>
+      <textarea id="transcriptText" spellcheck="false" style="width:100%;min-height:220px;font:12px/1.6 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px"></textarea>
+      <div class="controls" style="margin-top:8px">
+        <button class="ghost" id="saveTranscript" hidden>บันทึกการแก้ไข</button>
+        <a class="ghost" id="downloadSrt" download>ดาวน์โหลด .srt</a>
+        <a class="ghost" id="downloadSegTxt" download>ดาวน์โหลด .txt</a>
+      </div>
+      <div class="status" id="transcriptStatus" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="step" id="imageSection" aria-label="ขั้นที่ 4 Prompt ภาพ" hidden>
+    <h2><span class="stepNo" aria-hidden="true">4</span>Prompt ภาพสำหรับ Google Flow</h2>
+    <p class="lede">ตาม Blueprint OUTPUT 5 — Style Bible + Character Bible (@TAG) + Shot List ช็อตละ 2–3 วิ ชื่อไฟล์ = timecode ของเสียงพากย์</p>
+    <div class="run">
+      <button class="primary" id="startShots">▶ เริ่มสร้าง prompt ภาพ</button>
+      <button class="stop" id="stopShots" disabled>■ หยุด</button>
+    </div>
+    <div class="status" id="shotsStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <div id="shotsResult" hidden>
+      <div class="facts" id="shotsFacts"></div>
+      <p class="warn" id="shotsMissing" hidden></p>
+      <div class="controls">
+        <button class="ghost" id="resumeShots" hidden>▶ ขอช็อตที่ขาดต่อ</button>
+        <button class="ghost" id="copyFlow">คัดลอก prompt ไปวางใน Flow</button>
+        <button class="ghost" id="downloadFlow">ดาวน์โหลด .txt</button>
+      </div>
+      <details><summary>Style + Character Bible</summary><pre id="shotsBible"></pre></details>
+      <details><summary>Shot List (<span id="shotsCount"></span>)</summary><ol class="shots" id="shotsList"></ol></details>
+    </div>
+  </section>
+
+  <section class="step" id="flowSection" aria-label="ขั้นที่ 5 สร้างภาพ" hidden>
+    <h2><span class="stepNo" aria-hidden="true">5</span>สร้างภาพใน Google Flow</h2>
+    <p class="lede">เปิด project ใหม่ → เปิด Agent → ตั้งค่า Image · 16:9 · Nano Banana 2 Lite · x1 (ตรวจว่า 0 credits ก่อน) → ส่ง prompt จากขั้นที่ 4</p>
+    <div class="run">
+      <button class="primary" id="startFlow">▶ ส่งไป Google Flow</button>
+      <button class="stop" id="stopFlow" disabled>■ หยุดติดตาม</button>
+    </div>
+    <div class="status" id="flowStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <div class="controls" id="flowLinks" hidden>
+      <button class="ghost" id="showFlowTab">เปิดแท็บ Google Flow</button>
+      <button class="ghost" id="saveFlowImages">⬇ ตั้งชื่อ + บันทึกภาพ</button>
+    </div>
+    <p class="hint">สร้างภาพครบแล้วระบบจะสั่ง Agent เปลี่ยนชื่อภาพเป็น "00_00_00.png SHOT 01" แล้วบันทึกลง 05_images/ ตามชื่อ timecode ให้เอง</p>
+    <p class="warn" id="flowMissing" hidden></p>
+  </section>
+
+  <section class="step" id="renderSection" aria-label="ขั้นที่ 6 สร้างวิดีโอ" hidden>
+    <h2><span class="stepNo" aria-hidden="true">6</span>สร้างวิดีโอ</h2>
+    <p class="lede">ประกอบภาพ (ชื่อไฟล์ = เวลาที่ภาพขึ้น) + เสียงพากย์ เป็น MP4 1080p ไม่ใส่เพลง</p>
+    <p class="hint" id="renderSettingsHint"></p>
+    <div class="run">
+      <button class="primary" id="startRender">▶ สร้างวิดีโอ</button>
+      <button class="stop" id="stopRender" disabled>■ หยุด</button>
+    </div>
+    <button class="ghost wide" id="retimeAudio" style="margin-top:8px" title="ตัดความเงียบหัวท้ายของทุกประโยค ย้ายเวลาภาพตาม แล้วตัดต่อใหม่ — ไม่สร้างเสียง/ภาพใหม่">⏱ ปรับช่วงเงียบของคลิปนี้ แล้วตัดต่อใหม่</button>
+    <div class="status" id="renderStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <details id="renderLogBox" hidden><summary>รายละเอียด</summary><pre id="renderLog"></pre></details>
+  </section>
+
+  <section id="nextSection" hidden>
+    <h2>เครื่องมือเพิ่มเติม</h2>
+    <p class="lede">เปิดโปรแกรมในเครื่องแบบเต็มหน้า (ใส่เพลงพื้นหลัง ดูภาพทุกช็อต)</p>
+    <button class="ghost wide" id="openLocal">เปิดโปรแกรมในเครื่อง</button>
+    <div class="status" id="localStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+  </section>
+</main>
+
+<!-- เลื่อนลงจนมองไม่เห็นสถานะทีมงาน → แถบเล็กติดขอบบน กดแล้วกลับไปดูเต็ม -->
+<button type="button" class="agentSticky" id="agentSticky" hidden aria-controls="studioHero">
+  <span class="stickyDots" id="agentStickyDots" aria-hidden="true"></span>
+  <span class="stickyText" id="agentStickyText">ใครทำอะไรอยู่</span>
+  <span class="stickyGo" aria-hidden="true">ดูสถานะ ↑</span>
+</button>
+
+<div id="appView" hidden>
+  <div class="bar"><button class="ghost" id="backFromApp">← กลับ</button><span class="field">โปรแกรมในเครื่อง</span></div>
+  <iframe id="app" title="Cartoon Auto — โปรแกรมในเครื่อง"></iframe>
+</div>
+
+<!-- คลังวิดีโอ -->
+<div id="library" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+  <div class="bar">
+    <button class="ghost" id="closeLibrary">← กลับ</button>
+    <strong id="libraryTitle">🎬 คลังวิดีโอ</strong>
+  </div>
+  <div class="overlayBody">
+    <div class="status" id="libraryStatus" role="status" aria-live="polite"></div>
+    <ul class="shelf" id="videoList" aria-label="ชั้นวางวิดีโอ"></ul>
+  </div>
+  <!-- กดปกบนชั้น → รายละเอียดและปุ่มจัดการของเรื่องนั้น -->
+  <div id="bookSheet" class="modalBack" hidden role="dialog" aria-modal="true" aria-labelledby="bookSheetTitle">
+    <div class="modal bookSheet" id="bookSheetBody"></div>
+  </div>
+</div>
+
+<!-- ตรวจความพร้อม — เปิดเมื่ออยากรู้เท่านั้น -->
+<div id="checklist" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="checklistTitle">
+  <div class="bar">
+    <button class="ghost" id="closeChecklist">← กลับ</button>
+    <strong id="checklistTitle">🧰 ตรวจความพร้อม</strong>
+    <button class="ghost" id="recheck" style="margin-left:auto">↻ ตรวจใหม่</button>
+  </div>
+  <div class="overlayBody">
+    <div class="status" id="checklistStatus" role="status" aria-live="polite"></div>
+    <div class="summary" id="checklistSummary" hidden></div>
+    <div id="checklistBody"></div>
+  </div>
+</div>
+
+<!-- หน้าต่างสำเร็จ / ดูวิดีโอ -->
+<div id="videoModal" class="modalBack" hidden role="dialog" aria-modal="true" aria-labelledby="videoModalTitle">
+  <div class="modal">
+    <div class="successMark" id="successMark">✓</div>
+    <h2 id="videoModalTitle">สร้างวิดีโอสำเร็จ</h2>
+    <p class="lede" id="videoModalName"></p>
+    <video id="videoModalPlayer" controls preload="metadata"></video>
+    <div class="facts" id="videoModalFacts"></div>
+    <div class="viewActions">
+      <button class="ghost" id="videoModalFullscreen" type="button">⛶ ดูเต็มจอ</button>
+      <button class="ghost" id="videoModalTab" type="button">↗ เปิดในแท็บใหม่</button>
+    </div>
+    <div class="controls">
+      <button class="ghost" id="videoModalCover" hidden>🖼 ดาวน์โหลดปก</button>
+      <button class="ghost" id="videoModalReveal">📂 เปิดโฟลเดอร์</button>
+      <button class="ghost" id="videoModalLibrary">🎬 คลังวิดีโอ</button>
+      <button class="primary" id="videoModalClose">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="sidepanel.js"></script>
+</html>

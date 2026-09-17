@@ -1,0 +1,290 @@
+/* ทีมสัตว์ทะเล 3D: เฟรมภาพเคลื่อนไหวและการส่งต่องานเป็น CSS ล้วน */
+.agentBar { --agent-active: color-mix(in srgb, var(--accent) 85%, var(--ink)); padding: 9px 12px; }
+.agentBar summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; min-height: 32px; font-size: 13px; color: var(--ink); }
+.agentBar summary::-webkit-details-marker { display: none; }
+.agentBar summary::after { content: ''; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); flex: none; margin: 0 2px 4px; }
+.agentBar[open] summary::after { transform: rotate(225deg); margin-bottom: -3px; }
+.agentBar summary:hover #agentSummary { color: var(--agent-active); }
+.agentBar summary:focus-visible, .agentError:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.agentBar ::selection { background: var(--accent); color: var(--accent-ink); }
+#agentSummary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#agentDots { display: inline-flex; flex: none; gap: 3px; }
+.agent-mini { display: inline-flex; width: 22px; height: 22px; position: relative; }
+.sea-portrait { --portrait-size: 80px; --sprite-ratio: 1; position: relative; display: flex; align-items: center; justify-content: center; width: var(--portrait-size); height: var(--portrait-size); flex: none; }
+.sea-frame { display: block; width: min(100%, calc(var(--portrait-size) * var(--sprite-ratio))); aspect-ratio: var(--sprite-ratio); overflow: hidden; }
+.sea-strip { display: block; width: 400%; max-width: none; height: auto; transform: translateX(0); }
+.agent-mini .sea-portrait { --portrait-size: 22px; }
+.agent-mini .sea-wait, .agent-mini .sea-sweat, .agent-mini .sea-bubbles { display: none !important; }
+.agent-mini::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 5px; height: 5px; background: var(--muted); border-radius: 50%; outline: 1px solid var(--panel); }
+.agent-mini[data-state='working']::after { background: var(--accent); }
+.agent-mini[data-state='waiting']::after { background: var(--warn); }
+.agent-mini[data-state='idle']::after { background: var(--ok); }
+.agentScene { position: relative; isolation: isolate; margin: 8px -12px -9px; padding: 12px 0 22px; border-top: 1px solid var(--line); border-radius: 0 0 14px 14px; overflow: hidden; background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, transparent) 0 calc(100% - 22px), color-mix(in srgb, var(--panel) 65%, transparent)), url('agents/undersea-studio.png') center bottom / cover no-repeat; }
+.agents { list-style: none; margin: 0; padding: 0 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.agent { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 10px 12px 12px; font-size: 13px; }
+.agent:nth-child(odd) { border-right: 1px solid var(--line); }
+.agent:nth-child(-n+2) { border-bottom: 1px solid var(--line); padding-top: 0; }
+.agent:nth-child(n+3) { padding-bottom: 0; }
+.agent > .sea-portrait { align-self: center; margin: 0 0 7px; }
+.agent .who { font-weight: 700; color: var(--ink); line-height: 1.4; }
+.agentRole { font-size: 11px; color: var(--muted); margin: 2px 0 7px; }
+.agent .doing { color: var(--ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 38.4px; }
+.agentMeta { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; width: 100%; margin-top: 6px; line-height: 1.5; }
+.agentState, .agent .time { font-size: 11px; color: var(--muted); }
+.agentState { white-space: nowrap; }
+.agentState::before { content: ''; display: inline-block; width: 5px; height: 5px; background: currentColor; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.agent .time { font-variant-numeric: tabular-nums; margin-left: auto; }
+.agent[data-state='working'] .agentState { color: var(--agent-active); font-weight: 600; }
+.agent[data-state='waiting'] .agentState { color: var(--warn); }
+.agent[data-state='idle'] .agentState { color: color-mix(in srgb, var(--ok) 85%, var(--ink)); }
+.agent[data-state='offline'] .agentState::before { background: transparent; border: 1px solid currentColor; }
+.agentError { border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--agent-active); padding: 5px 7px; margin-top: 7px; font: inherit; font-size: 11px; min-height: 32px; text-align: left; cursor: pointer; max-width: 100%; }
+.agentError:hover { background: var(--pick); }
+.agentError:active { transform: translateY(1px); }
+.agent[data-failed='true'] .agentState { color: var(--agent-active); }
+.agentRouteCaption { font-size: 12px; font-weight: 600; color: var(--ink); margin: 0 16px 8px; overflow-wrap: anywhere; }
+.agentRoute { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0 0 12px; margin: 0 16px 14px; list-style: none; border-bottom: 1px solid var(--line); }
+.agentStage { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; color: var(--muted); }
+.agentStage .sea-portrait { --portrait-size: 30px; margin-bottom: 3px; }
+.agentStage .sea-wait, .agentStage .sea-bubbles { display: none; }
+.stageLabel { font-size: 10px; white-space: nowrap; }
+.agentStage[data-current='true'] { color: var(--agent-active); font-weight: 700; }
+.agentStage[data-current='true'] .sea-portrait { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border-radius: 8px; outline: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.stageLink { position: absolute; left: calc(50% + 18px); right: calc(-50% + 18px); top: 14px; height: 1px; background: var(--line); }
+.stageLink::after { content: ''; position: absolute; right: 0; top: -2px; width: 4px; height: 4px; border: solid var(--muted); border-width: 1px 1px 0 0; transform: rotate(45deg); }
+.agentStage:last-child .stageLink { display: none; }
+.handoffBubble { position: absolute; left: 0; top: -2px; width: 100%; height: 5px; opacity: 0; }
+.handoffBubble::before { content: ''; display: block; width: 5px; height: 5px; border: 1px solid var(--accent); background: var(--panel); border-radius: 50%; }
+.agentStage[data-transfer='true'] .stageLink, .agentStage[data-transfer='true'] .stageLink::after { background: var(--accent); border-color: var(--accent); }
+.agentStage[data-transfer='true'] .handoffBubble { animation: sea-handoff 1.8s ease-in-out infinite; }
+.agentStage[data-transfer='true'] .handoffBubble + .handoffBubble { animation-delay: .7s; }
+.sea-wait, .sea-sweat { display: none; position: absolute; right: 0; bottom: 0; width: 21px; height: 21px; padding: 3px; border-radius: 6px; background: var(--panel); color: var(--warn); box-shadow: 0 2px 5px color-mix(in srgb, var(--ink) 12%, transparent); }
+.sea-wait svg, .sea-sweat svg { display: block; width: 100%; height: 100%; }
+.sea-sweat { bottom: auto; top: 1px; width: 16px; height: 20px; background: transparent; color: #57b7d4; box-shadow: none; }
+.sea-bubbles { display: none; position: absolute; inset: 0; pointer-events: none; }
+.sea-bubbles i { position: absolute; right: 2px; bottom: 12px; width: 5px; height: 5px; border: 1px solid color-mix(in srgb, #57b7d4 70%, var(--muted)); border-radius: 50%; animation: sea-bubble 3.6s ease-out infinite; }
+.sea-bubbles i + i { right: auto; left: 2px; bottom: 23px; width: 3px; height: 3px; animation-delay: 1.4s; }
+[data-state='working'] > .sea-portrait .sea-strip { animation: sea-frames 1.6s steps(4, end) infinite; }
+.agent[data-state='working'] > .sea-portrait .sea-bubbles { display: block; }
+[data-state='waiting'] > .sea-portrait .sea-wait { display: block; }
+[data-state='waiting'] > .sea-portrait .sea-wait svg { animation: sea-hourglass 4s ease-in-out infinite; }
+.agent[data-state='idle'] > .sea-portrait .sea-frame { animation: sea-breathe 5s ease-in-out infinite; }
+[data-state='offline'] > .sea-portrait .sea-frame { filter: grayscale(1); opacity: .58; }
+[data-failed='true'] > .sea-portrait .sea-sweat { display: block; }
+[data-failed='true'] > .sea-portrait * { animation: none !important; }
+[data-failed='true'] > .sea-portrait .sea-wait, [data-failed='true'] > .sea-portrait .sea-bubbles { display: none; }
+/* พับแล้วหยุดแถวกาง ซ่อนแผงแล้วหยุดทุกภาพ */
+.agentBar:not([open]) .agentScene *, .agentBar[data-hidden='true'] * { animation-play-state: paused !important; }
+@keyframes sea-frames { to { transform: translateX(-100%); } }
+@keyframes sea-breathe { 50% { transform: translateY(-1.5px); } }
+@keyframes sea-hourglass { 0%, 65% { transform: rotate(0); } 85%, 100% { transform: rotate(180deg); } }
+@keyframes sea-bubble { 0% { opacity: 0; transform: translateY(0); } 20% { opacity: .8; } 100% { opacity: 0; transform: translateY(-22px); } }
+@keyframes sea-handoff { 0% { opacity: 0; transform: translateX(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .agentBar *, .agentBar *::before, .agentBar *::after { animation: none !important; transition: none !important; }
+  .agentStage[data-transfer='true'] .handoffBubble { opacity: 1; }
+  .agentStage[data-transfer='true'] .handoffBubble + .handoffBubble { display: none; }
+}
+
+/* ── สถานะทีมงานเป็นส่วนหลักของแผง: กางไว้ ตัวใหญ่ เด่นกว่ากล่องอื่น ── */
+.agentHero { position: relative; background: var(--panel); border: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: 16px; margin: 0 0 14px; padding: 12px 14px; box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 12%, transparent); }
+.agentHero > summary { flex-wrap: wrap; row-gap: 2px; min-height: 40px; }
+.agentHero .heroLabel { flex-basis: 100%; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--agent-active); }
+.agentHero #agentSummary { font-size: 16px; font-weight: 700; line-height: 1.4; }
+.agentHero[open] #agentDots { display: none; }
+.agentHero .agentScene { margin: 10px -14px -12px; }
+.agentHero .agents { padding: 0 14px; }
+.agentHero .agent > .sea-portrait { --portrait-size: 76px; }
+.agentHero .agent .who { font-size: 14px; }
+.agentHero .agent .doing { font-size: 13px; }
+.agentHero .agentStage .sea-portrait { --portrait-size: 36px; }
+.agentHero .agentRouteCaption { font-size: 13px; }
+/* แผงกว้างพอ → 4 แผนกเรียงแถวเดียว */
+@media (min-width: 440px) {
+  .agentHero .agents { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .agentHero .agent { align-items: center; text-align: center; padding: 4px 8px 0; border: 0 !important; }
+  .agentHero .agent:not(:last-child) { border-right: 1px solid var(--line) !important; }
+  .agentHero .agent .agentMeta { justify-content: center; }
+  .agentHero .agent .time { margin-left: 0; }
+  .agentHero .agent > .sea-portrait { --portrait-size: 68px; }
+}
+.agentSticky { position: fixed; top: 0; left: 0; right: 0; z-index: 15; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; border: 0; border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(6px); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 10%, transparent); }
+.agentSticky:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.agentSticky .stickyDots { display: inline-flex; gap: 3px; flex: none; }
+.agentSticky .stickyText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agentSticky .stickyGo { flex: none; font-size: 11px; font-weight: 400; color: var(--muted); }
+
+/* ── Studio hero: แบนเนอร์ภาพพื้นหลัง + ตัวละครที่กำลังทำงาน + แถวทีมงาน ── */
+.studioHero { margin: 0 0 12px; padding: 0; background: none; border: 0; border-radius: 0; }
+.heroBanner {
+  position: relative; display: flex; align-items: center; gap: 12px; min-height: 200px; padding: 10px 14px 10px 8px;
+  border-radius: 14px; border: 0; overflow: hidden; isolation: isolate; color: #f2f7fb;
+  /* ฉากสตูดิโอใต้น้ำในส่วนขยาย ทับสีมืดให้ข้อความชัดทั้งสองธีม */
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--studio-tint) 85%, transparent) 0%, rgba(6, 22, 29, .82) 38%, rgba(6, 22, 29, .72) 100%),
+    var(--world-image) center 38% / cover no-repeat,
+    linear-gradient(135deg, #0b1d31 0%, #123a55 60%, #0e2a40 100%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .2);
+}
+.studioHero[data-department='flow'] { --studio-tint: #42516b; }
+.studioHero[data-department='voice'] { --studio-tint: #135466; }
+.studioHero[data-department='edit'] { --studio-tint: #66503d; }
+/* ช่องภาพโปร่งใสแยกจากข้อความ ไม่วางกองสีทับสถานะ */
+.heroProps { position: absolute; right: 14px; bottom: 0; width: 90px; height: 120px; pointer-events: none; background: url('agents/department-props.png') 0% center / 400% auto no-repeat; transform-origin: 50% 75%; }
+.studioHero[data-department='flow'] .heroProps { background-position-x: 33.333333%; }
+.studioHero[data-department='voice'] .heroProps { background-position-x: 66.666667%; }
+.studioHero[data-department='edit'] .heroProps { background-position-x: 100%; }
+.studioHero[data-mood='working'] .heroProps { animation: studio-tools 5s ease-in-out infinite; }
+.studioHero[data-mood='idle'] .heroProps { animation: studio-tools 8s ease-in-out infinite; }
+.studioHero[data-mood='offline'] .heroProps { filter: grayscale(1); opacity: .5; }
+@keyframes studio-tools { 50% { transform: translateY(-2px) rotate(.8deg); } }
+.heroActor { flex: none; width: 156px; height: 156px; margin: 0 -10px 0 -8px; display: grid; place-items: center; }
+.heroActor .sea-portrait { --portrait-size: 156px; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .5)); }
+/* แผงแคบ: ตัวละครเล็กลงหน่อย ให้หัวข้อยังอ่านได้สองบรรทัด */
+@media (max-width: 380px) { .heroActor { width: 128px; height: 128px; } .heroActor .sea-portrait { --portrait-size: 128px; } }
+.heroActor[data-state='idle'] > .sea-portrait .sea-frame { animation: sea-breathe 5s ease-in-out infinite; }
+.heroActor[data-state='working'] > .sea-portrait .sea-bubbles { display: block; }
+.heroText { min-width: 0; flex: 1; padding-bottom: 96px; position: relative; z-index: 1; }
+.heroText p { margin: 0; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.heroStep { font-size: 11px; font-weight: 700; letter-spacing: .03em; color: #7fe3f3; margin-bottom: 2px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heroTitle { font-size: 18px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.heroSub { font-size: 12.5px; line-height: 1.5; color: #d3e3ee; margin-top: 3px !important; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.studioHero[data-mood='failed'] .heroBanner { background-color: var(--danger); }
+.studioHero[data-mood='failed'] .heroStep { color: #ffb199; }
+.studioHero[data-mood='done'] .heroStep { color: #a5efd1; }
+.studioHero[data-mood='offline'] .heroActor .sea-frame { filter: grayscale(1); opacity: .65; }
+.heroCrew { list-style: none; margin: 8px 0 0; padding: 0 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+.heroCrew button { position: relative; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.heroCrew button:hover { border-color: var(--accent); }
+.heroCrew button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.heroCrew button[aria-current='true'] { border-color: var(--accent); background: var(--pick); outline: 2px solid var(--accent); outline-offset: 1px; }
+.heroCrew .sea-portrait { --portrait-size: 36px; }
+.heroCrew .sea-wait, .heroCrew .sea-sweat, .heroCrew .sea-bubbles { display: none !important; }
+.heroCrew button::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); outline: 1.5px solid var(--panel); }
+.heroCrew button[data-state='working']::after { background: var(--accent); }
+.heroCrew button[data-state='waiting']::after { background: var(--warn); }
+.heroCrew button[data-state='idle']::after { background: var(--ok); }
+.heroCrew button[data-state='offline'] .sea-frame { filter: grayscale(1); opacity: .6; }
+.heroCrew button[data-failed='true']::after { background: var(--danger); }
+.agentDetails { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin: 0 0 12px; }
+.studioHero:is([data-hidden='true'], [data-offscreen='true']) *, .studioHero:is([data-hidden='true'], [data-offscreen='true']) *::before, .studioHero:is([data-hidden='true'], [data-offscreen='true']) *::after { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) { .studioHero *, .studioHero *::before, .studioHero *::after { animation: none !important; } }
+.agentSticky .sea-portrait { --portrait-size: 26px; }
+.agentSticky .sea-wait, .agentSticky .sea-sweat, .agentSticky .sea-bubbles { display: none !important; }
+.studioHero[data-mood='failed'] .heroBanner { cursor: pointer; }
+
+/* ── ธีมทะเล: กล่อง ปุ่ม ช่องกรอก ── */
+main > section { box-shadow: none; }
+main > section.studioHero { box-shadow: none; }
+.primary { border-radius: 12px; }
+.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+.ghost:hover:not(:disabled), .stop:hover:not(:disabled) { background: var(--pick); border-color: var(--accent); }
+.primary:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+.stop, .ghost, .danger { border-radius: 12px; }
+#autoSection { background: linear-gradient(180deg, color-mix(in srgb, var(--pick) 70%, var(--panel)) 0, var(--panel) 140px); }
+main .seg button[aria-pressed="true"], .overlay .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.overlay .bar { background: color-mix(in srgb, var(--sea-top) 60%, var(--panel)); }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ── หัวข้อพร้อมคะแนน ── */
+.topicMode { flex-wrap: wrap; width: fit-content; max-width: 100%; }
+.scoredTopics { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.scoredTopic { display: grid; grid-template-columns: 52px 1fr; gap: 2px 10px; align-items: center; width: 100%; text-align: left; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font: inherit; cursor: pointer; }
+.scoredTopic:hover { border-color: var(--accent); }
+.scoredTopic[aria-checked="true"] { border-color: var(--accent); background: var(--pick); box-shadow: inset 0 0 0 1px var(--accent); }
+.scoreBadge { grid-row: span 3; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; font-weight: 800; font-size: 18px; color: var(--accent-ink); background: conic-gradient(var(--accent) calc(var(--score) * 1%), color-mix(in srgb, var(--accent) 18%, var(--line)) 0); position: relative; }
+.scoreBadge::before { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--panel); }
+.scoreBadge span { position: relative; color: var(--ink); font-size: 16px; }
+.scoredTopic .t { font-weight: 700; font-size: 14px; line-height: 1.4; }
+.scoredTopic .sub { font-size: 11.5px; color: var(--muted); }
+.scoredTopic .why { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.scoredTopic .best { display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 99px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; }
+.scoredTopic .genreTag { display: inline-block; font-size: 10.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; }
+
+/* ── สีทั้งแผงตามแผนกที่กำลังทำงาน (html[data-dept]) — ตรวจ contrast แล้วทุกสี ≥ 5:1 ──
+   เต่า = เขียว · ปลาหมึก = ชมพูม่วง · โลมา = ฟ้า · ปู = ส้มปะการัง · ว่าง = น้ำทะเล (ค่าเริ่มต้น) */
+html[data-dept='chatgpt'] { --world-image: url('agents/ocean-chatgpt.png'); --bg: #edf3e5; --panel: #f8fcf4; --accent: #2a7336; --pick: #e3f2e1; --sea-top: #dcefd9; --hero-edge: #6fd08a; }
+html[data-dept='flow'] { --world-image: url('agents/ocean-flow.png'); --bg: #f5eaf2; --panel: #fffafd; --accent: #9a3a8c; --pick: #f6e3f2; --sea-top: #f1dcef; --hero-edge: #f19ad9; }
+html[data-dept='voice'] { --world-image: url('agents/ocean-voice.png'); --bg: #e7f1f7; --panel: #f5fbff; --accent: #1d67a8; --pick: #e0ecf8; --sea-top: #d8e8f7; --hero-edge: #78bdff; }
+html[data-dept='edit'] { --world-image: url('agents/ocean-edit.png'); --bg: #f6ebdf; --panel: #fff9f1; --accent: #b0431c; --pick: #f9e6dc; --sea-top: #f5dfd2; --hero-edge: #ff9d70; }
+@media (prefers-color-scheme: dark) {
+  html[data-dept='chatgpt'] { --bg: #0b251d; --panel: #133a2f; --accent: #7ed38c; --accent-ink: #04202c; --pick: #133a26; --sea-top: #0e3324; }
+  html[data-dept='flow'] { --bg: #201326; --panel: #30243b; --accent: #f19ad9; --accent-ink: #04202c; --pick: #3a1c38; --sea-top: #33193a; }
+  html[data-dept='voice'] { --bg: #092331; --panel: #113747; --accent: #78bdff; --accent-ink: #04202c; --pick: #12304f; --sea-top: #0f2b4a; }
+  html[data-dept='edit'] { --bg: #2e1b13; --panel: #3b2920; --accent: #ff9d70; --accent-ink: #04202c; --pick: #3b2218; --sea-top: #3a2016; }
+}
+.heroBanner { border-left-color: var(--hero-edge, #3fd0e8); }
+.heroCrew button[aria-current='true'] { border-color: var(--hero-edge, #3fd0e8); box-shadow: 0 0 0 2px color-mix(in srgb, var(--hero-edge, #3fd0e8) 40%, transparent); }
+body, main > section, .primary, .ghost, .seg button { transition: background-color .5s ease, border-color .5s ease, color .3s ease; }
+
+/* ── ปุ่มเด่นขึ้น: ทึบ มีขอบ มีเงา ไม่กลืนกับพื้นกล่อง ── */
+.primary {
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, #000);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 55%, #000), 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.ghost {
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--ink); font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: var(--accent); }
+.stop { border-width: 1.5px; background: color-mix(in srgb, var(--danger) 8%, var(--panel)); border-color: var(--danger); color: var(--danger); font-weight: 700; }
+.seg { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: var(--panel); }
+main .seg button { background: transparent; color: var(--ink); }
+main .seg button[aria-pressed="true"], .overlay .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+button:disabled, .primary:disabled { opacity: .45; box-shadow: none; filter: saturate(.4); }
+
+/* ปุ่มทำต่อ: เด่นเท่าปุ่มหลัก */
+#stopAuto.resume { flex: none; padding: 10px 16px; }
+
+/* เห็นฉากมหาสมุทรลอดกล่อง แต่คง contrast แม้ภาพข้างหลังสว่างหรือมืด */
+main > section:not(.studioHero) { background: color-mix(in srgb, var(--panel) 92%, transparent); }
+main > #autoSection { background: linear-gradient(180deg, color-mix(in srgb, var(--pick) 96%, transparent), color-mix(in srgb, var(--panel) 92%, transparent) 160px); }
+.brand-lockup { width: fit-content; max-width: 100%; padding: 6px 10px; border-radius: 12px; background: color-mix(in srgb, var(--panel) 96%, transparent); color: var(--ink); }
+
+/* ── ขั้นทำทีละขั้น: หัวกล่องเป็นแถบสีพร้อมเลขขั้น แยกกล่องออกจากกันด้วยระยะห่าง ── */
+main > section.step { padding-top: 0; margin-bottom: 22px; background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: var(--panel-shadow); }
+.step > h2 {
+  display: flex; align-items: center; gap: 10px; margin: 0 -14px 14px; padding: 11px 14px;
+  font-size: 16px; line-height: 1.35; border-radius: 13px 13px 0 0;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+.stepNo {
+  display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.step .question { font-size: 13px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+.groupDivider { display: flex; align-items: center; gap: 10px; margin: 26px 2px 14px; font-size: 13px; font-weight: 700; color: var(--ink); }
+.groupDivider::before, .groupDivider::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--ink) 30%, transparent); }
+.groupDivider span { padding: 3px 12px; border-radius: 99px; background: color-mix(in srgb, var(--panel) 96%, transparent); border: 1px solid var(--line); }
+
+/* ── ความคืบหน้า % ── */
+.progressTrack { position: relative; height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 14%, transparent); overflow: hidden; }
+.progressTrack i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--accent); transition: width .8s ease; }
+.studioHero[data-mood='working'] .progressTrack i { background-image: linear-gradient(90deg, transparent 0, rgba(255, 255, 255, .35) 50%, transparent 100%); background-size: 60px 100%; background-color: var(--hero-edge, #3fd0e8); animation: progress-shine 1.6s linear infinite; }
+.heroProgress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.heroProgress .progressTrack { flex: 1; background: rgba(255, 255, 255, .18); }
+.heroProgress .progressTrack i { background-color: var(--hero-edge, #3fd0e8); }
+.heroPct { font-size: 15px; font-weight: 800; color: #fff; min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.studioHero[data-mood='done'] .heroProgress i { background: #6fdc9a; }
+.studioHero[data-mood='failed'] .heroProgress i { background: #ff7a59; }
+.autoProgress { margin: 12px 0 6px; }
+.autoProgressHead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; font-size: 13px; color: var(--muted); }
+.autoProgressHead strong { font-size: 20px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.dept .pct { float: right; font-size: 12px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.dept .miniTrack { height: 4px; margin-top: 4px; }
+@keyframes progress-shine { from { background-position: -60px 0; } to { background-position: 260px 0; } }
+@media (prefers-reduced-motion: reduce) { .progressTrack i { animation: none !important; transition: none; } }
+
+/* ── ปุ่มหยุดของทำคลิปอัตโนมัติ: กรอบแดงฟุ้ง เห็นทันทีระหว่างทำงาน ── */
+#stopAuto.stop { --stop-red: #e5484d; min-height: 44px; border: 2px solid var(--stop-red); color: var(--stop-red); background: color-mix(in srgb, var(--stop-red) 12%, var(--panel)); font-weight: 800; }
+@media (prefers-color-scheme: dark) { #stopAuto.stop { --stop-red: #ff6b6b; } }
+#stopAuto.stop:not(:disabled) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--stop-red) 28%, transparent), 0 0 18px 2px color-mix(in srgb, var(--stop-red) 60%, transparent); animation: stop-glow 2.4s ease-in-out infinite; }
+#stopAuto.stop:hover:not(:disabled) { background: var(--stop-red); color: #fff; border-color: var(--stop-red); }
+/* ยังกดไม่ได้: คงกรอบแดงให้รู้ว่าปุ่มอยู่ตรงนี้ แต่ไม่ฟุ้ง */
+#stopAuto.stop:disabled { opacity: .6; filter: none; }
+@keyframes stop-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--stop-red) 20%, transparent), 0 0 26px 6px color-mix(in srgb, var(--stop-red) 45%, transparent); } }
+@media (prefers-reduced-motion: reduce) { #stopAuto.stop { animation: none !important; } }

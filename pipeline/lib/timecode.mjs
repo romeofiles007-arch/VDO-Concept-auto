@@ -16,8 +16,10 @@ export function mss(sec) {
 
 /** `00_00_02_5.png` — ทศนิยมเป็นหลักสิบวินาที ตามตัวอย่าง SHOT 02 ใน Blueprint 5.3 */
 export function timecodeFilename(sec, ext = 'png') {
-  const whole = Math.floor(sec)
-  const tenth = Math.round((sec - whole) * 10)
+  // ปัดเป็นหลักสิบวินาทีก่อนแยกส่วน — ไม่งั้น 27.96 จะได้ tenth = 10 กลายเป็น "00_00_27_10" ที่ขั้น render อ่านไม่ออก
+  const tenths = Math.round(sec * 10)
+  const whole = Math.floor(tenths / 10)
+  const tenth = tenths % 10
   const base = `${pad(whole / 3600)}_${pad((whole % 3600) / 60)}_${pad(whole % 60)}`
   return `${tenth ? `${base}_${tenth}` : base}.${ext}`
 }
@@ -76,7 +78,8 @@ export function buildShotSlots(timeline, { targetShotSeconds = 2.5, minShotSecon
   const merged = []
   for (const e of timeline.entries) {
     const cur = merged.at(-1)
-    if (cur && cur.end - cur.start < minShotSeconds) {
+    // ภาพค้างบนจอจนภาพถัดไปขึ้น (รวมช่วงเงียบ) → วัดจากเวลาเริ่มของประโยคถัดไป ไม่ใช่เวลาจบเสียง
+    if (cur && e.start - cur.start < minShotSeconds) {
       cur.end = e.end
       cur.texts.push(e.text)
     } else {
@@ -86,7 +89,7 @@ export function buildShotSlots(timeline, { targetShotSeconds = 2.5, minShotSecon
   // กลุ่มสุดท้ายอาจยังสั้นอยู่ เพราะไม่มีอะไรให้รวมต่อ → ยุบกลับเข้ากลุ่มก่อนหน้า
   if (merged.length > 1) {
     const last = merged.at(-1)
-    if (last.end - last.start < minShotSeconds) {
+    if (timeline.totalDuration - last.start < minShotSeconds) {
       const prev = merged[merged.length - 2]
       prev.end = last.end
       prev.texts.push(...last.texts)
@@ -96,9 +99,11 @@ export function buildShotSlots(timeline, { targetShotSeconds = 2.5, minShotSecon
 
   // 2) ซอยช่วงที่ยังยาวเกิน max ออกเป็นชิ้นเท่าๆ กันรอบ target
   const slots = []
-  for (const m of merged) {
-    const span = m.end - m.start
-    const pieces = span > maxShotSeconds ? Math.ceil(span / targetShotSeconds) : 1
+  merged.forEach((m, k) => {
+    // เวลาที่ภาพอยู่บนจอจริง = ถึงเวลาเริ่มของกลุ่มถัดไป (กลุ่มสุดท้าย = จบคลิป)
+    const span = (merged[k + 1]?.start ?? Math.max(m.end, timeline.totalDuration)) - m.start
+    let pieces = span > maxShotSeconds ? Math.ceil(span / targetShotSeconds) : 1
+    while (pieces > 1 && span / pieces < minShotSeconds) pieces-- // ห้ามซอยจนสั้นกว่า min
     const piece = span / pieces
     for (let i = 0; i < pieces; i++) {
       const start = m.start + piece * i
@@ -113,7 +118,7 @@ export function buildShotSlots(timeline, { targetShotSeconds = 2.5, minShotSecon
         paragraph: m.paragraph,
       })
     }
-  }
+  })
 
   // กันชื่อไฟล์ชนกันเมื่อสอง shot ตกวินาทีเดียวกันหลังปัดเศษ
   // ต้องขยับเป็นหลักสิบวินาทีจริง ไม่ใช่เติม suffix — เพราะขั้น render อ่านเวลาจากชื่อไฟล์กลับ

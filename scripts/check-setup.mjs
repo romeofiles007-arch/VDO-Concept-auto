@@ -73,7 +73,7 @@ check('BRIDGE_TOKEN', () => {
 check('Blueprint', () => {
   if (!existsSync(config.blueprint)) throw new Error()
   return config.blueprint
-}, `ไม่พบ ${config.blueprint} ที่ root`)
+}, `ไม่พบ ${config.blueprint}`)
 
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].length))
 console.log('\n  สถานะความพร้อม\n  ' + '─'.repeat(64))

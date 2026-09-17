@@ -1,3 +1,4 @@
+(() => {
 /**
  * เครื่องมือร่วมของ content script ทุกเว็บ
  *
@@ -91,7 +92,30 @@ async function urlToBase64(url) {
   return btoa(binary)
 }
 
-const toBridge = (type, body) => chrome.runtime.sendMessage({ type, body })
+/**
+ * ส่งข้อความถึง bridge ผ่าน service worker — ลองใหม่ถ้า worker กำลังถูกปลุก (Could not establish connection)
+ * RESULT/PARTIAL ต้องได้ ok จริง ไม่งั้นโยน error ให้ผู้เรียกรู้
+ */
+async function toBridge(type, body, { tries = 6 } = {}) {
+  let last
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await chrome.runtime.sendMessage({ type, body })
+      if (res?.ok || type === 'PROGRESS') return res
+      last = res?.error ?? 'bridge ไม่รับ'
+    } catch (err) {
+      last = String(err?.message ?? err)
+    }
+    await sleep(1500 * (i + 1))
+  }
+  throw new Error(`ส่งผลกลับโปรแกรมในเครื่องไม่สำเร็จ: ${last}`)
+}
+
+/** heartbeat ทุก 20 วิระหว่างทำงานยาว — คืนฟังก์ชันหยุด */
+function heartbeat(id) {
+  const timer = setInterval(() => toBridge('PROGRESS', { id }, { tries: 1 }).catch(() => {}), 20_000)
+  return () => clearInterval(timer)
+}
 
 /**
  * เครื่องมือ debug selector — เปิดหน้าเว็บแล้วพิมพ์ bridgeInspect() ใน console
@@ -115,4 +139,18 @@ globalThis.bridgeInspect = function bridgeInspect(site) {
   return table
 }
 
-globalThis.bridgeHelpers = { waitFor, waitStable, typeInto, pressEnter, urlToBase64, sleep, toBridge }
+/** แนบรูปเข้าช่องพิมพ์ด้วย paste event — เหมือนผู้ใช้กด Ctrl+V รูป */
+function pasteFiles(el, attachments) {
+  const dt = new DataTransfer()
+  for (const a of attachments ?? []) {
+    const bytes = Uint8Array.from(atob(a.base64), (c) => c.charCodeAt(0))
+    dt.items.add(new File([bytes], a.name, { type: a.type }))
+  }
+  if (!dt.files.length) return false
+  el.focus()
+  el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+  return true
+}
+
+globalThis.bridgeHelpers = { waitFor, waitStable, typeInto, pressEnter, urlToBase64, sleep, toBridge, heartbeat, pasteFiles }
+})()

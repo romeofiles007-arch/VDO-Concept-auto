@@ -7,3 +7,19 @@ projects/*/06_render/
 projects/_selftest/
 .env
 bridge/bridge.log
+native/host.bat
+native/com.cartoon_auto.bridge.json
+tts/voices/*/
+tts/myvoice/transliterate_user.json
+__pycache__/
+projects/_previews/
+tts/.venv-edge/
+projects/_trash/
+bridge/jobs.json
+characters/
+bridge/jobs-*.json
+
+# งานของผู้ใช้ (บท เสียงพากย์ ภาพ วิดีโอ) — ไม่ขึ้น repo สาธารณะ
+projects/*/
+projects/_autopilot_last.json
+projects/selected_topic.json

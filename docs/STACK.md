@@ -14,7 +14,7 @@
 | **A (default)** | Claude API | `claude-opus-5` เขียน script, `claude-sonnet-5` งานย่อย | เสถียร, batch ได้, ไม่พังเวลาเว็บเปลี่ยน | ~$0.3–1/คลิป |
 | B | Chrome Extension → ChatGPT web | MV3 + bridge server | ฟรี | ผิด ToS OpenAI, DOM เปลี่ยนบ่อย, ทำทีละคลิป |
 
-Input: `Cartoon_Storytelling_Blueprint.txt` (STAGE 1 → 5 หัวข้อ, STAGE 2 → script 1,800–2,500 คำ)
+Input: `extension/VDO Concept.txt` (Blueprint) (STAGE 1 → 5 หัวข้อ, STAGE 2 → script 1,800–2,500 คำ)
 Output: `projects/<slug>/01_script/script_<slug>.txt` (narration ล้วน ตามกฎ OUTPUT 2)
 
 ## ขั้นที่ 2 — TTS ไทย/อังกฤษ (local)

@@ -39,7 +39,7 @@ const result = await runJob({
   agent: 'chatgpt',
   kind: 'prompt',
   payload: {
-    prompt: shotlistPrompt(config, { title, slots, timecodeText }),
+    prompt: shotlistPrompt(config, { title, slots, timecodeText, slug }),
     newChat: true,
     outDir: shotDir,
   },

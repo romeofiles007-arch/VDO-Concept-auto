@@ -33,7 +33,8 @@ export async function requireBridge() {
  * ส่งงานให้ extension แล้วรอจนเสร็จ
  * @param {{agent:'chatgpt'|'flow', kind:string, payload:object, timeoutMs?:number, onProgress?:(p)=>void}} job
  */
-export async function runJob({ agent, kind, payload, timeoutMs = 20 * 60_000, onProgress }) {
+export async function runJob({ agent, kind, payload, timeoutMs = 20 * 60_000, onProgress, label }) {
+  if (label) payload = { ...payload, label }
   const enq = await fetch(`${BASE}/enqueue`, {
     method: 'POST',
     headers: headers(),

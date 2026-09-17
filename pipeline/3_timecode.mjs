@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { buildTimeline, buildShotSlots, toBlueprintText, toSegmentText, toSrt, hhmmss } from './lib/timecode.mjs'
 import { probeDuration } from './lib/ffmpeg.mjs'
+import { readAsrTimeline } from './lib/asr.mjs'
 
 const slug = process.argv[2]
 if (!slug) {
@@ -21,16 +22,22 @@ if (!slug) {
 
 const config = loadConfig()
 const audioDir = projectDir(slug, 'audio')
-for (const f of ['segments.json', 'durations.json']) {
-  if (!existsSync(join(audioDir, f))) {
-    console.error(`ไม่พบ ${f} — รันขั้นที่ 2 (TTS) ก่อน`)
-    process.exit(1)
+// เสียงที่นำเข้าจากที่อื่น → ใช้เวลาจากการถอดเสียง (import_audio.mjs) แทนความยาวไฟล์ TTS
+const asr = readAsrTimeline(slug)
+if (!asr) {
+  for (const f of ['segments.json', 'durations.json']) {
+    if (!existsSync(join(audioDir, f))) {
+      console.error(`ไม่พบ ${f} — รันขั้นที่ 2 (TTS) หรือนำเข้าไฟล์เสียงก่อน`)
+      process.exit(1)
+    }
   }
 }
-
-const segments = JSON.parse(readFileSync(join(audioDir, 'segments.json'), 'utf8'))
-const durations = JSON.parse(readFileSync(join(audioDir, 'durations.json'), 'utf8'))
-const timeline = buildTimeline(segments, durations, config.tts)
+const timeline = asr ?? buildTimeline(
+  JSON.parse(readFileSync(join(audioDir, 'segments.json'), 'utf8')),
+  JSON.parse(readFileSync(join(audioDir, 'durations.json'), 'utf8')),
+  config.tts,
+)
+if (asr) console.log('ใช้เวลาจากการถอดเสียงไฟล์ที่นำเข้า')
 
 const tcDir = projectDir(slug, 'timecode')
 writeFileSync(join(tcDir, 'timecode.json'), JSON.stringify(timeline, null, 2))

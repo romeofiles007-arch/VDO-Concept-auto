@@ -5,17 +5,19 @@
  *   node pipeline/1_script.mjs topics            → ขอ 5 หัวข้อ viral
  *   node pipeline/1_script.mjs script 3          → เขียนสคริปต์จากหัวข้อข้อ 3
  *   node pipeline/1_script.mjs script "หัวข้อเอง"  → เขียนสคริปต์จากหัวข้อที่พิมพ์เอง
+ *   node pipeline/1_script.mjs script            → ใช้หัวข้อที่เลือกไว้ในหน้า UI
  */
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadConfig, projectDir, slugify, ROOT } from './lib/config.mjs'
+import { loadConfig, ROOT } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
-import { topicsPrompt, scriptPrompt, cleanScript, parseTopics } from './lib/prompts.mjs'
-import { estimateMinutes } from './lib/segment.mjs'
+import { topicsPrompt, scriptPrompt, parseTopics } from './lib/prompts.mjs'
+import { saveScript } from './lib/stage2.mjs'
 
 const [command, ...rawArgs] = process.argv.slice(2)
 const config = loadConfig()
 const TOPICS_FILE = join(ROOT, 'projects', 'topics.json')
+const SELECTED_FILE = join(ROOT, 'projects', 'selected_topic.json')
 
 // --lang th|en       ภาษาของ narration (ตัวที่จะเอาไปพากย์)
 // --title-lang th|en ภาษาของชื่อเรื่อง — แยกกันได้ เช่นชื่ออังกฤษ narration ไทย
@@ -71,9 +73,11 @@ if (command === 'topics') {
   for (const t of topics) console.log(`  ${t.n}. ${t.title}`)
   console.log(`\nเลือกแล้วรัน: node pipeline/1_script.mjs script <เลข>`)
 } else if (command === 'script') {
-  const arg = args.join(' ').trim()
+  let arg = args.join(' ').trim()
+  // ไม่ระบุ → ใช้หัวข้อที่คลิกเลือกไว้ในหน้า UI
+  if (!arg && existsSync(SELECTED_FILE)) arg = JSON.parse(readFileSync(SELECTED_FILE, 'utf8')).title
   if (!arg) {
-    console.error('ต้องระบุเลขหัวข้อหรือชื่อหัวข้อ')
+    console.error('ต้องระบุเลขหัวข้อหรือชื่อหัวข้อ — หรือเลือกหัวข้อในหน้า UI ก่อน')
     process.exit(1)
   }
 
@@ -95,24 +99,10 @@ if (command === 'topics') {
   console.log(`หัวข้อ: ${title}`)
   console.log(`narration: ${LANG_NAME[config.script.language]} · ${config.script.targetMinutes} นาที`)
   const raw = await ask(scriptPrompt(config, title), 'STAGE 2')
-  const script = cleanScript(raw)
-
-  const slug = slugify(title)
-  const file = join(projectDir(slug, 'script'), `script_${slug}.txt`)
-  writeFileSync(file, script, 'utf8')
-  writeFileSync(join(projectDir(slug, 'script'), 'title.txt'), title, 'utf8')
-  // ขั้นถัดไปต้องรู้ว่าสคริปต์เป็นภาษาอะไร เพื่อเลือก TTS engine ให้ถูก
-  writeFileSync(
-    join(projectDir(slug, 'script'), 'meta.json'),
-    JSON.stringify({ title, slug, language: config.script.language, titleLanguage: config.script.titleLanguage, targetMinutes: config.script.targetMinutes }, null, 2),
-  )
-
-  const minutes = estimateMinutes(script, config.script.wordsPerMinute)
+  const { slug, file, minutes, target, offTarget } = saveScript(config, title, raw)
   console.log(`\n${file}`)
-  console.log(`ประมาณ ${minutes.toFixed(1)} นาที (เป้า ${config.script.targetMinutes})`)
-  if (Math.abs(minutes - config.script.targetMinutes) > config.script.targetMinutes * 0.25) {
-    console.warn('เตือน: ห่างจากเป้าเกิน 25% — สั่งใหม่หรือแก้ไฟล์เองก่อนไปขั้นที่ 2')
-  }
+  console.log(`ประมาณ ${minutes.toFixed(1)} นาที (เป้า ${target})`)
+  if (offTarget) console.warn('เตือน: ห่างจากเป้าเกิน 25% — สั่งใหม่หรือแก้ไฟล์เองก่อนไปขั้นที่ 2')
   console.log(`ขั้นต่อไป: node pipeline/2_tts.mjs ${slug}`)
 } else {
   console.error(`ใช้: node pipeline/1_script.mjs topics | script <เลข|ชื่อหัวข้อ>

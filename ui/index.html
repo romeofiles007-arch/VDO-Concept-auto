@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cartoon Auto</title>
+<link rel="icon" href="/assets/cartoon-auto.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/assets/icons.css" />
+<style>
+  :root {
+    --bg: #f6f4ef; --panel: #fffdf8; --ink: #1d1b18; --muted: #6f6a61; --line: #e3ded3;
+    --accent: #d9481c; --accent-ink: #fff; --ok: #2f7d4f; --warn: #a05a00; --pick: #fff1e8; --code: #efebe2;
+    font-family: "Noto Sans Thai", "Leelawadee UI", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16150f; --panel: #1f1d17; --ink: #efeae0; --muted: #a39d91; --line: #34312a; --accent: #ff6a3d; --accent-ink: #16150f; --pick: #2c2119; --ok: #5fbf85; --warn: #e0a24a; --code: #2a2821; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-size: 16px; line-height: 1.55; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; margin-bottom: 20px; }
+  .brand { font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
+  .brand small { display: block; font-weight: 500; font-size: 14px; color: var(--muted); max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 99px; background: var(--panel); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+  .on .dot { background: var(--ok); }
+
+  .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 780px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .layout > * { min-width: 0; }
+
+  nav ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; position: sticky; top: 16px; }
+  @media (max-width: 780px) { nav ol { position: static; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); } }
+  .stepbtn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+  .stepbtn:hover { background: var(--panel); }
+  .stepbtn[aria-current="step"] { background: var(--panel); border-color: var(--line); font-weight: 600; }
+  .badge { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); color: var(--muted); }
+  .done .badge { background: var(--ok); color: #fff; }
+  .stale .badge { background: var(--warn); color: #fff; }
+  .running .badge { background: var(--accent); color: #fff; }
+
+  /* แผงข้างของ Chrome แคบ — เมนูขั้นเป็นแถวเลื่อนแนวนอน ประหยัดความสูง */
+  @media (max-width: 520px) {
+    .wrap { padding: 14px 12px 60px; }
+    header { margin-bottom: 12px; }
+    .layout { gap: 14px; }
+    nav ol { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; scrollbar-width: thin; }
+    nav li { flex: none; }
+    .stepbtn { padding: 6px 10px 6px 6px; font-size: 13px; gap: 6px; border-color: var(--line); background: var(--panel); white-space: nowrap; }
+    .badge { width: 22px; height: 22px; font-size: 11px; }
+    h1 { font-size: 21px; }
+  }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px; }
+  @media (max-width: 520px) { .panel { padding: 20px 16px; } }
+  h1 { font-size: 26px; line-height: 1.25; margin: 0 0 4px; }
+  .lede { margin: 0 0 20px; color: var(--muted); }
+  h3 { font-size: 15px; margin: 22px 0 8px; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; background: var(--bg); color: var(--muted); padding: 10px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .field { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+  .field input[type=number] { width: 72px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; }
+  textarea { width: 100%; min-height: 70px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; resize: vertical; }
+  .primary { border: 0; background: var(--accent); color: var(--accent-ink); padding: 11px 20px; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+  .ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 10px 14px; border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  label.ghost { display: inline-block; }
+  label.ghost input { display: none; }
+
+  .status { font-size: 14px; color: var(--muted); min-height: 22px; margin-bottom: 10px; }
+  .status.err { color: var(--accent); }
+  .status.ok { color: var(--ok); }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  .need { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+  .need li { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+  .need .mark { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; margin-top: 2px; background: var(--line); color: var(--muted); }
+  .need .yes .mark { background: var(--ok); color: #fff; }
+  .need .no .mark { background: var(--warn); color: #fff; }
+  .need small { display: block; color: var(--muted); font-size: 13px; }
+  .need .act { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  .note { font-size: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 0 0 18px; }
+  .note ol, .note ul { margin: 6px 0 0; padding-left: 20px; }
+  .warnbox { font-size: 14px; color: var(--warn); margin: 0 0 12px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+
+  .log { background: #15140f; color: #e8e3d8; font: 13px/1.5 ui-monospace, Consolas, monospace; border-radius: 10px; padding: 12px 14px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 16px; }
+  details { margin: 0 0 14px; font-size: 14px; }
+  summary { cursor: pointer; color: var(--muted); }
+  pre.box { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); padding: 12px 14px; border-radius: 10px; max-height: 320px; overflow: auto; font-size: 14px; margin: 8px 0 0; }
+
+  .list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .topic { display: flex; gap: 14px; align-items: flex-start; width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font: inherit; color: inherit; cursor: pointer; }
+  .topic:hover { border-color: var(--muted); }
+  .topic[aria-checked="true"] { border-color: var(--accent); background: var(--pick); box-shadow: inset 0 0 0 1px var(--accent); }
+  .num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--line); }
+  .topic[aria-checked="true"] .num { background: var(--accent); color: var(--accent-ink); }
+  .title { font-size: 17px; font-weight: 600; padding-top: 2px; }
+  .question { font-weight: 600; margin: 0 0 10px; }
+
+  .facts { display: flex; gap: 8px 22px; flex-wrap: wrap; font-size: 14px; margin: 0 0 12px; }
+  .facts b { font-size: 18px; }
+  .script { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; max-height: 440px; overflow: auto; line-height: 1.8; margin: 0; }
+  audio, video { width: 100%; margin: 4px 0 12px; border-radius: 10px; }
+  video { background: #000; }
+
+  .shots { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; max-height: 460px; overflow: auto; }
+  .shots li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .shots .fn { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--accent); }
+  .shots .missing { color: var(--warn); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 0; }
+  .grid figure { margin: 0; }
+  .grid img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; background: var(--bg); }
+  .grid figcaption { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); margin-top: 3px; }
+  .next { margin-top: 18px; display: flex; justify-content: flex-end; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand-lockup"><img class="brand-icon" src="/assets/cartoon-auto.svg" alt="" width="42" height="42" /><div class="brand">Cartoon Auto<small id="projTitle">ยังไม่ได้เลือกหัวข้อ</small></div></div>
+    <div class="pills">
+      <span class="pill" id="pillChatgpt"><span class="dot"></span>ChatGPT</span>
+      <span class="pill" id="pillFlow"><span class="dot"></span>Google Flow</span>
+    </div>
+  </header>
+
+  <div class="help note" id="extHelp" hidden>
+    <b>extension ยังไม่ต่อ</b> — กดไอคอน Cartoon Auto ที่แถบบนของ Chrome เพื่อเปิดแผงข้าง (ต่อให้อัตโนมัติ)
+    ถ้ายังไม่ขึ้นจุดเขียว ให้รีโหลด extension ที่ <code>chrome://extensions</code>
+  </div>
+
+  <div class="layout">
+    <nav aria-label="ขั้นตอน"><ol id="nav"></ol></nav>
+
+    <main>
+      <!-- 1 หัวข้อ -->
+      <section class="panel" data-step="topic">
+        <h1>1 · เลือกหัวข้อ</h1>
+        <p class="lede">ส่ง Blueprint ให้ ChatGPT คิดหัวข้อ viral 5 ข้อ (STAGE 1) แล้วคลิกเลือก</p>
+        <div class="controls">
+          <div class="seg" role="group" aria-label="ภาษาชื่อหัวข้อ" id="titleLang">
+            <button type="button" data-value="en">ชื่ออังกฤษ</button>
+            <button type="button" data-value="th">ชื่อไทย</button>
+          </div>
+          <button class="primary" id="askTopics" data-needs-chatgpt>หาหัวข้อใหม่</button>
+          <button class="ghost" id="cancelTopics" hidden>ยกเลิก</button>
+        </div>
+        <div class="status" id="topicsStatus" role="status" aria-live="polite"></div>
+        <details id="topicsRawBox" hidden><summary>คำตอบดิบจาก ChatGPT</summary><pre class="box" id="topicsRaw"></pre></details>
+        <p class="question" id="question" hidden>เลือกหัวข้อที่อยากพัฒนา? ตอบเป็นเลข (1–5)</p>
+        <ul class="list" id="topicList" role="radiogroup" aria-label="หัวข้อ"></ul>
+        <div class="next"><button class="primary" data-goto="script" id="toScript" hidden>ไปเขียนบทพากย์ →</button></div>
+      </section>
+
+      <!-- 2 บทพากย์ -->
+      <section class="panel" data-step="script" hidden>
+        <h1>2 · เขียนบทพากย์</h1>
+        <p class="lede" id="scriptTopic"></p>
+        <div class="note">
+          ChatGPT เขียนตาม SCRIPT RULES และ OUTPUT 2 ใน Blueprint: narration ล้วน · บุรุษที่ 2 · เปิดด้วย hook ·
+          อ้างงานวิจัยจริง ≥ 3 จุด · 1 บรรทัด = 1 ช่วงลมหายใจ · 150 คำ × นาที
+        </div>
+        <div class="controls">
+          <div class="seg" role="group" aria-label="ภาษาพากย์" id="voLang">
+            <button type="button" data-value="th">พากย์ไทย</button>
+            <button type="button" data-value="en">พากย์อังกฤษ</button>
+          </div>
+          <label class="field">ยาว <input type="number" id="minutes" min="1" max="60" step="1" /> นาที</label>
+          <button class="primary" id="askScript" data-needs-chatgpt>เขียนบทพากย์</button>
+          <button class="ghost" id="cancelScript" hidden>ยกเลิก</button>
+        </div>
+        <div class="status" id="scriptStatus" role="status" aria-live="polite"></div>
+        <details id="scriptRawBox" hidden><summary>คำตอบดิบจาก ChatGPT</summary><pre class="box" id="scriptRaw"></pre></details>
+        <div id="scriptResult" hidden>
+          <div class="facts">
+            <span>ประมาณ <b id="estMinutes"></b> นาที</span><span>เป้า <b id="targetMinutes"></b> นาที</span>
+          </div>
+          <p class="warnbox" id="offTarget" hidden>ความยาวห่างจากเป้าเกิน 25% — ลองกดเขียนใหม่ หรือแก้ไฟล์เองก่อนทำเสียง</p>
+          <pre class="script" id="scriptText"></pre>
+          <details><summary>ที่อยู่ไฟล์</summary><pre class="box" id="scriptFile"></pre></details>
+          <div class="next"><button class="primary" data-goto="tts">ไปทำเสียงพากย์ →</button></div>
+        </div>
+      </section>
+
+      <!-- 3 เสียงพากย์ -->
+      <section class="panel" data-step="tts" hidden>
+        <h1>3 · เสียงพากย์</h1>
+        <p class="lede">สังเคราะห์เสียงในเครื่องด้วยการ์ดจอ (โคลนจากเสียงต้นแบบ) ทีละประโยค — ความยาวแต่ละประโยคจะกลายเป็น timecode</p>
+        <ul class="need">
+          <li id="needFfmpeg"><span class="mark"></span><div>ffmpeg<small>ใช้รวมไฟล์เสียงและตัดต่อ</small></div></li>
+          <li id="needPython"><span class="mark"></span><div>Python 3.11
+            <small>ลงจาก <code>python.org/downloads/release/python-3119</code> (ติ๊ก "Add to PATH" และ "py launcher")</small></div></li>
+          <li id="needVenv"><span class="mark"></span><div>ระบบเสียง (TTS)
+            <small>ดาวน์โหลดประมาณ 3 GB ใช้เวลา 10–30 นาที ทำครั้งเดียว</small>
+            <div class="act"><button class="ghost" id="setupTts">ติดตั้งระบบเสียง</button></div></div></li>
+          <li id="needVoice"><span class="mark"></span><div>เสียงต้นแบบ
+            <small>ไฟล์ .wav 10–15 วินาที พูดชัด ไม่มีเพลง + พิมพ์ข้อความที่พูดในไฟล์นั้น</small>
+            <div class="act">
+              <label class="ghost">เลือกไฟล์ .wav<input type="file" id="voiceFile" accept=".wav,audio/wav" /></label>
+              <span class="status" id="voiceStatus" style="margin:0"></span>
+            </div>
+            <div class="act" style="display:block">
+              <textarea id="refText" placeholder="ข้อความที่พูดในเสียงต้นแบบ (พิมพ์ให้ตรงทุกคำ)"></textarea>
+              <button class="ghost" id="saveRefText" style="margin-top:6px">บันทึกข้อความ</button>
+            </div></div></li>
+        </ul>
+        <div class="controls"><button class="primary" data-run="tts">ทำเสียงพากย์</button><button class="ghost" data-stop hidden>หยุด</button></div>
+        <div class="status" data-run-status="tts"></div>
+        <pre class="log" data-log="tts" hidden></pre>
+        <div id="ttsResult" hidden>
+          <p class="warnbox" id="ttsStale" hidden>บทพากย์ถูกแก้หลังทำเสียง — ควรทำเสียงใหม่</p>
+          <audio controls id="voiceover" preload="metadata"></audio>
+          <div class="next"><button class="primary" data-goto="timecode">ไปทำ Timecode →</button></div>
+        </div>
+      </section>
+
+      <!-- 4 Timecode -->
+      <section class="panel" data-step="timecode" hidden>
+        <h1>4 · Timecode</h1>
+        <p class="lede">วัดความยาวจริงของทุกประโยค แล้วแบ่งช่องภาพให้เปลี่ยนทุก 2–3 วินาที ตรงช่วงหยุดหายใจ</p>
+        <div class="controls"><button class="primary" data-run="timecode">ทำ Timecode</button><button class="ghost" data-stop hidden>หยุด</button></div>
+        <div class="status" data-run-status="timecode"></div>
+        <pre class="log" data-log="timecode" hidden></pre>
+        <div id="tcResult" hidden>
+          <p class="warnbox" id="tcStale" hidden>เสียงพากย์ถูกทำใหม่หลังทำ Timecode — ควรทำใหม่</p>
+          <div class="facts"><span><b id="tcSeconds"></b> ความยาว</span><span><b id="tcSegments"></b> ประโยค</span><span><b id="tcShots"></b> ภาพ</span></div>
+          <details><summary>ดู Timecode Map</summary><pre class="box" id="tcText"></pre></details>
+          <div class="next"><button class="primary" data-goto="shotlist">ไปเขียน Shot List →</button></div>
+        </div>
+      </section>
+
+      <!-- 5 Shot List -->
+      <section class="panel" data-step="shotlist" hidden>
+        <h1>5 · Shot List</h1>
+        <p class="lede">ChatGPT สร้าง OUTPUT 5 — Style Bible, Character Bible (@TAG) และ prompt ภาพทุกช่อง ชื่อไฟล์ตรงกับ timecode</p>
+        <div class="controls"><button class="primary" data-run="shotlist" data-needs-chatgpt>เขียน Shot List</button><button class="ghost" data-stop hidden>หยุด</button></div>
+        <div class="status" data-run-status="shotlist"></div>
+        <pre class="log" data-log="shotlist" hidden></pre>
+        <div id="slResult" hidden>
+          <p class="warnbox" id="slStale" hidden>Timecode ถูกทำใหม่หลังเขียน Shot List — ควรเขียนใหม่</p>
+          <div class="facts"><span><b id="slWith"></b> / <span id="slTotal"></span> ช็อตมี prompt</span></div>
+          <p class="warnbox" id="slMissing" hidden>บางช็อตไม่มี prompt — กดเขียนใหม่ หรือช็อตนั้นจะไม่มีภาพ</p>
+          <details><summary>ดู prompt ทุกช็อต</summary><ul class="shots" id="slList"></ul></details>
+          <div class="next"><button class="primary" data-goto="images">ไปสร้างภาพ →</button></div>
+        </div>
+      </section>
+
+      <!-- 6 ภาพ -->
+      <section class="panel" data-step="images" hidden>
+        <h1>6 · สร้างภาพ</h1>
+        <p class="lede">ส่ง Shot List ทั้งชุดให้ Google Flow Agent สร้างรวดเดียว (ตัวละครไม่หลุด) แล้วเซฟภาพเป็นชื่อ timecode</p>
+        <div class="note">ก่อนกด: ล็อกอิน <code>flow.google.com</code> ใน Chrome ไว้ · ระบบจะเปิด project ใหม่ เปิด Agent ตั้ง Nano Banana 2 Lite · x1 (ตรวจว่า 0 credits) แล้วให้ Agent ตั้งชื่อภาพเป็น timecode · ห้ามปิดแท็บระหว่างสร้าง · ปกติ 10–40 นาที</div>
+        <div class="controls"><button class="primary" data-run="images" data-needs-flow>สร้างภาพ</button><button class="ghost" data-stop hidden>หยุด</button></div>
+        <div class="status" data-run-status="images"></div>
+        <pre class="log" data-log="images" hidden></pre>
+        <div id="imgResult" hidden>
+          <p class="warnbox" id="imgStale" hidden>Shot List ถูกเขียนใหม่หลังสร้างภาพ — ควรสร้างใหม่</p>
+          <div class="facts"><span><b id="imgCount"></b> ภาพ</span><span id="imgExpectedWrap">จาก <b id="imgExpected"></b> ช็อต</span></div>
+          <div class="grid" id="imgGrid"></div>
+          <div class="next"><button class="primary" data-goto="render">ไปตัดต่อวิดีโอ →</button></div>
+        </div>
+      </section>
+
+      <!-- 7 วิดีโอ -->
+      <section class="panel" data-step="render" hidden>
+        <h1>7 · ตัดต่อวิดีโอ</h1>
+        <p class="lede">ประกอบภาพตาม timecode + เสียงพากย์ + เพลงประกอบ เป็นไฟล์ MP4</p>
+        <h3>เพลงประกอบ (ไม่ใส่ก็ได้)</h3>
+        <div class="controls">
+          <label class="ghost">เลือกไฟล์เพลง<input type="file" id="bgmFile" accept=".mp3,.wav,.m4a,.aac,.ogg,audio/*" /></label>
+          <span id="bgmName" class="field"></span>
+          <button class="ghost" id="bgmRemove" hidden>เอาเพลงออก</button>
+        </div>
+        <div class="controls"><button class="primary" data-run="render">ตัดต่อวิดีโอ</button><button class="ghost" data-stop hidden>หยุด</button></div>
+        <div class="status" data-run-status="render"></div>
+        <pre class="log" data-log="render" hidden></pre>
+        <div id="renderResult" hidden>
+          <p class="warnbox" id="renderStale" hidden>ภาพหรือเสียงถูกทำใหม่หลังตัดต่อ — ควรตัดต่อใหม่</p>
+          <video controls id="video" preload="metadata"></video>
+          <div class="facts"><span>ขนาด <b id="videoMb"></b> MB</span></div>
+          <details><summary>ที่อยู่ไฟล์</summary><pre class="box" id="videoPath"></pre></details>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+  import { initIcons, icon } from '/assets/icons.js'
+  initIcons()
+  const TOKEN = '__BRIDGE_TOKEN__'
+  const $ = (id) => document.getElementById(id)
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
+
+  const STEPS = [
+    { id: 'topic', label: 'หัวข้อ' },
+    { id: 'script', label: 'บทพากย์' },
+    { id: 'tts', label: 'เสียงพากย์' },
+    { id: 'timecode', label: 'Timecode' },
+    { id: 'shotlist', label: 'Shot List' },
+    { id: 'images', label: 'สร้างภาพ' },
+    { id: 'render', label: 'ตัดต่อวิดีโอ' },
+  ]
+  let S = null // state ล่าสุดจาก bridge
+  let current = null
+  let localJob = false // งาน ChatGPT ของขั้น 1-2 ที่หน้านี้กำลังรอ
+
+  async function api(path, body) {
+    const res = await fetch(path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'content-type': 'application/json', 'x-bridge-token': TOKEN },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    return data
+  }
+
+  function setStatus(el, text, kind = '') {
+    el = typeof el === 'string' ? $(el) : el
+    el.className = 'status' + (kind === 'error' ? ' err' : kind === 'ok' ? ' ok' : '')
+    el.textContent = ''
+    if (kind === 'busy') el.append(Object.assign(document.createElement('span'), { className: 'spinner' }))
+    el.append(text)
+  }
+
+  // ไฟล์สื่อต้องแนบ token เอง — <img>/<audio>/<video> ส่ง header ไม่ได้
+  const media = (url) => `${url}&k=${TOKEN}`
+
+  const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
+
+  // ── สถานะของแต่ละขั้น ──
+  function stepState(id) {
+    const p = S?.project
+    const r = S?.run
+    if (r?.status === 'running' && r.step === id) return 'running'
+    const out = { topic: S?.selected && S.topics.some(isPicked), script: p?.script, tts: p?.audio, timecode: p?.timecode, shotlist: p?.shotlist, images: p?.images, render: p?.render }[id]
+    if (!out) return ''
+    return out.stale ? 'stale' : 'done'
+  }
+
+  function busy() {
+    return localJob || S?.busyJob || S?.run?.status === 'running'
+  }
+
+  function renderNav() {
+    const nav = $('nav')
+    // สร้างใหม่เฉพาะตอนสถานะเปลี่ยน — ไม่งั้นปุ่มที่กำลัง focus ด้วยคีย์บอร์ดหายทุกรอบ poll
+    const key = JSON.stringify([current, STEPS.map((s) => stepState(s.id))])
+    if (nav.dataset.key === key) return
+    nav.dataset.key = key
+    nav.textContent = ''
+    STEPS.forEach((s, i) => {
+      const st = stepState(s.id)
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'stepbtn ' + st
+      if (current === s.id) btn.setAttribute('aria-current', 'step')
+      const names = { topic: 'idea', script: 'script', tts: 'mic', timecode: 'clock', shotlist: 'shots', images: 'image', render: 'video' }
+      btn.append(icon(names[s.id]), Object.assign(document.createElement('span'), { className: 'step-label', textContent: s.label }))
+      const statusLabels = { done: 'เสร็จแล้ว', stale: 'ต้องทำใหม่', running: 'กำลังทำ' }
+      btn.setAttribute('aria-label', `ขั้นที่ ${i + 1} ${s.label}${statusLabels[st] ? ' · ' + statusLabels[st] : ''}`)
+      if (st) btn.append(icon(st === 'done' ? 'check' : st === 'stale' ? 'warning' : 'clock', `step-state ${st}`))
+      else btn.append(Object.assign(document.createElement('span'), { className: 'step-number', textContent: i + 1 }))
+      btn.addEventListener('click', () => show(s.id))
+      if (current === s.id) requestAnimationFrame(() => btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
+      const li = document.createElement('li')
+      li.append(btn)
+      nav.append(li)
+    })
+  }
+
+  function show(id) {
+    current = id
+    for (const sec of $$('section[data-step]')) sec.hidden = sec.dataset.step !== id
+    renderNav()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  $$('[data-goto]').forEach((b) => b.addEventListener('click', () => show(b.dataset.goto)))
+
+  // ── ปุ่มเลือกหนึ่งตัว ──
+  const segValue = (id) => $(id).querySelector('[aria-pressed="true"]')?.dataset.value
+  function setSeg(id, value) {
+    for (const b of $$('button', $(id))) b.setAttribute('aria-pressed', String(b.dataset.value === value))
+  }
+  for (const id of ['titleLang', 'voLang']) {
+    $(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button')
+      if (b) setSeg(id, b.dataset.value)
+    })
+  }
+
+  // ── วาดทั้งหน้าจาก state ──
+  function render() {
+    if (!S) return
+    const p = S.project
+    $('pillChatgpt').classList.toggle('on', S.chatgptConnected)
+    $('pillFlow').classList.toggle('on', S.flowConnected)
+    $('extHelp').hidden = S.chatgptConnected || S.flowConnected
+    $('projTitle').textContent = S.selected ? `${S.selected.n}. ${S.selected.title}` : 'ยังไม่ได้เลือกหัวข้อ'
+
+    renderTopics()
+    renderScript(p?.script)
+
+    // เสียงพากย์
+    const su = S.setup
+    const need = (id, ok) => { $(id).className = ok ? 'yes' : 'no'; $(id).querySelector('.mark').textContent = ok ? '✓' : '!' }
+    need('needFfmpeg', su.ffmpeg)
+    need('needPython', su.python)
+    need('needVenv', su.venv)
+    need('needVoice', su.voice && !!su.referenceText)
+    $('setupTts').hidden = su.venv
+    if (document.activeElement !== $('refText')) $('refText').value = su.referenceText
+    $('ttsResult').hidden = !p?.audio
+    if (p?.audio) {
+      $('ttsStale').hidden = !p.audio.stale
+      if ($('voiceover').dataset.src !== p.audio.url) { $('voiceover').src = media(p.audio.url); $('voiceover').dataset.src = p.audio.url }
+    }
+
+    // Timecode
+    $('tcResult').hidden = !p?.timecode
+    if (p?.timecode) {
+      $('tcStale').hidden = !p.timecode.stale
+      $('tcSeconds').textContent = fmtTime(p.timecode.seconds)
+      $('tcSegments').textContent = p.timecode.segments
+      $('tcShots').textContent = p.timecode.shots
+      $('tcText').textContent = p.timecode.text
+    }
+
+    // Shot list
+    $('slResult').hidden = !p?.shotlist
+    if (p?.shotlist) {
+      const sl = p.shotlist
+      $('slStale').hidden = !sl.stale
+      $('slWith').textContent = sl.withPrompt
+      $('slTotal').textContent = sl.total
+      $('slMissing').hidden = sl.withPrompt === sl.total
+      const list = $('slList')
+      if (list.dataset.key !== JSON.stringify([sl.total, sl.withPrompt, p.slug])) {
+        list.dataset.key = JSON.stringify([sl.total, sl.withPrompt, p.slug])
+        list.textContent = ''
+        for (const s of sl.shots) {
+          const li = document.createElement('li')
+          li.append(Object.assign(document.createElement('div'), { className: 'fn', textContent: s.filename }))
+          li.append(Object.assign(document.createElement('div'), { className: s.prompt ? '' : 'missing', textContent: s.prompt ?? 'ไม่มี prompt' }))
+          list.append(li)
+        }
+      }
+    }
+
+    // ภาพ
+    $('imgResult').hidden = !p?.images
+    if (p?.images) {
+      const im = p.images
+      $('imgStale').hidden = !im.stale
+      $('imgCount').textContent = im.count
+      $('imgExpectedWrap').hidden = im.expected == null
+      $('imgExpected').textContent = im.expected
+      const grid = $('imgGrid')
+      const key = im.list.map((i) => i.url).join('|')
+      if (grid.dataset.key !== key) {
+        grid.dataset.key = key
+        grid.textContent = ''
+        for (const i of im.list) {
+          const fig = document.createElement('figure')
+          fig.append(Object.assign(document.createElement('img'), { src: media(i.url), alt: i.name, loading: 'lazy' }))
+          fig.append(Object.assign(document.createElement('figcaption'), { textContent: i.name }))
+          grid.append(fig)
+        }
+      }
+    }
+
+    // วิดีโอ
+    $('bgmName').textContent = p?.bgm ? `ใช้ ${p.bgm.name}` : 'ไม่มีเพลงประกอบ'
+    $('bgmRemove').hidden = !p?.bgm
+    $('renderResult').hidden = !p?.render
+    if (p?.render) {
+      $('renderStale').hidden = !p.render.stale
+      if ($('video').dataset.src !== p.render.url) { $('video').src = media(p.render.url); $('video').dataset.src = p.render.url }
+      $('videoMb').textContent = p.render.mb
+      $('videoPath').textContent = `projects\\${p.slug}\\06_render\\${p.slug}.mp4`
+    }
+
+    renderRun()
+    renderLocks()
+    renderNav()
+  }
+
+  /** log และสถานะของขั้นที่รันด้วยสคริปต์ */
+  let lastRunStatus = null
+  function renderRun() {
+    const r = S.run
+    for (const el of $$('[data-log]')) {
+      const mine = r && r.step === el.dataset.log
+      el.hidden = !mine
+      if (!mine) continue
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+      el.textContent = r.lines.join('\n')
+      if (atBottom || r.status === 'running') el.scrollTop = el.scrollHeight
+    }
+    for (const el of $$('[data-run-status]')) {
+      const mine = r && r.step === el.dataset.runStatus
+      if (!mine) { setStatus(el, ''); continue }
+      const secs = Math.round(((r.endedAt ?? Date.now()) - r.startedAt) / 1000)
+      if (r.status === 'running') setStatus(el, `กำลัง${r.label}… (${fmtTime(secs)})`, 'busy')
+      else if (r.status === 'done') setStatus(el, `${r.label}เสร็จแล้ว (${fmtTime(secs)})`, 'ok')
+      else if (r.status === 'stopped') setStatus(el, 'หยุดแล้ว')
+      else setStatus(el, `${r.label}ไม่สำเร็จ — ดูข้อความด้านล่าง`, 'error')
+    }
+    // ติดตั้งระบบเสียงแสดงผลในขั้นเสียงพากย์
+    if (r?.step === 'setupTts') {
+      const el = $$('[data-log="tts"]')[0]
+      el.hidden = false
+      el.textContent = r.lines.join('\n')
+      el.scrollTop = el.scrollHeight
+      const st = $$('[data-run-status="tts"]')[0]
+      if (r.status === 'running') setStatus(st, 'กำลังติดตั้งระบบเสียง… (ห้ามปิดหน้าต่าง Cartoon Bridge)', 'busy')
+      else if (r.status === 'done') setStatus(st, 'ติดตั้งระบบเสียงเสร็จแล้ว', 'ok')
+      else setStatus(st, 'ติดตั้งไม่สำเร็จ — ดูข้อความด้านล่าง', 'error')
+    }
+    // งานเพิ่งจบ → เช็คเครื่องใหม่ทันที (เช่นเพิ่งติดตั้ง venv)
+    const key = r ? `${r.step}:${r.status}` : null
+    if (lastRunStatus && key !== lastRunStatus && r?.status !== 'running') refresh({ fresh: true })
+    lastRunStatus = key
+  }
+
+  /** ปุ่มไหนกดได้ — ต้องมีผลของขั้นก่อนหน้า และไม่มีงานอื่นวิ่งอยู่ */
+  function renderLocks() {
+    const p = S.project
+    const su = S.setup
+    const running = S.run?.status === 'running'
+    const ready = {
+      tts: !!p?.script && su.ffmpeg && su.venv && su.voice && !!su.referenceText,
+      timecode: !!p?.audio,
+      shotlist: !!p?.timecode && S.chatgptConnected,
+      images: !!p?.shotlist && S.flowConnected,
+      render: !!p?.images && !!p?.audio && su.ffmpeg,
+    }
+    for (const b of $$('[data-run]')) b.disabled = busy() || !ready[b.dataset.run]
+    for (const b of $$('[data-stop]')) b.hidden = !(running && b.closest('section').dataset.step === (S.run.step === 'setupTts' ? 'tts' : S.run.step))
+    $('setupTts').disabled = busy() || !su.python
+    $('askTopics').disabled = busy() || !S.chatgptConnected
+    $('askScript').disabled = busy() || !S.chatgptConnected || !S.selected
+    for (const el of $$('#titleLang button, #voLang button, #minutes, .topic, #voiceFile, #bgmFile, #bgmRemove, #saveRefText')) el.disabled = busy()
+
+    // บอกเหตุผลที่กดไม่ได้ ใต้ปุ่ม
+    const why = {
+      tts: !p?.script ? 'ต้องเขียนบทพากย์ก่อน' : !(su.ffmpeg && su.venv && su.voice && su.referenceText) ? 'ทำรายการด้านบนให้ครบก่อน' : '',
+      timecode: !p?.audio ? 'ต้องทำเสียงพากย์ก่อน' : '',
+      shotlist: !p?.timecode ? 'ต้องทำ Timecode ก่อน' : !S.chatgptConnected ? 'extension ยังไม่ต่อกับ ChatGPT' : '',
+      images: !p?.shotlist ? 'ต้องเขียน Shot List ก่อน' : !S.flowConnected ? 'extension ยังไม่ต่อ — เปิดรับงานใน popup ของ extension' : '',
+      render: !p?.images ? 'ต้องสร้างภาพก่อน' : !su.ffmpeg ? 'ยังไม่มี ffmpeg' : '',
+    }
+    for (const el of $$('[data-run-status]')) {
+      const step = el.dataset.runStatus
+      if (S.run?.step === step || (step === 'tts' && S.run?.step === 'setupTts')) continue
+      if (why[step]) setStatus(el, why[step])
+    }
+  }
+
+  // ── 1 หัวข้อ ──
+  const isPicked = (t) => S?.selected?.n === t.n && S?.selected?.title === t.title
+
+  function renderTopics() {
+    const list = $('topicList')
+    const key = JSON.stringify([S.topics, S.selected?.n, S.selected?.title])
+    if (list.dataset.key !== key) {
+      list.dataset.key = key
+      list.textContent = ''
+      for (const t of S.topics) {
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'topic'
+        btn.setAttribute('role', 'radio')
+        btn.setAttribute('aria-checked', String(isPicked(t)))
+        btn.append(
+          Object.assign(document.createElement('span'), { className: 'num', textContent: t.n }),
+          Object.assign(document.createElement('span'), { className: 'title', textContent: t.title }),
+        )
+        btn.addEventListener('click', () => selectTopic(t.n))
+        const li = document.createElement('li')
+        li.append(btn)
+        list.append(li)
+      }
+    }
+    $('question').hidden = !S.topics.length
+    $('toScript').hidden = !(S.selected && S.topics.some(isPicked))
+  }
+
+  async function selectTopic(n) {
+    try {
+      S = await api('/api/select', { n })
+      render()
+    } catch (err) {
+      setStatus('topicsStatus', 'บันทึกไม่สำเร็จ: ' + err.message, 'error')
+    }
+  }
+
+  /** งาน ChatGPT ของขั้น 1-2: ส่งงานแล้ว poll จนจบ */
+  async function runChat({ start, poll, body, statusId, rawId, cancelId, runningText }) {
+    $(rawId + 'Box').hidden = true
+    localJob = true
+    $(cancelId).hidden = false
+    renderLocks()
+    const started = Date.now()
+    try {
+      const { id } = await api(start, body)
+      $(cancelId).onclick = async () => {
+        const { status } = await api('/api/cancel', { id }).catch(() => ({}))
+        if (status !== 'error') setStatus(statusId, 'ChatGPT รับงานไปแล้ว ยกเลิกจากตรงนี้ไม่ได้ — รอให้ตอบจบ', 'busy')
+      }
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const job = await api(`${poll}?id=${encodeURIComponent(id)}`)
+        const secs = Math.round((Date.now() - started) / 1000)
+        if (job.status === 'queued') setStatus(statusId, `รอ extension มารับงาน… (${fmtTime(secs)})`, 'busy')
+        else if (job.status === 'running') setStatus(statusId, `${runningText}… (${fmtTime(secs)})`, 'busy')
+        else if (job.status === 'done') return job
+        else {
+          setStatus(statusId, job.error || 'ล้มเหลว', 'error')
+          if (job.raw) { $(rawId).textContent = job.raw; $(rawId + 'Box').hidden = false }
+          return null
+        }
+      }
+    } catch (err) {
+      setStatus(statusId, 'ส่งงานไม่ได้: ' + err.message, 'error')
+      return null
+    } finally {
+      localJob = false
+      $(cancelId).hidden = true
+      await refresh()
+    }
+  }
+
+  $('askTopics').addEventListener('click', async () => {
+    const job = await runChat({
+      start: '/api/topics', poll: '/api/topics', body: { titleLanguage: segValue('titleLang') },
+      statusId: 'topicsStatus', rawId: 'topicsRaw', cancelId: 'cancelTopics', runningText: 'ChatGPT กำลังคิดหัวข้อ',
+    })
+    if (job) setStatus('topicsStatus', `ได้ ${job.topics.length} หัวข้อ — คลิกเลือก`, 'ok')
+  })
+
+  // ── 2 บทพากย์ ──
+  function renderScript(s) {
+    $('scriptTopic').textContent = S.selected ? `หัวข้อ: ${S.selected.title}` : 'เลือกหัวข้อในขั้นที่ 1 ก่อน'
+    $('scriptResult').hidden = !s
+    $('askScript').textContent = s ? 'เขียนบทใหม่' : 'เขียนบทพากย์'
+    if (!s) return
+    $('estMinutes').textContent = s.minutes.toFixed(1)
+    $('targetMinutes').textContent = s.target
+    $('offTarget').hidden = !s.offTarget
+    $('scriptText').textContent = s.script
+    $('scriptFile').textContent = s.file
+  }
+
+  $('askScript').addEventListener('click', async () => {
+    const job = await runChat({
+      start: '/api/script', poll: '/api/script',
+      body: { language: segValue('voLang'), minutes: Number($('minutes').value) },
+      statusId: 'scriptStatus', rawId: 'scriptRaw', cancelId: 'cancelScript', runningText: 'ChatGPT กำลังเขียนบทพากย์ (บทยาว ใช้เวลาหลายนาที)',
+    })
+    if (job) setStatus('scriptStatus', 'เขียนบทเสร็จ บันทึกไฟล์แล้ว', 'ok')
+  })
+
+  // ── ขั้นที่รันสคริปต์ ──
+  $$('[data-run]').forEach((b) => b.addEventListener('click', () => startRun(b.dataset.run)))
+  $('setupTts').addEventListener('click', () => startRun('setupTts'))
+  $$('[data-stop]').forEach((b) => b.addEventListener('click', async () => {
+    await api('/api/run/stop', {}).catch(() => {})
+    refresh()
+  }))
+
+  async function startRun(step) {
+    try {
+      await api('/api/run', { step })
+    } catch (err) {
+      const st = $$(`[data-run-status="${step === 'setupTts' ? 'tts' : step}"]`)[0]
+      setStatus(st, 'เริ่มไม่ได้: ' + err.message, 'error')
+    }
+    refresh()
+  }
+
+  // ── ไฟล์ที่อัปโหลด ──
+  const toBase64 = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result).split(',')[1])
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+
+  $('voiceFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setStatus('voiceStatus', 'กำลังบันทึก…', 'busy')
+    try {
+      await api('/api/voice', { base64: await toBase64(file) })
+      setStatus('voiceStatus', `บันทึก ${file.name} แล้ว`, 'ok')
+    } catch (err) {
+      setStatus('voiceStatus', err.message, 'error')
+    }
+    e.target.value = ''
+    refresh()
+  })
+  $('saveRefText').addEventListener('click', async () => {
+    try {
+      await api('/api/voice', { referenceText: $('refText').value })
+      setStatus('voiceStatus', 'บันทึกข้อความแล้ว', 'ok')
+    } catch (err) {
+      setStatus('voiceStatus', err.message, 'error')
+    }
+    $('refText').blur()
+    refresh()
+  })
+
+  $('bgmFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    $('bgmName').textContent = 'กำลังบันทึก…'
+    try {
+      await api('/api/bgm', { base64: await toBase64(file), name: file.name })
+    } catch (err) {
+      $('bgmName').textContent = err.message
+    }
+    e.target.value = ''
+    refresh()
+  })
+  $('bgmRemove').addEventListener('click', async () => {
+    await api('/api/bgm', { remove: true }).catch(() => {})
+    refresh()
+  })
+
+  // ── poll ──
+  async function refresh({ fresh = false } = {}) {
+    try {
+      S = await api('/api/state' + (fresh ? '?fresh=1' : ''))
+      render()
+    } catch {
+      $('pillChatgpt').classList.remove('on')
+      $('pillFlow').classList.remove('on')
+      $('projTitle').textContent = 'ติดต่อโปรแกรมไม่ได้ — ดับเบิลคลิก เปิดโปรแกรม.bat ใหม่'
+    }
+  }
+
+  async function loop() {
+    await refresh()
+    setTimeout(loop, busy() ? 2000 : 8000)
+  }
+
+  ;(async () => {
+    await refresh()
+    if (!S) return setTimeout(loop, 3000)
+    setSeg('titleLang', S.titleLanguage)
+    setSeg('voLang', S.language)
+    $('minutes').value = S.targetMinutes
+    if (S.topics.length && !S.selected) setStatus('topicsStatus', 'หัวข้อจากรอบที่แล้ว — เลือกได้เลย หรือกดหาใหม่')
+    // เปิดที่ขั้นแรกที่ยังไม่เสร็จ หรือขั้นที่กำลังรันอยู่
+    const runningStep = S.run?.status === 'running' ? (S.run.step === 'setupTts' ? 'tts' : S.run.step) : null
+    show(runningStep ?? STEPS.find((s) => stepState(s.id) !== 'done')?.id ?? 'render')
+    setTimeout(loop, busy() ? 2000 : 8000)
+  })()
+</script>
+</body>
+</html>

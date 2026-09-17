@@ -7,7 +7,7 @@
  * ⚠️ ยังไม่ได้ verify กับหน้าจริง — ต้องเปิดหน้าเว็บแล้วรัน `bridgeInspect()`
  *    ใน DevTools console เพื่อดูว่าตัวไหนใช้ได้ (ดู content-common.js)
  */
-const SELECTORS = {
+var SELECTORS = {
   chatgpt: {
     url: 'https://chatgpt.com/',
     newChat: ['a[data-testid="create-new-chat-button"]', 'button[aria-label*="New chat" i]', 'a[href="/"]'],
@@ -21,7 +21,7 @@ const SELECTORS = {
   },
 
   flow: {
-    url: 'https://labs.google/fx/tools/flow',
+    url: 'https://flow.google.com/',
     newProject: ['button[aria-label*="New project" i]', 'button:has-text("New project")'],
     modeSelector: ['button[aria-label*="mode" i]', '[data-testid="mode-selector"]'],
     agentModeOption: ['[role="option"][data-value*="agent" i]', 'li:has-text("Agent")'],

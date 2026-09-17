@@ -1,53 +1,90 @@
 {
-  "blueprint": "Cartoon_Storytelling_Blueprint.txt",
-
+  "blueprint": "extension/VDO Concept.txt",
   "script": {
     "provider": "chatgpt-extension",
-    "_options": ["chatgpt-extension", "claude-api"],
+    "_options": [
+      "chatgpt-extension"
+    ],
     "model": "claude-opus-5",
-    "targetMinutes": 10,
+    "targetMinutes": 1,
     "wordsPerMinute": 150,
     "language": "th",
     "_language": "ภาษาของ narration ที่จะเอาไปพากย์ — th | en",
     "titleLanguage": "en",
-    "_titleLanguage": "ภาษาของชื่อเรื่องและหัวข้อ — th | en (แยกจาก narration ได้)"
+    "_titleLanguage": "ภาษาของชื่อเรื่องและหัวข้อ — th | en (แยกจาก narration ได้)",
+    "genre": "mix",
+    "_genre": "แนวของหัวข้อที่ให้ AI เสนอ — mix (สุ่มคนละแนวทุกหัวข้อ) หรือชื่อแนวจาก GENRES ใน extension/prompts.js"
   },
-
   "tts": {
-    "engine": "f5-tts-thai",
-    "_options": ["f5-tts-thai", "chatterbox", "elevenlabs"],
+    "engine": "edge",
+    "_options": [
+      "my-voice",
+      "edge",
+      "gemini",
+      "f5-tts-thai",
+      "chatterbox"
+    ],
+    "myVoice": {
+      "_note": "เสียงของเราเอง — เลือกจากคลังเสียงใน tts/voices/<id>/voice.json (เทรนเพิ่มได้จากแผงข้าง)",
+      "python": "tts/.venv/Scripts/python.exe",
+      "voice": "my_voice",
+      "emotion": "calm",
+      "_emotion": "calm | excited | serious | soft",
+      "speed": 1,
+      "nfeStep": 32,
+      "cfgStrength": 2,
+      "transliterate": true,
+      "trainEpochs": 40
+    },
     "pythonVenv": "tts/.venv",
     "referenceVoice": "tts/voices/narrator_ref.wav",
     "referenceText": "",
     "sampleRate": 24000,
-    "segmentGapMs": 180,
-    "paragraphGapMs": 500
+    "segmentGapMs": 120,
+    "paragraphGapMs": 300,
+    "edge": {
+      "_note": "Microsoft Edge TTS — ฟรี ออนไลน์ ไม่ต้องใช้ key",
+      "voice": "th-TH-NiwatNeural"
+    },
+    "gemini": {
+      "_note": "Gemini TTS — ต้องมี GEMINI_API_KEY ใน .env (รุ่น flash มีโควตาฟรีรายวัน)",
+      "model": "gemini-3.1-flash-tts-preview",
+      "voice": "Gacrux"
+    },
+    "trimSilence": true,
+    "pause": "tight"
   },
-
   "timecode": {
     "targetShotSeconds": 2.5,
-    "minShotSeconds": 2.0,
-    "maxShotSeconds": 3.0,
+    "minShotSeconds": 2,
+    "maxShotSeconds": 3,
     "silenceThresholdSeconds": 0.25
   },
-
   "images": {
     "provider": "google-flow",
-    "_options": ["google-flow", "gemini-api"],
+    "_options": [
+      "google-flow"
+    ],
     "model": "gemini-3-pro-image-preview",
     "aspectRatio": "16:9",
     "resolution": "1920x1080",
     "concurrency": 4,
     "characterLockRefs": true
   },
-
   "render": {
     "resolution": "1920x1080",
     "fps": 30,
     "voiceoverDb": 0,
     "bgmDb": -21,
     "bgmFile": "",
-    "burnSubtitles": false,
-    "crossfadeOnChapter": true
+    "crossfadeOnChapter": true,
+    "motion": "gentle",
+    "_motion": "off (ภาพนิ่ง) | gentle (ซูม/เลื่อนกล้องเบาๆ ทุกช็อต) | lively (ขยับมาก) — ไม่ใช้ AI ทำในเครื่องด้วย ffmpeg",
+    "orientation": "portrait",
+    "_orientation": "landscape (16:9, 1920x1080) | portrait (9:16, 1080x1920) — ภาพใน Flow ใช้ตามนี้ ตอนตัดต่ออ่านจากภาพจริง",
+    "subtitles": {
+      "style": "yellow"
+    },
+    "_subtitles": "style: off | black (พื้นดำ ตัวขาว) | white (พื้นขาว ตัวดำ) | yellow (พื้นเหลือง ตัวดำ)"
   }
 }

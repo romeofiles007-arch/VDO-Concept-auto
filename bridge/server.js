@@ -12,10 +12,11 @@
  */
 import { createServer } from 'node:http'
 import { randomUUID, randomBytes } from 'node:crypto'
-import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { writeFileSync, mkdirSync, appendFileSync, readFileSync, existsSync, renameSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 import { loadEnv } from '../pipeline/lib/env.mjs'
+import { createUi } from './ui.js'
 
 loadEnv()
 
@@ -25,9 +26,54 @@ if (!process.env.BRIDGE_TOKEN) {
   console.warn(`BRIDGE_TOKEN ยังไม่ได้ตั้งใน .env — ใช้ค่าชั่วคราวรอบนี้:\n  BRIDGE_TOKEN=${TOKEN}\nใส่ลง .env แล้วกรอกใน popup ของ extension ให้ตรงกัน`)
 }
 
-/** @type {Map<string, {id, agent, kind, payload, status, result, error, progress, createdAt}>} */
+/** @type {Map<string, {id, agent, kind, payload, status, result, error, progress, createdAt, touchedAt, attempts}>} */
 const jobs = new Map()
+
+// ── คิวงานเก็บลงดิสก์ — ปิดเปิด bridge ระหว่างที่ ChatGPT/Flow ยังทำงานอยู่ ผลลัพธ์ต้องไม่หาย ──
+// bridge ทดสอบ (port อื่น) ใช้ไฟล์คิวแยก ไม่ปนกับตัวจริง
+const JOBS_FILE = join(ROOT, 'bridge', PORT === 8765 ? 'jobs.json' : `jobs-${PORT}.json`)
+const KEEP_MS = 24 * 60 * 60_000
+let saveTimer = null
+function saveJobs() {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    const keep = [...jobs.values()].filter((j) => Date.now() - j.createdAt < KEEP_MS)
+    try {
+      writeFileSync(JOBS_FILE + '.tmp', JSON.stringify(keep))
+      renameSync(JOBS_FILE + '.tmp', JOBS_FILE)
+    } catch {}
+  }, 300)
+}
+try {
+  if (existsSync(JOBS_FILE)) for (const j of JSON.parse(readFileSync(JOBS_FILE, 'utf8'))) jobs.set(j.id, { ...j, touchedAt: Date.now() })
+} catch {}
+
+/**
+ * งานที่ส่งให้ extension แล้วเงียบหาย (แท็บถูกปิด, service worker ตาย, Chrome ปิด)
+ * content script ส่ง heartbeat ทุก 20 วิระหว่างทำงาน → เงียบเกินนี้ถือว่าหลุด ส่งงานให้ใหม่
+ */
+const STALE_MS = { chatgpt: 3 * 60_000, flow: 6 * 60_000 }
+const MAX_ATTEMPTS = 3
+setInterval(() => {
+  for (const job of jobs.values()) {
+    if (job.status !== 'running') continue
+    if (Date.now() - (job.touchedAt ?? job.createdAt) < (STALE_MS[job.agent] ?? 5 * 60_000)) continue
+    job.attempts = (job.attempts ?? 1) + 1
+    if (job.attempts > MAX_ATTEMPTS) {
+      job.status = 'error'
+      job.error = `${job.agent} เงียบหายระหว่างทำงาน ${MAX_ATTEMPTS} ครั้ง — แท็บถูกปิดหรือหน้าเว็บค้าง`
+      log(`ล้มเหลว ${job.kind} (${job.id.slice(0, 8)}): ${job.error}`)
+    } else {
+      job.status = 'queued'
+      job.touchedAt = Date.now()
+      log(`งาน ${job.kind} (${job.id.slice(0, 8)}) เงียบเกินเวลา → ส่งใหม่ครั้งที่ ${job.attempts}`)
+      dispatch(job)
+    }
+    saveJobs()
+  }
+}, 20_000).unref()
 const waiting = [] // ผู้รอ job ฝั่ง extension: {agent, respond, timer}
+const lastPoll = {} // agent → เวลาที่ extension มาถามหางานล่าสุด ใช้บอกหน้า UI ว่าต่ออยู่ไหม
 
 const LOG = join(ROOT, 'bridge', 'bridge.log')
 const log = (...parts) => {
@@ -45,6 +91,7 @@ function json(res, code, body) {
     'access-control-allow-origin': '*',
     'access-control-allow-headers': 'content-type, x-bridge-token',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-private-network': 'true',
   })
   res.end(data)
 }
@@ -92,9 +139,22 @@ function dispatch(job) {
   const [w] = waiting.splice(idx, 1)
   clearTimeout(w.timer)
   job.status = 'running'
+  job.touchedAt = Date.now()
+  saveJobs()
   json(w.respond, 200, { id: job.id, kind: job.kind, payload: job.payload })
   log(`ส่งงาน ${job.kind} (${job.id.slice(0, 8)}) ให้ ${job.agent}`)
 }
+
+function enqueue(agent, kind, payload) {
+  const job = { id: randomUUID(), agent, kind, payload, status: 'queued', progress: null, createdAt: Date.now(), touchedAt: Date.now(), attempts: 1 }
+  jobs.set(job.id, job)
+  saveJobs()
+  log(`รับงาน ${kind} → ${agent} (${job.id.slice(0, 8)})`)
+  dispatch(job)
+  return job
+}
+
+const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log })
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
@@ -102,6 +162,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (path === '/health') return json(res, 200, { ok: true, jobs: jobs.size, waiting: waiting.length })
+  if (await ui.handle(req, res, url)) return
 
   // ทุก endpoint ที่เหลือต้องมี token — กันหน้าเว็บอื่นยิงเข้า localhost มาสั่งงาน
   const token = req.headers['x-bridge-token'] || url.searchParams.get('token')
@@ -112,11 +173,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/enqueue') {
       const { agent, kind, payload } = await readBody(req)
       if (!agent || !kind) return json(res, 400, { error: 'ต้องมี agent และ kind' })
-      const job = { id: randomUUID(), agent, kind, payload, status: 'queued', progress: null, createdAt: Date.now() }
-      jobs.set(job.id, job)
-      log(`รับงาน ${kind} → ${agent} (${job.id.slice(0, 8)})`)
-      dispatch(job)
-      return json(res, 200, { id: job.id })
+      return json(res, 200, { id: enqueue(agent, kind, payload).id })
     }
 
     if (req.method === 'GET' && path === '/status') {
@@ -133,9 +190,12 @@ const server = createServer(async (req, res) => {
     // ── ฝั่ง extension ───────────────────────────────────────────
     if (req.method === 'GET' && path === '/job') {
       const agent = url.searchParams.get('agent')
+      lastPoll[agent] = Date.now()
       const pending = [...jobs.values()].find((j) => j.agent === agent && j.status === 'queued')
       if (pending) {
         pending.status = 'running'
+        pending.touchedAt = Date.now()
+        saveJobs()
         log(`ส่งงาน ${pending.kind} (${pending.id.slice(0, 8)}) ให้ ${agent}`)
         return json(res, 200, { id: pending.id, kind: pending.kind, payload: pending.payload })
       }
@@ -163,8 +223,13 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/progress') {
       const { id, progress } = await readBody(req)
       const job = jobs.get(id)
-      if (job) job.progress = progress
-      return json(res, 200, { ok: true })
+      if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      // heartbeat ไม่มี progress — แค่บอกว่ายังทำงานอยู่
+      if (progress) job.progress = progress
+      job.touchedAt = Date.now()
+      // bridge เพิ่งเปิดใหม่หรือเคยถูกตัดสินว่าหลุด แต่ extension ยังทำงานนี้อยู่จริง → กลับเป็น running
+      if (job.status === 'queued') job.status = 'running'
+      return json(res, 200, { ok: true, status: job.status })
     }
 
     // เขียนไฟล์เป็นชุดๆ ระหว่างทาง โดยไม่ปิดงาน — สำหรับภาพ 30-40 ใบที่ส่งทีเดียวไม่ไหว
@@ -179,6 +244,8 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { error: err.message })
       }
       job.written = [...(job.written ?? []), ...written]
+      job.touchedAt = Date.now()
+      saveJobs()
       job.progress = { done: job.written.length, total: job.payload?.shots?.length ?? null }
       log(`รับไฟล์ระหว่างทาง ${written.length} ไฟล์ (${job.id.slice(0, 8)}) รวม ${job.written.length}`)
       return json(res, 200, { ok: true, total: job.written.length })
@@ -188,6 +255,8 @@ const server = createServer(async (req, res) => {
       const { id, text, files, meta } = await readBody(req)
       const job = jobs.get(id)
       if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      // ส่งซ้ำ (retry จาก extension) → ตอบว่าได้แล้ว ไม่เขียนทับผลเดิม
+      if (job.status === 'done') return json(res, 200, { ok: true, written: job.result?.files?.length ?? 0, duplicate: true })
 
       let written
       try {
@@ -198,6 +267,7 @@ const server = createServer(async (req, res) => {
 
       job.status = 'done'
       job.result = { text: text ?? null, files: written, meta: meta ?? null }
+      saveJobs()
       log(`เสร็จ ${job.kind} (${job.id.slice(0, 8)}) · ${written.length ? `${written.length} ไฟล์` : `${(text ?? '').length} ตัวอักษร`}`)
       return json(res, 200, { ok: true, written: written.length })
     }
@@ -205,9 +275,10 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/error') {
       const { id, message } = await readBody(req)
       const job = jobs.get(id)
-      if (job) {
+      if (job && job.status !== 'done') {
         job.status = 'error'
         job.error = message
+        saveJobs()
         log(`ล้มเหลว ${job.kind} (${job.id.slice(0, 8)}): ${message}`)
       }
       return json(res, 200, { ok: true })
@@ -221,5 +292,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   log(`bridge ทำงานที่ http://127.0.0.1:${PORT} (เปิดเฉพาะ localhost)`)
+  console.log(`หน้า UI: http://127.0.0.1:${PORT}/`)
   console.log('เปิดค้างไว้ระหว่างรันขั้นที่ 1 (ChatGPT) และขั้นที่ 5 (Google Flow)')
 })

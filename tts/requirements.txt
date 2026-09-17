@@ -1,11 +1,27 @@
-# ติดตั้งด้วย scripts/setup-tts.ps1 (ต้องใช้ Python 3.11)
-# PyTorch CUDA ลงแยกจาก index ของ pytorch.org — ดูใน setup-tts.ps1
+# ระบบเสียงของโปรเจกต์ — ติดตั้งด้วย scripts/setup-tts.ps1 (Python 3.10)
+# ชุดเวอร์ชันเดียวกับที่ทดสอบแล้วใน Copy My Voice บน RTX 4070 Ti SUPER
+# PyTorch CUDA ลงแยกจาก index ของ pytorch.org ใน setup-tts.ps1
 
-# ทางหลัก: F5-TTS-THAI (fine-tune ภาษาไทย)
-f5-tts @ git+https://github.com/VIZINTZOR/F5-TTS-THAI.git
+# สังเคราะห์เสียงไทย (F5-TTS-THAI) + เทรนเสียงของตัวเอง
+f5-tts==1.1.20
+f5-tts-th==1.0.9
+accelerate==1.13.0
+transformers==4.55.4
+datasets==4.8.5
+vocos==0.1.0
+torchdiffeq==0.2.5
 
-# ทางสำรอง: Chatterbox Multilingual (ปลดคอมเมนต์ถ้าจะใช้)
-# chatterbox-tts
+# เลือกคลิปต้นแบบ + แปลงคำอังกฤษเป็นคำอ่านไทย
+pythainlp==5.3.4
+g2p-en==2.1.0
+librosa==0.11.0
+soundfile==0.13.1
+numpy==1.26.4
+pydub==0.25.1
 
-soundfile
-numpy
+# ถอดเสียง (นำเข้าเสียงจากที่อื่น + เตรียมข้อมูลเทรนเสียง)
+faster-whisper==1.2.1
+ctranslate2==4.7.2
+
+# เสียงออนไลน์ฟรี
+edge-tts
