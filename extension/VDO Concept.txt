@@ -226,7 +226,7 @@ OUTPUT 4 ภาพปก              → prompt ภาพปกคลิป
 - **หัวข้อบนปกตัวใหญ่ 2–4 คำ** เป็นคำ hook ไม่ใช่ชื่อเรื่องเต็ม ภาษาเดียวกับคลิป ตัวหนาขอบดำ สีเหลือง/ขาว เน้น 1 คำด้วยสีแดง ห้ามทับหน้าตัวละคร
 - ตัวละครหลักหน้าใหญ่ใกล้กล้อง อารมณ์เกินจริง (ตกใจ/สงสัย/ลุ้น)
 - สิ่งที่เป็นหัวใจของเรื่อง 1 อย่าง ชี้ด้วยลูกศรแดงหรือวงกลมแดง
-- ฉากหลังเรียบ สีสดตัดกับตัวละคร · อ่านรู้เรื่องแม้เห็นภาพเล็กบนมือถือ
+- ฉากหลังบอกบรรยากาศของเรื่อง สีสด แต่เรียบกว่าตัวละคร ไม่รก · อ่านรู้เรื่องแม้เห็นภาพเล็กบนมือถือ
 - ชวนสงสัยแต่ตรงกับเนื้อหาจริง · สไตล์และตัวละครเดียวกับ Style Bible / Character Bible
 
 ---
@@ -255,15 +255,15 @@ ANIMALS & OBJECTS:
 - Chunky simplified cartoon shapes
 - Big, bold, flat single-color fills with thick black outlines
 
-BACKGROUNDS:
-- Flat solid color blocks only
-- White background = default
-- Green strip along bottom = ground
-- Blue sky + green ground = outdoor
-- Solid orange = sunset/fire/ancient
-- Solid blue = underwater
-- Tan = desert/cave
-- ZERO gradients · ZERO shadows · ZERO textures
+BACKGROUNDS (illustrated environments — never an empty single-color wall):
+- Every normal shot has a real, readable location drawn in the same marker-doodle style
+- 3 depth layers: foreground prop (cropped at the frame edge) · midground where characters stand · background with the setting
+- 3–6 story props that fit the narration (e.g., kitchen = fridge with magnets, hanging pans, fruit bowl, window, calendar)
+- Lighting & time of day set the mood: warm morning sun, cool blue night + lamp glow, orange sunset, neon city
+- Rich but controlled color: one dominant hue per scene + a contrasting accent; background slightly softer/lighter than characters so characters pop
+- Allowed: simple cel-shading, soft cast shadows, light hatching/dots for texture, sky gradients, window light beams
+- Outdoor = sky with clouds, distant hills/buildings, ground texture · Ancient = ruins, torches, stone · Underwater = bubbles, coral, light rays · Space = stars, planets, nebula
+- Solid bold single-color backgrounds ONLY for pattern-interrupt / reveal / punchline shots (กฎ 6)
 
 ON-SCREEN TEXT:
 - Bold hand-lettered marker font, 1–4 short words in the clip's language (English = ALL CAPS)
@@ -278,7 +278,7 @@ THOUGHT BUBBLES:
 - Classic cloud-shape
 - Short text inside in the clip's language (e.g., "HMMMM", "?", "WAIT..." / "หืมม", "?", "เดี๋ยวนะ...")
 
-COLOR PALETTE:
+COLOR PALETTE (base — add tints/shades of these for depth):
 - Orange #F5820D
 - Cobalt blue #2D5FBF
 - Grass green #3A9E3A
@@ -287,6 +287,10 @@ COLOR PALETTE:
 - Brown #8B5E3C
 - Sky blue #6EB5E8
 - Tan #C4965A
+- Teal #1FA89A
+- Purple #7B4FBF
+- Pink #F27BA8
+- Night navy #1B2A4A
 - White #FFFFFF
 
 ASPECT RATIO: 16:9 (default — use 9:16 when the system says the clip is portrait)
@@ -346,11 +350,11 @@ AGENT BRIEF
 - Aspect ratio as in the Style Bible for ALL images
 - Apply STYLE BIBLE to every single image
 
-00_00_00.png SHOT 01 | Chars: @sapiens | Env: snowy pine forest, pastel blue sky | Action: @sapiens stands center, neutral face, spear over shoulder | Frame: wide shot
+00_00_00.png SHOT 01 | Chars: @sapiens | Env: snowy pine forest at dawn, layered pine trees fading into pale blue mountains, snow-covered log in the foreground, smoke from a distant campfire, pink-orange sunrise glow | Action: @sapiens stands center, neutral face, spear over shoulder | Frame: wide shot
 
-00_00_02_5.png SHOT 02 | Chars: @sapiens | Env: same forest | Action: @sapiens looks up, 4 small suns in sky (time passing) | Frame: medium wide
+00_00_02_5.png SHOT 02 | Chars: @sapiens | Env: same forest clearing, footprints in the snow, bare branches framing the top, cold blue shadows | Action: @sapiens looks up, 4 small suns in sky (time passing) | Frame: medium wide
 
-00_00_05.png SHOT 03 | Chars: @sapiens, @Neanderthal | Env: forest edge | Action: @Neanderthal peeks from tree | Frame: medium
+00_00_05.png SHOT 03 | Chars: @sapiens, @Neanderthal | Env: dark forest edge, thick trunks with moss, ferns in the foreground, low mist between trees | Action: @Neanderthal peeks from tree | Frame: medium
 
 ... (จนครบทุก timecode)
 ```
