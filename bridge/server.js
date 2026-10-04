@@ -17,6 +17,7 @@ import { join, dirname } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 import { loadEnv } from '../pipeline/lib/env.mjs'
 import { createUi } from './ui.js'
+import { watchBridgeCode, extensionVersion } from './selfupdate.js'
 
 loadEnv()
 
@@ -52,10 +53,30 @@ try {
  * งานที่ส่งให้ extension แล้วเงียบหาย (แท็บถูกปิด, service worker ตาย, Chrome ปิด)
  * content script ส่ง heartbeat ทุก 20 วิระหว่างทำงาน → เงียบเกินนี้ถือว่าหลุด ส่งงานให้ใหม่
  */
-const STALE_MS = { chatgpt: 3 * 60_000, flow: 6 * 60_000 }
+const STALE_MS = { chatgpt: 3 * 60_000, flow: 6 * 60_000, meta: 4 * 60_000 }
 const MAX_ATTEMPTS = 3
+
+/**
+ * งานกำพร้า: pipeline ที่สั่งงานถามสถานะทุก 1.5 วิ — เงียบเกิน 90 วิ = โปรแกรมนั้นถูกปิด/กดเริ่มใหม่ไปแล้ว
+ * ปล่อยไว้จะถูกส่งซ้ำให้ extension ทำงานที่ไม่มีใครรอ แย่งแท็บ Flow กับงานใหม่ (ภาพไม่ถูกเก็บ ค้าง "0/21")
+ */
+const ORPHAN_MS = 90_000
+const isOrphan = (job) => job.watchedAt != null && Date.now() - job.watchedAt > ORPHAN_MS
+function dropOrphan(job) {
+  job.status = 'error'
+  job.error = 'โปรแกรมที่สั่งงานนี้ถูกปิดไปแล้ว — ยกเลิก'
+  job.cancelled = true
+  job.touchedAt = Date.now()
+  log(`ยกเลิกงานกำพร้า ${job.kind} (${job.id.slice(0, 8)})`)
+  saveJobs()
+}
+
 setInterval(() => {
   for (const job of jobs.values()) {
+    if ((job.status === 'running' || job.status === 'queued') && isOrphan(job)) {
+      dropOrphan(job)
+      continue
+    }
     if (job.status !== 'running') continue
     if (Date.now() - (job.touchedAt ?? job.createdAt) < (STALE_MS[job.agent] ?? 5 * 60_000)) continue
     job.attempts = (job.attempts ?? 1) + 1
@@ -76,8 +97,12 @@ const waiting = [] // ผู้รอ job ฝั่ง extension: {agent, respon
 const lastPoll = {} // agent → เวลาที่ extension มาถามหางานล่าสุด ใช้บอกหน้า UI ว่าต่ออยู่ไหม
 
 const LOG = join(ROOT, 'bridge', 'bridge.log')
+// เหตุการณ์ล่าสุดของ bridge (ส่งงานให้ ChatGPT/Flow, ยกเลิก, ส่งใหม่) — ให้หน้าต่าง log ในแผงข้างเห็นว่างานติดอยู่ตรงไหน
+const recentLog = []
 const log = (...parts) => {
   const line = `[${new Date().toISOString()}] ${parts.join(' ')}`
+  recentLog.push({ at: Date.now(), text: parts.join(' ') })
+  if (recentLog.length > 300) recentLog.splice(0, recentLog.length - 300)
   console.log(line)
   try {
     appendFileSync(LOG, line + '\n')
@@ -154,7 +179,7 @@ function enqueue(agent, kind, payload) {
   return job
 }
 
-const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log })
+const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog })
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
@@ -169,6 +194,11 @@ const server = createServer(async (req, res) => {
   if (token !== TOKEN) return json(res, 401, { error: 'token ไม่ถูกต้อง' })
 
   try {
+    // extension เทียบลายนิ้วมือไฟล์ของตัวเอง — เปลี่ยนแล้ว reload ตัวเองเมื่อไม่มีงานค้าง
+    if (req.method === 'GET' && path === '/ext-version') {
+      return json(res, 200, { version: extensionVersion(), busy: workInProgress() })
+    }
+
     // ── ฝั่ง pipeline ────────────────────────────────────────────
     if (req.method === 'POST' && path === '/enqueue') {
       const { agent, kind, payload } = await readBody(req)
@@ -179,6 +209,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/status') {
       const job = jobs.get(url.searchParams.get('id'))
       if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      job.watchedAt = Date.now() // ยังมีคนรองานนี้อยู่
       return json(res, 200, {
         status: job.status,
         progress: job.progress,
@@ -187,10 +218,26 @@ const server = createServer(async (req, res) => {
       })
     }
 
+    if (req.method === 'POST' && path === '/cancel') {
+      const { id, reason } = await readBody(req)
+      const job = jobs.get(id)
+      if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      if (job.status === 'queued' || job.status === 'running') {
+        job.status = 'error'
+        job.error = reason || 'ยกเลิกจาก pipeline'
+        job.cancelled = true
+        job.touchedAt = Date.now()
+        saveJobs()
+        log(`ยกเลิก ${job.kind} (${job.id.slice(0, 8)}): ${job.error}`)
+      }
+      return json(res, 200, { ok: true, status: job.status })
+    }
+
     // ── ฝั่ง extension ───────────────────────────────────────────
     if (req.method === 'GET' && path === '/job') {
       const agent = url.searchParams.get('agent')
       lastPoll[agent] = Date.now()
+      for (const j of jobs.values()) if (j.agent === agent && j.status === 'queued' && isOrphan(j)) dropOrphan(j)
       const pending = [...jobs.values()].find((j) => j.agent === agent && j.status === 'queued')
       if (pending) {
         pending.status = 'running'
@@ -229,7 +276,8 @@ const server = createServer(async (req, res) => {
       job.touchedAt = Date.now()
       // bridge เพิ่งเปิดใหม่หรือเคยถูกตัดสินว่าหลุด แต่ extension ยังทำงานนี้อยู่จริง → กลับเป็น running
       if (job.status === 'queued') job.status = 'running'
-      return json(res, 200, { ok: true, status: job.status })
+      // ถูกยกเลิกแล้ว (pipeline หมดเวลา/ถูกปิด) → บอก extension ให้หยุด จะได้ไม่แย่งแท็บกับงานถัดไป
+      return json(res, 200, { ok: true, status: job.status, cancelled: !!job.cancelled })
     }
 
     // เขียนไฟล์เป็นชุดๆ ระหว่างทาง โดยไม่ปิดงาน — สำหรับภาพ 30-40 ใบที่ส่งทีเดียวไม่ไหว
@@ -237,6 +285,7 @@ const server = createServer(async (req, res) => {
       const { id, files } = await readBody(req)
       const job = jobs.get(id)
       if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      if (job.cancelled) return json(res, 200, { ok: true, ignored: true, total: job.written?.length ?? 0 })
       let written
       try {
         written = writeFiles(job, files)
@@ -255,6 +304,7 @@ const server = createServer(async (req, res) => {
       const { id, text, files, meta } = await readBody(req)
       const job = jobs.get(id)
       if (!job) return json(res, 404, { error: 'ไม่พบงานนี้' })
+      if (job.cancelled) return json(res, 200, { ok: true, ignored: true, written: 0 })
       // ส่งซ้ำ (retry จาก extension) → ตอบว่าได้แล้ว ไม่เขียนทับผลเดิม
       if (job.status === 'done') return json(res, 200, { ok: true, written: job.result?.files?.length ?? 0, duplicate: true })
 
@@ -288,6 +338,22 @@ const server = createServer(async (req, res) => {
   } catch (err) {
     return json(res, 500, { error: String(err.message) })
   }
+})
+
+/** มีงานค้างอยู่ไหม: งานของ ChatGPT/Flow ในคิว หรือขั้นของ pipeline กำลังรัน */
+// นับเฉพาะงานของแท็บจริง — งานทดสอบ (agent x / cancel-test / flow-selftest) ที่ค้างไว้เคยขวางไม่ให้ bridge รีสตาร์ทรับโค้ดใหม่
+const REAL_AGENTS = new Set(['chatgpt', 'flow', 'meta'])
+const workInProgress = () => ui.busy() || [...jobs.values()].some((j) => REAL_AGENTS.has(j.agent) && (j.status === 'running' || (j.status === 'queued' && Date.now() - j.createdAt < 30 * 60_000)))
+
+// โค้ดของโปรแกรมเปลี่ยน → รีสตาร์ทตัวเองเมื่อว่าง (เฉพาะตัวจริงที่ port 8765 — ตัวทดสอบไม่ต้อง)
+if (PORT === 8765) watchBridgeCode({ busy: workInProgress, server, log })
+
+// ตอนรีสตาร์ทตัวเอง ตัวเก่าอาจยังไม่ปล่อย port — ลองใหม่ทุกครึ่งวินาทีสูงสุด 15 วิ
+let listenTries = 0
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE' && ++listenTries <= 30) return setTimeout(() => server.listen(PORT, '127.0.0.1'), 500)
+  console.error(err.message)
+  process.exit(1)
 })
 
 server.listen(PORT, '127.0.0.1', () => {

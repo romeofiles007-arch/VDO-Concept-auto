@@ -90,6 +90,20 @@ export function characterRule(c = activeCharacter()) {
   return lines.join('\n')
 }
 
+/** แบบตัวละคร: แนบรูปอ้างอิง = การ์ตูนเต็มตัว · ไม่แนบ = ตัวก้าง (stick figure) — Blueprint มีทั้ง 2 แบบ ระบบบอกว่าคลิปนี้ใช้แบบไหน */
+export function bodyStyleRule(c = activeCharacter()) {
+  return c?.images.length
+    ? '- แบบตัวละคร: FULL-BODY MODE (มีรูปตัวละครแนบ) — ตัวละครทุกตัวเป็นการ์ตูนเต็มตัว มีลำตัว แขนขาหนา มือ รองเท้า เสื้อผ้าชัด ห้ามวาดเป็นตัวก้าง (stick figure) · เขียนแบบนี้ใน Character Bible ด้วย'
+    : '- แบบตัวละคร: STICK MODE (ไม่มีรูปตัวละครแนบ) — ตัวละครทุกตัวเป็นตัวก้าง stick figure หัวกลมโต แขนขาเป็นเส้น · เขียนแบบนี้ใน Character Bible ด้วย'
+}
+
+/** บรรทัดแบบตัวละครสำหรับคำสั่ง Flow */
+export function bodyStyleFlowNote(c = activeCharacter()) {
+  return c?.images.length
+    ? 'ตัวละครทุกตัวเป็นการ์ตูนเต็มตัว (ลำตัว แขนขามีความหนา มีเสื้อผ้า) ห้ามวาดเป็นตัวก้าง'
+    : 'ตัวละครทุกตัวเป็นตัวก้าง stick figure หัวกลมโต แขนขาเป็นเส้น'
+}
+
 /** ข้อความต่อท้ายคำสั่ง Flow เมื่อแนบรูปตัวละคร */
 export function characterFlowNote(c = activeCharacter()) {
   if (!c?.images.length) return ''

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sidepanel-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/preview-agents.mjs"],
+      "port": 18768
+    }
+  ]
+}

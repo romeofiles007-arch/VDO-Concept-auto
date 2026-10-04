@@ -5,9 +5,9 @@
  * แผนกที่รู้จำนวนชิ้นงาน (เสียง n/N ประโยค · prompt n/N ช็อต · ภาพ n/N ใบ) ใช้สัดส่วนจริง
  * แผนกที่ไม่มีตัวเลข (เขียนบท · ตัดต่อ) ประมาณจากเวลาที่ผ่านไปเทียบเวลาปกติ ไม่เกิน 90%
  */
-export const WEIGHTS = { topic: 4, script: 10, voice: 14, art: 18, images: 46, edit: 8 }
-export const LABELS = { topic: 'คิดหัวข้อ', script: 'เขียนบท', voice: 'เสียงพากย์', art: 'กำกับภาพ', images: 'วาดภาพ', edit: 'ตัดต่อ' }
-const UNITS = { voice: 'ประโยค', art: 'ช็อต', images: 'ภาพ' }
+export const WEIGHTS = { topic: 4, script: 10, voice: 14, art: 18, images: 40, clips: 6, edit: 8 }
+export const LABELS = { topic: 'คิดหัวข้อ', script: 'เขียนบท', voice: 'เสียงพากย์', art: 'กำกับภาพ', images: 'วาดภาพ', clips: 'ทำแอนิเมชัน', edit: 'ตัดต่อ' }
+const UNITS = { voice: 'ประโยค', art: 'ช็อต', images: 'ภาพ', clips: 'คลิป' }
 
 /** สัดส่วนงานของแผนกเดียว 0–1 */
 export function deptFraction(d, now = Date.now()) {

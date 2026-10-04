@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Cartoon Auto Bridge",
-  "version": "0.20.0",
-  "description": "ขับ ChatGPT และ Google Flow ให้ pipeline ทำคลิปการ์ตูนอัตโนมัติ",
+  "version": "0.22.0",
+  "description": "ขับ ChatGPT และ Google Flow พร้อม Kie API ในเครื่องเพื่อทำคลิปการ์ตูนอัตโนมัติ",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnrVaa60BRpJnRne+ZixACw2J+KnxeDbhNOAfQ4NzDeDqDT/mWQoTe0ZRhpniugxS7D0BNFCJyK+1Fxi10z3v3sGuB9Cl06SyQxh5KLPh5nbew5MwE1fC8QtizQKkijzd1QxK+t6ANt21ODgRy+0rRHdbk3j58fwwXdoaZLBkJJVU/Bi3MaxkPKWbACWIna6vWFg6uTcvVwJ+9kIOEDQzAU8HezWQQ0y1FNC9zNJ2rSNl2KDyGZkuhr/c0y9nHT0UYDltdV8uudA7K3WeftbFxb18Ax+MHtM6KWdjvTl1o//YIE2fduHGJThfvH/KoPV06wm6hXW6eAfrRL1yWdDkXwIDAQAB",
   "permissions": [
     "storage",
@@ -11,7 +11,8 @@
     "alarms",
     "nativeMessaging",
     "sidePanel",
-    "notifications"
+    "notifications",
+    "debugger"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

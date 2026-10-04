@@ -1,3 +1,4 @@
+import { recordChatUsage } from './usage.mjs'
 import { loadEnv } from './env.mjs'
 
 loadEnv()
@@ -29,6 +30,17 @@ export async function requireBridge() {
   process.exit(1)
 }
 
+async function cancelJob(id, reason) {
+  try {
+    await fetch(`${BASE}/cancel`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ id, reason }),
+      signal: AbortSignal.timeout(3000),
+    })
+  } catch {}
+}
+
 /**
  * ส่งงานให้ extension แล้วรอจนเสร็จ
  * @param {{agent:'chatgpt'|'flow', kind:string, payload:object, timeoutMs?:number, onProgress?:(p)=>void}} job
@@ -55,8 +67,12 @@ export async function runJob({ agent, kind, payload, timeoutMs = 20 * 60_000, on
       lastProgress = job.progress
       onProgress?.(job.progress)
     }
-    if (job.status === 'done') return job.result
+    if (job.status === 'done') {
+      if (agent === 'chatgpt') recordChatUsage({ prompt: payload?.prompt, text: job.result?.text, attachments: payload?.attachments?.length ?? 0 })
+      return job.result
+    }
     if (job.status === 'error') throw new Error(`extension แจ้งข้อผิดพลาด: ${job.error}`)
   }
+  await cancelJob(id, `งาน ${kind} ไม่เสร็จภายใน ${Math.round(timeoutMs / 60000)} นาที`)
   throw new Error(`งาน ${kind} ไม่เสร็จภายใน ${Math.round(timeoutMs / 60000)} นาที`)
 }

@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { ROOT, slugify } from '../pipeline/lib/config.mjs'
 import { probeDuration } from '../pipeline/lib/ffmpeg.mjs'
 import { collectImages } from '../pipeline/lib/shotfile.mjs'
+import { readPost } from '../pipeline/lib/post.mjs'
 
 const PROJECTS = join(ROOT, 'projects')
 const TRASH = join(PROJECTS, '_trash')
@@ -86,6 +87,7 @@ export async function listVideos() {
       cover,
       images: images.length,
       shots: existsSync(shotsFile) ? JSON.parse(readFileSync(shotsFile, 'utf8')).length : null,
+      post: readPost(slug), // ชื่อคลิป คำบรรยาย แฮชแท็ก สำหรับโพสต์
     })
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt)

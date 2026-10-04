@@ -18,6 +18,7 @@
   "tts": {
     "engine": "edge",
     "_options": [
+      "voxcpm",
       "my-voice",
       "edge",
       "gemini",
@@ -42,6 +43,14 @@
     "sampleRate": 24000,
     "segmentGapMs": 120,
     "paragraphGapMs": 300,
+    "voxcpm": {
+      "_note": "VoxCPM2 — โคลนเสียงของเราจากคลิปต้นแบบ อ่านไทยแม่นที่สุด (ทดสอบแล้ว: ผิด 5.9% เทียบ F5-TTS-THAI 13.9%) · อารมณ์/ความเร็วใช้ค่าของ myVoice",
+      "voice": "my_voice",
+      "cfg": 2,
+      "steps": 25,
+      "eq": "bright",
+      "_eq": "โทนเสียง: off (ไม่ปรับ) | clear (ลดทุ้ม เพิ่มเสียงกลาง) | bright (สว่างชัดมาก)"
+    },
     "edge": {
       "_note": "Microsoft Edge TTS — ฟรี ออนไลน์ ไม่ต้องใช้ key",
       "voice": "th-TH-NiwatNeural"
@@ -71,6 +80,14 @@
     "concurrency": 4,
     "characterLockRefs": true
   },
+  "clips": {
+    "provider": "kie",
+    "_provider": "off (ภาพนิ่งซูม/เลื่อนกล้องด้วย ffmpeg) | kie (ม้าน้ำส่งภาพบางฉากไป Kie API แบบมีค่าใช้จ่าย)",
+    "coveragePercent": 60,
+    "_coveragePercent": "สัดส่วนฉากทั้งเรื่องที่จะให้ Kie ทำเป็นแอนิเมชัน: 20 | 60 | 80 | 100 (ChatGPT เลือกฉากสำคัญและกระจายทั่วเรื่อง)",
+    "tier": "cheap",
+    "_tier": "ระดับโมเดล Kie: cheap = ถูก Seedance 1.5 Pro 480p (≈8.75 เครดิต/ฉาก) | mid = พอใช้ Hailuo 2.3 768p (30) | pro = เก่ง Kling 2.6 (55)"
+  },
   "render": {
     "resolution": "1920x1080",
     "fps": 30,
@@ -83,8 +100,8 @@
     "orientation": "portrait",
     "_orientation": "landscape (16:9, 1920x1080) | portrait (9:16, 1080x1920) — ภาพใน Flow ใช้ตามนี้ ตอนตัดต่ออ่านจากภาพจริง",
     "subtitles": {
-      "style": "yellow"
+      "style": "active-yellow"
     },
-    "_subtitles": "style: off | black (พื้นดำ ตัวขาว) | white (พื้นขาว ตัวดำ) | yellow (พื้นเหลือง ตัวดำ)"
+    "_subtitles": "style: off | black | white | yellow (มีกล่องพื้นทึบ) | active-yellow | active-red | active-cyan | active-pop | active-purple | active-green (คาราโอเกะ ไฮไลต์คำที่พูด)"
   }
 }

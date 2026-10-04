@@ -8,15 +8,16 @@
  *   node pipeline/2_tts.mjs <slug>
  */
 import { spawn } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { loadConfig, projectDir, ROOT, ttsPython } from './lib/config.mjs'
 import { segmentScript, estimateMinutes } from './lib/segment.mjs'
-import { probeDuration, concatAudio, trimSilence, eachLimit } from './lib/ffmpeg.mjs'
+import { probeDuration, concatAudio, trimSilence, eachLimit, run } from './lib/ffmpeg.mjs'
 import { hhmmss } from './lib/timecode.mjs'
 import { selectedVoice } from './lib/voices.mjs'
 import { synthCloud, edgeVoiceFits, defaultEdgeVoice } from './lib/cloud_tts.mjs'
+import { synthVoxcpm } from './lib/voxcpm.mjs'
 import { clearAsrTimeline } from './lib/asr.mjs'
 
 const slug = process.argv[2]
@@ -41,6 +42,8 @@ const language = meta.language ?? config.script.language
 
 const cloud = ['edge', 'gemini'].includes(config.tts.engine) ? config.tts[config.tts.engine] : null
 const myVoice = config.tts.engine === 'my-voice' ? config.tts.myVoice : null
+// VoxCPM2: โคลนเสียงของเราจากคลิปต้นแบบ — ใช้อารมณ์/ความเร็วชุดเดียวกับเสียงของเรา
+const vox = config.tts.engine === 'voxcpm' ? { voice: 'my_voice', ...(config.tts.voxcpm ?? {}) } : null
 const voice = myVoice && selectedVoice(config)
 if (myVoice && !voice) {
   console.error(`เสียง "${myVoice.voice}" ยังไม่พร้อมใช้ (ยังไม่เทรน หรือไฟล์โมเดลหาย) — เลือกเสียงอื่นในแผงข้าง`)
@@ -63,7 +66,7 @@ const partsDir = join(audioDir, 'segments')
 mkdirSync(partsDir, { recursive: true })
 
 const refAudio = join(ROOT, config.tts.referenceVoice)
-if (!myVoice && !cloud && !existsSync(refAudio)) {
+if (!myVoice && !cloud && !vox && !existsSync(refAudio)) {
   console.error(`ไม่พบเสียงต้นแบบ: ${refAudio}\nวางไฟล์ wav 10-15 วิ แล้วใส่ข้อความที่พูดลงใน config -> tts.referenceText`)
   process.exit(1)
 }
@@ -136,9 +139,25 @@ TTS ล้มเหลว: ${err.message}`)
   }
 }
 
+if (vox) {
+  const shared = config.tts.myVoice ?? {}
+  console.log(`เสียง VoxCPM2 · ${vox.voice} · อารมณ์ ${shared.emotion ?? 'calm'} · ความเร็ว ${shared.speed ?? 1}`)
+  try {
+    await synthVoxcpm(
+      segments.map((s) => ({ index: s.index, text: s.text, out: join(partsDir, `${String(s.index).padStart(4, '0')}.wav`) })),
+      { voice: vox.voice, emotion: shared.emotion, speed: shared.speed, cfg: vox.cfg, steps: vox.steps, eq: vox.eq },
+      printEvent,
+    )
+  } catch (err) {
+    console.error(`\nTTS ล้มเหลว: ${err.message}`)
+    process.exit(3)
+  }
+}
+
 // ระบบเสียงในเครื่อง (tts/.venv) — ติดตั้งครั้งเดียวด้วย scripts/setup-tts.ps1
-const python = cloud ? null : ttsPython(config)
-if (!cloud && !existsSync(python)) {
+const external = cloud || vox // สังเคราะห์เสร็จแล้วด้านบน ไม่ต้องใช้ worker ของ tts/.venv
+const python = external ? null : ttsPython(config)
+if (!external && !existsSync(python)) {
   console.error(`ยังไม่ได้ติดตั้งระบบเสียง (${python})\nรัน: powershell -ExecutionPolicy Bypass -File scripts\\setup-tts.ps1`)
   process.exit(1)
 }
@@ -150,7 +169,7 @@ const env = { ...process.env, KMP_DUPLICATE_LIB_OK: 'TRUE', PYTHONUNBUFFERED: '1
 delete env.PYTHONHOME
 delete env.PYTHONPATH
 
-const code = cloud ? 0 : await new Promise((resolve) => {
+const code = external ? 0 : await new Promise((resolve) => {
   const proc = spawn(python, [worker, jobFile], { cwd: ROOT, env, windowsHide: true })
   createInterface({ input: proc.stdout }).on('line', (line) => {
     let msg
@@ -187,6 +206,15 @@ const parts = segments.map((s) => ({
 if (config.tts.trimSilence !== false) {
   console.log('ตัดช่วงเงียบหัวท้ายของแต่ละประโยค…')
   await eachLimit(parts, 6, (p) => trimSilence(p.file))
+}
+
+// เว้นหายใจ 0.35 วิก่อนคำแรกของคลิป — เสียงที่ขึ้นทันทีตั้งแต่วินาทีแรก เครื่องเล่น/แอปมักกินหัวคำแรกไป
+const LEAD_IN_MS = 350
+{
+  const first = parts[0].file
+  const tmp = first.replace(/\.wav$/i, '.lead.wav')
+  await run('ffmpeg', ['-y', '-v', 'error', '-i', first, '-af', `adelay=${LEAD_IN_MS}:all=1`, tmp])
+  renameSync(tmp, first)
 }
 
 const durations = []

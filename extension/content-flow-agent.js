@@ -9,7 +9,7 @@ globalThis.__cartoon_flow_agent = true
  *   2. ตั้งช่องพิมพ์ปกติเป็น Image · 16:9 หรือ 9:16 · Nano Banana 2 Lite · x1 แล้วอ่าน "Generating will use N credits"
  *      ถ้าไม่ใช่ 0 credits → หยุดทันที ไม่เปิดอะไรต่อ
  *   3. เปิด Agent → Agent settings: ตั้ง Image default ชุดเดียวกัน + Confirm before generating = Never → Save
- *   4. วาง prompt (Style Bible + Character Bible + Shot List) แล้วกดส่ง
+ *   4. วาง prompt (Style Bible + Character Bible + Shot List) แล้วกด Enter
  *
  * ข้อความที่แผงข้างส่งมา:
  *   FLOW_AGENT_RUN  { prompt, expected, model, dryRun }  → { ok, credits, projectUrl }
@@ -20,6 +20,16 @@ globalThis.__cartoon_flow_agent = true
  */
 const VERSION = chrome.runtime.getManifest().version
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const FLOW_PROMPT_GAP_MS = 2 * 60_000 // เว้นอย่างน้อย 2 นาทีระหว่างคำสั่งที่ส่งให้ Flow
+const FLOW_LAST_PROMPT_KEY = 'flowLastPromptAt'
+
+async function waitBeforeNextPrompt() {
+  // เก็บเวลาใน storage.local เพื่อคงระยะห่างแม้ Flow โหลดหน้าใหม่หรือ service worker เริ่มใหม่
+  const saved = await chrome.storage.local.get(FLOW_LAST_PROMPT_KEY)
+  const last = Number(saved[FLOW_LAST_PROMPT_KEY]) || 0
+  const remaining = Math.min(FLOW_PROMPT_GAP_MS, Math.max(0, last + FLOW_PROMPT_GAP_MS - Date.now()))
+  if (remaining) await sleep(remaining)
+}
 
 async function waitFor(fn, { timeout = 20_000, interval = 250, label = 'หน้าเว็บ' } = {}) {
   const deadline = Date.now() + timeout
@@ -43,18 +53,59 @@ function realClick(el) {
   el.dispatchEvent(new MouseEvent('click', opts))
 }
 
+/** ส่ง Enter ให้ช่อง prompt ผ่านอินพุตของเบราว์เซอร์ หลังตรวจว่าข้อความและปุ่มส่งพร้อมแล้ว */
+async function trustedEnter(editor, prompt) {
+  editor.scrollIntoView({ block: 'center' })
+  editor.focus()
+  await sleep(150)
+  if (document.activeElement !== editor) throw new Error('โฟกัสช่อง prompt ของ Flow ไม่ได้')
+  if (text(editor) !== String(prompt).replace(/\s+/g, ' ').trim()) throw new Error('ข้อความในช่อง prompt เปลี่ยนก่อนกด Enter — ยังไม่ได้ส่ง')
+  const result = await chrome.runtime.sendMessage({ type: 'FLOW_TRUSTED_ENTER' })
+  if (!result?.ok) throw new Error(`กด Enter เพื่อส่ง prompt ไม่สำเร็จ: ${result?.error ?? 'ไม่มีคำตอบจาก service worker'}`)
+}
+
 const text = (el) => (el?.innerText ?? '').replace(/\s+/g, ' ').trim()
 const visible = (el) => !!el && el.getBoundingClientRect().width > 0
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
 
+/**
+ * ข้อความบนหน้า Flow ทั้งภาษาอังกฤษและไทย — บัญชีที่ตั้งภาษาไทย Flow จะเป็นภาษาไทยทั้งหน้า
+ * (background เปิดด้วย ?hl=en อยู่แล้ว ชุดภาษาไทยเป็นตัวสำรองเมื่อหน้าเปลี่ยนภาษาเอง) — คำไทยตรวจกับหน้าจริงแล้ว (ก.ย. 2026)
+ */
+const L = {
+  newProject: /new project|โปรเจ็กต์ใหม่/i,
+  settingsTrigger: ['Settings trigger', 'ทริกเกอร์การตั้งค่า'],
+  agentSettings: ['Settings', 'การตั้งค่า'],
+  send: ['Start generation', 'เริ่มสร้าง'],
+  close: ['Close', 'ปิด'],
+  back: ['Back', 'กลับ'],
+  stop: ['Stop', 'หยุด', 'หยุดสร้าง'],
+  save: ['Save', 'บันทึก'],
+  image: ['Image', 'รูปภาพ'],
+  modelFamily: ['Select model family', 'เลือกกลุ่มผลิตภัณฑ์โมเดล'],
+  agentImageModel: ['Image generation default model', 'โมเดลเริ่มต้นของการสร้างรูปภาพ'],
+  editableText: ['Editable text', 'ข้อความที่แก้ไขได้'],
+  creditsPane: /Generating will use|การสร้างจะใช้/i,
+  credits: /(?:Generating will use|การสร้างจะใช้)\s*(\d+)\s*(?:credits?|เครดิต)/i,
+  imageDefault: /Image generation default|ค่าเริ่มต้นสำหรับการสร้างรูปภาพ/,
+  videoDefault: /Video generation default|ค่าเริ่มต้นของการสร้างวิดีโอ/,
+  never: /^(Never|ไม่เลย)/,
+  failedTile: /failed to generate|Something went wrong|สร้างไม่สำเร็จ|สร้างไม่ได้|เกิดข้อผิดพลาด/i,
+  highDemand: /experiencing high demand|มีผู้ใช้งานจำนวนมาก|มีความต้องการสูง/gi,
+}
+/** ปุ่มที่ aria-label ตรงกับคำใดคำหนึ่งในรายการ (อังกฤษ/ไทย) */
+const byAria = (labels, root = document, tag = 'button') => $$(tag, root).filter((b) => labels.includes(b.getAttribute('aria-label')))
+/** ข้อความท้ายปุ่มตรงกับคำใดคำหนึ่ง เช่น "image รูปภาพ" → "รูปภาพ" */
+const lastWordIs = (el, labels) => [labels].flat().includes(text(el).split(' ').pop())
+
 const SEL = {
-  newProject: () => $$('button').find((b) => /new project/i.test(text(b)) && visible(b)),
+  newProject: () => $$('button').find((b) => L.newProject.test(text(b)) && visible(b)),
   agentChip: () => document.querySelector('button.agent-mode-chip'),
-  settingsTrigger: () => $$('button[aria-label="Settings trigger"]').find(visible),
-  agentSettings: () => $$('button[aria-label="Settings"]').find(visible),
+  settingsTrigger: () => byAria(L.settingsTrigger).find(visible),
+  agentSettings: () => byAria(L.agentSettings).find(visible),
   agentPanel: () => document.querySelector('flow-agent-panel'),
   editor: () => $$('flow-prompt-box .ProseMirror, flow-base-prompt-box .ProseMirror').find(visible) ?? $$('.ProseMirror[contenteditable="true"]').find(visible),
-  send: () => $$('button[aria-label="Start generation"]').find(visible),
+  send: () => byAria(L.send).find(visible),
 }
 
 const agentOn = () => SEL.agentChip()?.getAttribute('aria-pressed') === 'true'
@@ -100,7 +151,7 @@ async function chooseModel(trigger, model) {
 
 async function openProject() {
   if (/\/project\//.test(location.pathname)) return
-  const btn = await waitFor(SEL.newProject, { timeout: 30_000, label: 'ปุ่ม New project' })
+  const btn = await waitFor(SEL.newProject, { timeout: 30_000, label: 'ปุ่ม New project / โปรเจ็กต์ใหม่' })
   realClick(btn)
   await waitFor(() => /\/project\//.test(location.pathname), { timeout: 30_000, label: 'project ใหม่' })
   await waitFor(SEL.editor, { timeout: 30_000, label: 'ช่องพิมพ์ของ project' })
@@ -111,7 +162,7 @@ async function verifyFreeSettings(model, ratio = "16:9") {
   // project ใหม่ของ Flow (ก.ย. 2026) เปิดแชต Agent ด้านขวาเอง → ช่องพิมพ์ปกติที่มีปุ่ม Agent/ตัวเลือกโมเดลถูกซ่อน → ปิดแชตก่อน
   const chatPanel = SEL.agentPanel()
   if (visible(chatPanel) && !SEL.settingsTrigger() && !visible(SEL.agentChip())) {
-    const close = $$('button[aria-label="Close"]', chatPanel).find(visible)
+    const close = byAria(L.close, chatPanel).find(visible)
     if (close) {
       realClick(close)
       await waitFor(() => visible(SEL.agentChip()), { timeout: 10_000, label: 'ช่องพิมพ์หลังปิดแชต Agent' })
@@ -122,21 +173,21 @@ async function verifyFreeSettings(model, ratio = "16:9") {
   await waitFor(SEL.settingsTrigger, { label: 'ปุ่มตั้งค่าโมเดล' })
 
   // แผงตั้งค่าโมเดลวาดใหม่ทุกครั้งที่เปลี่ยนตัวเลือก (เช่น Video → Image) → ห้ามเก็บ element ไว้ใช้ซ้ำ ต้อง query ใหม่ทุกครั้ง
-  const pane = () => $$('.cdk-overlay-pane').find((p) => visible(p) && /Generating will use/i.test(text(p)))
+  const pane = () => $$('.cdk-overlay-pane').find((p) => visible(p) && L.creditsPane.test(text(p)))
   const readPane = () => {
     const p = pane()
     if (!p) return null
-    const on = (label) => $$('button[role="radio"]', p).find((b) => text(b).split(' ').pop() === label)?.getAttribute('aria-checked') === 'true'
-    const modelBtn = p.querySelector('button[aria-label="Select model family"]')
+    const on = (label) => $$('button[role="radio"]', p).find((b) => lastWordIs(b, label))?.getAttribute('aria-checked') === 'true'
+    const modelBtn = byAria(L.modelFamily, p)[0]
     return {
       modelBtn,
       state: {
-        image: on('Image'),
+        image: on(L.image),
         ratio: on(ratio),
         x1: on('x1'),
         model: text(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
       },
-      credits: Number((/Generating will use\s*(\d+)\s*credits?/i.exec(text(p)) ?? [])[1]),
+      credits: Number((L.credits.exec(text(p)) ?? [])[1]),
     }
   }
   const ready = (st) => st.image && st.ratio && st.x1 && st.model === model
@@ -150,8 +201,8 @@ async function verifyFreeSettings(model, ratio = "16:9") {
     }
     cur = readPane()
     if (cur && ready(cur.state)) break
-    for (const label of ['Image', ratio]) {
-      const btn = $$('button[role="radio"]', pane() ?? document).find((b) => text(b).split(' ').pop() === label)
+    for (const label of [L.image, ratio]) {
+      const btn = $$('button[role="radio"]', pane() ?? document).find((b) => lastWordIs(b, label))
       if (btn && btn.getAttribute('aria-checked') !== 'true') {
         realClick(btn)
         await sleep(600) // Image/Video สลับแล้วแผงวาดตัวเลือกโมเดลใหม่
@@ -207,7 +258,7 @@ async function waitSettled(getRoot, { quietMs = 1200, timeout = 15_000 } = {}) {
 
 async function configureAgent(model, { dryRun, ratio = "16:9" }) {
   await setAgent(true)
-  const openPanel = () => (visible(SEL.agentPanel()) && /Image generation default/.test(text(SEL.agentPanel())) ? SEL.agentPanel() : null)
+  const openPanel = () => (visible(SEL.agentPanel()) && L.imageDefault.test(text(SEL.agentPanel())) ? SEL.agentPanel() : null)
   if (!openPanel()) realClick(await waitFor(SEL.agentSettings, { label: 'ปุ่ม Settings ของ Agent' }))
   await waitFor(openPanel, { label: 'Agent settings' })
   await waitSettled(openPanel)
@@ -217,14 +268,14 @@ async function configureAgent(model, { dryRun, ratio = "16:9" }) {
     const panel = openPanel()
     if (!panel) return null
     const labels = $$('.settings-section-label', panel)
-    const imageLabel = labels.find((l) => /Image generation default/.test(text(l)))
-    const videoLabel = labels.find((l) => /Video generation default/.test(text(l)))
+    const imageLabel = labels.find((l) => L.imageDefault.test(text(l)))
+    const videoLabel = labels.find((l) => L.videoDefault.test(text(l)))
     const inImage = (el) =>
       imageLabel && imageLabel.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING &&
       (!videoLabel || videoLabel.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING)
     const imageButtons = $$('button[role="radio"]', panel).filter(inImage)
-    const never = $$('mat-radio-button', panel).find((r) => /^Never/.test(text(r)))
-    const modelBtn = panel.querySelector('button[aria-label="Image generation default model"]')
+    const never = $$('mat-radio-button', panel).find((r) => L.never.test(text(r)))
+    const modelBtn = byAria(L.agentImageModel, panel)[0]
     const checked = (re) => text(imageButtons.find((b) => b.getAttribute('aria-checked') === 'true' && re.test(text(b)))).split(' ').pop()
     return {
       panel,
@@ -281,9 +332,9 @@ async function configureAgent(model, { dryRun, ratio = "16:9" }) {
   const final = read()
   const summary = final.state
   if (dryRun) {
-    realClick(final.panel.querySelector('button[aria-label="Back"]'))
+    realClick(byAria(L.back, final.panel)[0])
   } else {
-    realClick(await waitFor(() => $$('button', openPanel() ?? document).find((b) => text(b) === 'Save'), { label: 'ปุ่ม Save' }))
+    realClick(await waitFor(() => $$('button', openPanel() ?? document).find((b) => L.save.includes(text(b))), { label: 'ปุ่ม Save/บันทึก' }))
     await waitFor(() => !openPanel(), { timeout: 10_000, label: 'บันทึก Agent settings' })
   }
   await sleep(800)
@@ -308,11 +359,16 @@ async function attachImages(editor, attachments) {
 }
 
 async function sendPrompt(prompt, attachments) {
+  await waitBeforeNextPrompt()
   await attachImages(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), attachments)
   // แนบรูปแล้ว Flow วาดช่องพิมพ์ใหม่ (element เดิมหลุดจากหน้า — ตรวจกับหน้าจริงแล้ว) → ต้องหาช่องพิมพ์ใหม่ทุกครั้ง
   const pasteText = async () => {
     const editor = await waitFor(SEL.editor, { label: 'ช่องพิมพ์' })
     editor.focus()
+    // รอบก่อนส่งไม่สำเร็จอาจทิ้ง prompt ไว้ในช่อง อย่าวางต่อท้ายจนยาวเป็นสองเท่า
+    document.execCommand('selectAll', false)
+    document.execCommand('delete', false)
+    if (text(SEL.editor())) return false
     const data = new DataTransfer()
     data.setData('text/plain', prompt)
     editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
@@ -322,7 +378,7 @@ async function sendPrompt(prompt, attachments) {
       document.execCommand('insertText', false, prompt)
       await sleep(400)
     }
-    return !!text(SEL.editor())
+    return text(SEL.editor()) === String(prompt).replace(/\s+/g, ' ').trim()
   }
   let pasted = false
   for (let attempt = 0; attempt < 3 && !pasted; attempt++) {
@@ -330,12 +386,13 @@ async function sendPrompt(prompt, attachments) {
     if (!pasted) await sleep(1500)
   }
   if (!pasted) throw new Error('วาง prompt ลงช่องพิมพ์ของ Flow ไม่ได้')
-  const send = await waitFor(() => (SEL.send() && !SEL.send().disabled ? SEL.send() : null), { label: 'ปุ่มส่ง' })
-  realClick(send)
+  await waitFor(() => (SEL.send() && !SEL.send().disabled ? SEL.send() : null), { label: 'ปุ่มส่งพร้อมใช้งาน' })
+  await chrome.storage.local.set({ [FLOW_LAST_PROMPT_KEY]: Date.now() })
+  await trustedEnter(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), prompt)
   await waitFor(() => agentBusy() || !text(SEL.editor()), { timeout: 15_000, label: 'Flow รับ prompt' })
 }
 
-const agentBusy = () => !!$$('button[aria-label="Stop"]').find(visible)
+const agentBusy = () => !!byAria(L.stop).find(visible)
 
 // ── ภาพใน project ──
 // grid เป็น virtual scroll (แสดงเฉพาะที่อยู่บนจอ) → จำภาพทุกใบที่เคยโผล่ด้วย MutationObserver
@@ -406,8 +463,14 @@ async function scanAllTiles() {
 const TIMECODE_NAME = /(\d{2}_\d{2}_\d{2}(?:_\d)?\.png|cover\.png)/i
 
 /** ภาพจาก flow-content.google เป็น JPEG → แปลงเป็น PNG ให้ตรงกับชื่อไฟล์ตาม Blueprint กฎ 4 */
+/**
+ * src ของ tile เป็นภาพย่อ (…/asb/…=s512-rw → 286×512) — ขอภาพเต็มด้วย =s0 (768×1376)
+ * ภาพย่อทำให้คลิปเบลอ และ Kie/Seedance ปฏิเสธภาพกว้างไม่ถึง 300px (ตรวจกับหน้าเว็บจริง ก.ย. 2026)
+ */
+const fullSize = (src) => (/^https:\/\/[^/]*(?:flow\.google\.com|googleusercontent\.com)\//.test(src) ? src.replace(/=[swh]\d+[^/=]*$/, '') + '=s0' : src)
+
 async function imageAsPngBase64(src) {
-  const blob = await fetch(src).then((r) => {
+  const blob = await fetch(fullSize(src)).then((r) => {
     if (!r.ok) throw new Error(`โหลดภาพไม่ได้ (${r.status})`)
     return r.blob()
   })
@@ -429,14 +492,22 @@ async function toBridge(type, body, { tries = 6 } = {}) {
   for (let i = 0; i < tries; i++) {
     try {
       const res = await chrome.runtime.sendMessage({ type, body })
+      if (type === 'PROGRESS' && res?.cancelled) throw new JobCancelled()
       if (res?.ok || type === 'PROGRESS') return res
       last = res?.error ?? 'bridge ไม่รับ'
     } catch (err) {
+      if (err instanceof JobCancelled) throw err
       last = String(err?.message ?? err)
     }
     await sleep(1500 * (i + 1))
   }
   throw new Error(`ส่งภาพกลับโปรแกรมในเครื่องไม่สำเร็จ: ${last}`)
+}
+/** bridge ยกเลิกงานนี้แล้ว (โปรแกรมที่สั่งถูกปิด/เริ่มใหม่) → หยุดทันที ปล่อยแท็บให้งานถัดไป */
+class JobCancelled extends Error {
+  constructor() {
+    super('งานนี้ถูกยกเลิกแล้ว')
+  }
 }
 const PNG_BATCH = 4 // ส่งกลับทีละ 4 ใบ กัน payload ใหญ่เกิน
 const RETRY_BATCH = 10 // สั่งซ้ำทีละไม่เกิน 10 ช็อต — ชุดใหญ่ทำให้ "The agent failed" บ่อย
@@ -444,6 +515,9 @@ const SAFE_AFTER = 2 // ช็อตที่ล้มเหลวครบก�
 const MAX_STALLS = 3 // รอบติดกันที่ไม่ได้ภาพเพิ่มเลย → เลิก (autopilot จะเปิด project ใหม่สั่งต่อเอง)
 const IDLE_MS = 75_000 // agent หยุดนิ่งนานเท่านี้ = จบรอบ (ระหว่างภาพปุ่ม Stop อาจหายแวบๆ)
 const ROUND_MAX_MS = 45 * 60_000
+// Flow คิวเต็ม ("The agent is experiencing high demand") → สั่งซ้ำทันทีก็โดนปฏิเสธอีก รอเว้นช่วงยาวขึ้นเรื่อยๆ (2 → 4 → 8 → 15 นาที)
+const BUSY_WAITS_MS = [2, 4, 8, 15].map((m) => m * 60_000)
+const BUSY_MAX_MS = 40 * 60_000 // รอรวมเกินนี้ → เลิก ให้ autopilot เปิด project ใหม่สั่งต่อ
 
 const shotLine = (s) => (s.prompt ? `${s.filename} ${s.prompt}` : `${s.filename} SHOT`)
 
@@ -460,6 +534,12 @@ ${example}
 }
 
 /** agent หยุดกลางทาง (high demand / agent failed / ทำไม่ครบ) → สั่งต่อเฉพาะช็อตที่ขาด ใน project เดิม ตัวละครจึงยังเหมือนเดิม */
+/** agent ตอบกลับเป็นแผน/คำถาม ("ต้องการให้เริ่มสร้างภาพไหม") แทนที่จะสร้างภาพ → สั่งให้เริ่มเลย */
+function goInstruction(shots) {
+  return `เริ่มสร้างภาพได้เลยทุกช็อตตาม shot list ที่ส่งไป ไม่ต้องถามยืนยันและไม่ต้องสรุปแผนอีก ใช้ Style Bible และ Character Bible เดิม (lock ตัวละคร)
+ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์หน้าบรรทัดเป๊ะๆ เช่น "${shots[0].filename} SHOT" (ชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ)`
+}
+
 function continueInstruction(batch, { remaining, safer }) {
   const naming = `ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ตามหน้าบรรทัดเป๊ะๆ เช่น "${batch[0].filename} SHOT" (ชื่อภาพเท่านั้น ห้ามเขียนชื่อไฟล์ เลข SHOT หรือ @TAG ลงในภาพ)`
   if (safer) {
@@ -481,18 +561,22 @@ function failureCounts() {
   // grid เป็น virtual scroll → นับได้เฉพาะใบที่วาดอยู่ ใช้บอกสาเหตุใน log ไม่ได้ใช้ตัดสินใจ
   const imageFailed =
     $$('flow-error-tile').filter((el) => !el.closest('flow-agent-panel')).length +
-    $$('flow-grid-tile-container').filter((t) => !t.querySelector('flow-error-tile') && /failed to generate/i.test(t.innerText ?? '')).length
-  const agentFailed = (SEL.agentPanel()?.innerText.match(/The agent failed/gi) ?? []).length
-  return { imageFailed, agentFailed }
+    $$('flow-grid-tile-container').filter((t) => !t.querySelector('flow-error-tile') && L.failedTile.test(t.innerText ?? '')).length
+  const panel = SEL.agentPanel()?.innerText ?? ''
+  const agentFailed = (panel.match(/The agent failed/gi) ?? []).length
+  const highDemand = (panel.match(L.highDemand) ?? []).length
+  return { imageFailed, agentFailed, highDemand }
 }
 
 /** รอ agent ทำงานจนนิ่ง — คืนจำนวนภาพใหม่ของรอบนี้ */
-async function waitAgentIdle(job, { before, expected, stage }) {
+async function waitAgentIdle(job, { before, expected, stage, onTick }) {
   const started = Date.now()
   let last = -1
   let idleSince = null
-  for (;;) {
+  for (let tick = 1; ; tick++) {
     await sleep(5000)
+    // เก็บภาพที่ตั้งชื่อแล้วระหว่างที่ agent ยังวาดอยู่ทุก 15 วิ — ไม่ต้องรอให้ agent นิ่ง 75 วิก่อนค่อยเริ่มดึง
+    if (onTick && tick % 3 === 0) await onTick().catch(() => {})
     const made = collectTiles().size - before
     if (made !== last) {
       last = made
@@ -528,7 +612,7 @@ function namedPicks(wanted) {
 async function renameProject(title) {
   const name = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, 100)
   if (!name) return
-  const input = await waitFor(() => $$('input.editable-text-input, input[aria-label="Editable text"]').find(visible), { timeout: 15_000, label: 'ช่องชื่อ project' }).catch(() => null)
+  const input = await waitFor(() => [...$$('input.editable-text-input'), ...byAria(L.editableText, document, 'input')].find(visible), { timeout: 15_000, label: 'ช่องชื่อ project' }).catch(() => null)
   if (!input || input.value === name) return
   input.focus()
   input.select()
@@ -575,18 +659,33 @@ async function runImageJob(job) {
   }
 
   await sendPrompt(prompt, attachments)
+  // รูปตัวละครที่แนบไปกลายเป็น tile ใน project ด้วย — นับเป็นฐานใหม่ ไม่งั้นถูกนับว่าเป็น "ภาพใหม่ที่ยังไม่ตั้งชื่อ"
+  await sleep(3000)
+  const base = Math.max(before, collectTiles().size)
   let stalls = 0
+  let nudges = 0
   const tries = new Map(shots.map((s) => [s.filename, 1])) // จำนวนครั้งที่สั่งแต่ละช็อตไปแล้ว
   const failuresAtStart = failureCounts()
+  let seenHighDemand = failuresAtStart.highDemand
+  let busyWaits = 0
+  let busyWaited = 0
   for (let round = 1; ; round++) {
     const beforeRound = collectTiles().size
-    await waitAgentIdle(job, { before, expected, stage: 'generate' })
+    await waitAgentIdle(job, { before, expected, stage: 'generate', onTick: () => saveNew(namedPicks(wanted)) })
     const newThisRound = collectTiles().size - beforeRound
     await scanAllTiles()
     let picks = namedPicks(wanted)
 
+    // ยังไม่มีภาพใหม่เลย = agent หยุดถามยืนยัน/สรุปแผน → สั่งให้เริ่มสร้าง (ห้ามสั่งเปลี่ยนชื่อ เพราะไม่มีภาพให้เปลี่ยน)
+    if (collectTiles().size - base <= 0 && !picks.size && nudges < 3) {
+      nudges++
+      if (agentBusy()) await waitFor(() => !agentBusy(), { timeout: 10 * 60_000, interval: 2000, label: 'Agent ว่าง' })
+      await sendPrompt(goInstruction(shots))
+      continue
+    }
+
     // มีภาพใหม่ที่ยังไม่ได้ตั้งชื่อ timecode → ให้ agent ตั้งชื่อก่อน
-    const unnamed = collectTiles().size - before - picks.size
+    const unnamed = collectTiles().size - base - picks.size
     if (unnamed > 0 && picks.size < expected) {
       await toBridge('PROGRESS', { id: job.id, progress: { done: picks.size, total: expected, stage: 'rename' } })
       await sendPrompt(renameInstruction(shots.filter((s) => !picks.has(s.filename))))
@@ -605,6 +704,23 @@ async function runImageJob(job) {
       agent: failures.agentFailed - failuresAtStart.agentFailed,
     }
     await toBridge('PROGRESS', { id: job.id, progress: { done: saved.size, total: expected, stage: 'retry', failed } })
+
+    // Flow คิวเต็ม → ไม่นับเป็นรอบที่ล้ม รอให้คิวว่างก่อนแล้วสั่งช็อตเดิมใหม่
+    if (failures.highDemand > seenHighDemand) {
+      seenHighDemand = failures.highDemand
+      const wait = BUSY_WAITS_MS[Math.min(busyWaits++, BUSY_WAITS_MS.length - 1)]
+      if (busyWaited + wait > BUSY_MAX_MS) break
+      busyWaited += wait
+      console.warn(`[cartoon-auto] Flow คิวเต็ม (high demand) — รอ ${wait / 60_000} นาทีแล้วลองใหม่`)
+      for (const until = Date.now() + wait; Date.now() < until; ) {
+        await toBridge('PROGRESS', { id: job.id, progress: { done: saved.size, total: expected, stage: 'busy', retryAt: until } }) // heartbeat กัน bridge คิดว่าแท็บหลุด
+        await sleep(20_000)
+      }
+      if (agentBusy()) await waitFor(() => !agentBusy(), { timeout: 10 * 60_000, interval: 2000, label: 'Agent ว่าง' })
+      await sendPrompt(continueInstruction(missing.slice(0, RETRY_BATCH), { remaining: missing.length, safer: false }))
+      continue
+    }
+    busyWaits = 0
     stalls = newThisRound > 0 ? 0 : stalls + 1
     if (stalls >= MAX_STALLS) break
 
@@ -633,20 +749,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return
   }
   if (msg.type === 'RUN_JOB' && msg.job?.kind === 'generate-images') {
-    if (running) {
-      sendResponse({ ok: false, error: 'กำลังส่งงานให้ Flow อยู่แล้ว' })
-      return
-    }
-    running = true
+    // งานเก่ายังวิ่งอยู่ (เช่นกดเริ่มใหม่) → bridge ยกเลิกงานเก่าให้ภายใน ~2 นาที มันจะหยุดเองที่ heartbeat ถัดไป รอก่อนแทนการปัดตก
+    const start = running ? waitFor(() => !running, { timeout: 3 * 60_000, interval: 2000, label: 'งาน Flow ก่อนหน้าหยุด' }) : Promise.resolve()
     // ผลและ error ส่งผ่าน toBridge เอง — service worker อาจถูกปิดระหว่างงาน 30 นาที ทำให้ sendResponse หาย
-    runImageJob(msg.job)
+    start
+      .then(() => {
+        if (running) throw new Error('กำลังส่งงานให้ Flow อยู่แล้ว')
+        running = true
+        return runImageJob(msg.job).finally(() => (running = false))
+      })
       .then(() => sendResponse({ ok: true }))
       .catch(async (err) => {
         const message = `[extension ${VERSION}] ${err.message}`
         await toBridge('ERROR', { id: msg.job.id, message }).catch(() => {})
         sendResponse({ ok: true, reported: true })
       })
-      .finally(() => (running = false))
     return true
   }
 

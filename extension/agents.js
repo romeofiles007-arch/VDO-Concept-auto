@@ -1,9 +1,11 @@
 // สถานะแผนกใช้ภาพและสคริปต์ในส่วนขยายเท่านั้น
 export const DEPARTMENTS = [
-  { id: 'chatgpt', name: 'ChatGPT', role: 'เขียนบท · กำกับภาพ', animal: 'เต่าทะเล' },
-  { id: 'flow', name: 'Google Flow', role: 'วาดภาพ', animal: 'ปลาหมึก' },
-  { id: 'voice', name: 'เสียงพากย์', role: 'ในเครื่อง', animal: 'โลมา' },
-  { id: 'edit', name: 'ตัดต่อ', role: 'ในเครื่อง', animal: 'ปู' },
+  // duty = หน้าที่เต็มๆ ขึ้นในป้ายตอนเอาเมาส์ชี้ตัวละคร
+  { id: 'chatgpt', name: 'ChatGPT', role: 'เขียนบท · กำกับภาพ', animal: 'เต่าทะเล', duty: 'คิดหัวข้อ เขียนบท แบ่งช็อต และเขียน prompt ภาพทุกช็อต — ทำงานในแท็บ ChatGPT' },
+  { id: 'flow', name: 'Google Flow', role: 'วาดภาพ', animal: 'ปลาหมึก', duty: 'วาดภาพทุกช็อตและภาพปกด้วย Google Flow แบบ 0 credits — ทำงานในแท็บ Flow' },
+  { id: 'meta', name: 'Kie API', role: 'ทำแอนิเมชัน', animal: 'ม้าน้ำ', duty: 'รับภาพฉากสำคัญจาก Google Flow ส่งให้ Kie API ทำแอนิเมชัน แล้วส่งคลิปให้แผนกตัดต่อ — ปิดได้เพื่อใช้ภาพนิ่ง' },
+  { id: 'voice', name: 'เสียงพากย์', role: 'ในเครื่อง', animal: 'โลมา', duty: 'อ่านบทเป็นเสียงพากย์ แล้วจับเวลาแต่ละประโยค — ทำในเครื่องนี้ ไม่ต้องเปิดเว็บ' },
+  { id: 'edit', name: 'ตัดต่อ', role: 'ในเครื่อง', animal: 'ปู', duty: 'รวมภาพ คลิป เสียงพากย์ เพลง และซับไตเติล เป็นไฟล์วิดีโอ — ทำในเครื่องนี้' },
 ]
 export const AGENT_WORD = { working: 'กำลังทำงาน', waiting: 'รอคิว', idle: 'ว่าง', offline: 'ไม่ได้ต่อ' }
 export const HANDOFF = [
@@ -11,11 +13,12 @@ export const HANDOFF = [
   { key: 'voice', id: 'voice', label: 'เสียง' },
   { key: 'art', id: 'chatgpt', label: 'กำกับภาพ' },
   { key: 'images', id: 'flow', label: 'วาดภาพ' },
+  { key: 'clips', id: 'meta', label: 'แอนิเมชัน' },
   { key: 'edit', id: 'edit', label: 'ตัดต่อ' },
 ]
 
 // ภาพ 3D อยู่ในส่วนขยาย ขยับทีละเฟรมด้วย CSS เท่านั้น
-export const SEA_ASSETS = { chatgpt: 'turtle', flow: 'octopus', voice: 'dolphin', edit: 'crab' }
+export const SEA_ASSETS = { chatgpt: 'turtle', flow: 'octopus', meta: 'seahorse', voice: 'dolphin', edit: 'crab' }
 
 export function portrait(id) {
   const span = document.createElement('span')

@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT, loadConfig } from './config.mjs'
-import { characterFlowNote } from './character.mjs'
+import { characterFlowNote, bodyStyleRule, bodyStyleFlowNote } from './character.mjs'
 
 import * as shared from '../../extension/prompts.js'
 
@@ -19,8 +19,8 @@ export function topicsPrompt(config) {
 export const { parseScoredTopics } = shared
 
 /** หัวข้อพร้อมคะแนน — ชื่อหัวข้อใช้ภาษาเดียวกับเสียงพากย์ของคลิป */
-export function scoredTopicsPrompt(config, { avoid = [] } = {}) {
-  return shared.scoredTopicsPrompt(blueprint(config), { titleLanguage: config.script.language, minutes: config.script.targetMinutes, avoid, genre: config.script.genre })
+export function scoredTopicsPrompt(config, { avoid = [], seen = [] } = {}) {
+  return shared.scoredTopicsPrompt(blueprint(config), { titleLanguage: config.script.language, minutes: config.script.targetMinutes, avoid, seen, genre: config.script.genre })
 }
 
 export function scriptPrompt(config, title) {
@@ -56,6 +56,7 @@ ${table}
 - ช็อตที่กำกับว่า "ภาพต่อเนื่อง" ให้เป็น mini-sequence ของช็อตก่อนหน้า ไม่ใช่ฉากใหม่
 - ใส่ pattern interrupt ทุก 15-30 วิ ตามกฎ 6
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
+${bodyStyleRule()}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
 ${imageLanguageRule(clipLanguage(config, slug))}`
 }
@@ -112,12 +113,18 @@ export function orientationRule(config = loadConfig()) {
 export function flowPrompt(agentBrief, config = loadConfig()) {
   const portrait = orientationOf(config) === 'portrait'
   const charNote = characterFlowNote()
-  return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
+  return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
+เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
+${bodyStyleFlowNote()}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
 ทุกภาพต้องเต็มเฟรม ฉากหลังยาวถึงขอบทุกด้าน ห้ามมีแถบว่าง ขอบขาว หรือพื้นที่เปล่าด้านบน/ล่าง
+ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"
 ชื่อไฟล์ เลข SHOT และ @TAG ใช้ตั้งชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ
+@TAG (เช่น @main @crowd1) เป็นชื่อเรียกตัวละครในคำสั่งเท่านั้น ห้ามวาดป้ายชื่อ ตัวอักษร @ หรือชื่อตัวละครลอยเหนือหัว/บนตัวละครเด็ดขาด
 
-${agentBrief}`
+${agentBrief}
+
+ย้ำ: ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ตัวอักษรในภาพมีได้เฉพาะข้อความที่ shot สั่งไว้ในเครื่องหมายคำพูดเท่านั้น`
 }
 
 /** แยก shot list ออกจาก OUTPUT 5 แล้วจับคู่กับช่อง shot ที่เราคำนวณไว้ */
@@ -129,4 +136,48 @@ export function parseShotList(text, slots) {
   }
   const matched = slots.map((s) => ({ ...s, prompt: byFilename.get(s.filename) ?? null }))
   return { shots: matched, missing: matched.filter((s) => !s.prompt).map((s) => s.filename) }
+}
+
+/**
+ * ชื่อเรียกของ @TAG จาก Character Bible ("@crowd1 = นักศึกษาหญิงในห้อง")
+ * ตัดคำพูดและส่วน "แทน …" ออก ("ตัวละครหลักแทน “คุณ”" → "ตัวละครหลัก") ไม่ให้กลายเป็นข้อความในภาพ
+ */
+export function tagNames(bible) {
+  const names = {}
+  for (const m of String(bible).matchAll(/^\s*(@\w+)\s*[=:：]\s*(.+)$/gm)) {
+    const name = m[2].replace(/["“”'‘’「」]/g, '').replace(/\s*แทน.*$/, '').trim()
+    if (name && !names[m[1]]) names[m[1]] = name
+  }
+  return names
+}
+
+/**
+ * Flow วาด @TAG ในคำบรรยายฉากเป็นป้ายชื่อบนหัวตัวละคร (เจอ "@crowd1" ลอยทุกภาพ ก.ย. 2026)
+ * — ในช่อง Env/Action/Frame เปลี่ยน @TAG เป็นชื่อเรียกจาก Bible · ช่อง Chars: คง @TAG ไว้ให้ Flow lock ตัวละคร
+ */
+export function untagShotPrompt(prompt, names) {
+  return String(prompt)
+    .split(' | ')
+    .map((field) => (/^\s*Chars\s*:/i.test(field) ? field : field.replace(/@\w+/g, (tag) => names[tag] ?? tag.slice(1))))
+    .join(' | ')
+}
+
+/**
+ * โทนเทา/หม่นในคำบรรยายฉากทำให้ Flow วาดภาพเกือบขาวดำ (เจอ ก.ย. 2026: "โทนน้ำเงินเทา" "ฟ้าเทาหม่น")
+ * แก้เฉพาะคำบรรยายฉากและโทนสี — สีเสื้อผ้าตัวละคร ("เบลเซอร์สีเทา") ไม่แตะ
+ */
+export function recolorScene(text) {
+  return String(text)
+    .replace(/(ฟ้า|น้ำเงิน|ครีม|เขียว|ม่วง|ฟ้าอ่อน)เทา/g, '$1')
+    .replace(/เทาหม่น|หม่นหมอง/g, 'เข้มอิ่ม')
+    .replace(/โทน(สี)?เทา/g, 'โทน$1ฟ้าเข้ม')
+    .replace(/หม่น(ลง)?/g, 'เข้มขึ้น')
+    .replace(/ขาวดำ|monochrome|grayscale|greyscale|black and white/gi, 'ลงสีสด')
+}
+/** ใช้กับบรรทัดใน Style Bible ที่พูดถึงฉากหลัง/โทนสี/บรรยากาศ และช่อง Env/Frame ของ shot */
+export function recolorBrief(bible) {
+  return String(bible).split(/\r?\n/).map((line) => (/ฉากหลัง|โทน|บรรยากาศ|background|palette/i.test(line) ? recolorScene(line) : line)).join('\n')
+}
+export function recolorShotPrompt(prompt) {
+  return String(prompt).split(' | ').map((f) => (/^\s*(Env|Frame)\s*:/i.test(f) ? recolorScene(f) : f)).join(' | ')
 }

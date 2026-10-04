@@ -14,9 +14,10 @@
  *
  *   node pipeline/autopilot.mjs "<หัวข้อ>" [--lang th|en] [--title-lang th|en] [--minutes 5]
  */
+import { PENDING_USAGE, adoptPendingUsage } from './lib/usage.mjs'
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, statSync, readdirSync, mkdirSync, renameSync, copyFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, statSync, readdirSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { loadConfig, projectDir, slugify, ROOT } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
 import { scriptPrompt, scoredTopicsPrompt, parseScoredTopics } from './lib/prompts.mjs'
@@ -25,19 +26,29 @@ import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRou
 import { collectImages } from './lib/shotfile.mjs'
 import { characterAttachments } from './lib/character.mjs'
 import { hasCover } from './lib/cover.mjs'
+import { clipSettings, clipTarget, clipsDir, collectClips, scenes } from './lib/clips.mjs'
+import { kieKey, kieTier } from './lib/kie.mjs'
+import { clipSource, postPrompt, parsePost, savePost, readPost } from './lib/post.mjs'
 
 // ── อาร์กิวเมนต์ ──
 const raw = process.argv.slice(2)
 const config = loadConfig()
 const words = []
+let restartFrom = null // เริ่มใหม่ตั้งแต่แผนกนี้: script | voice | art | images | clips | edit
 for (let i = 0; i < raw.length; i++) {
   if (raw[i] === '--lang') config.script.language = raw[++i]
   else if (raw[i] === '--title-lang') config.script.titleLanguage = raw[++i]
   else if (raw[i] === '--minutes') config.script.targetMinutes = Number(raw[++i])
   else if (raw[i] === '--genre') config.script.genre = raw[++i]
+  else if (raw[i] === '--restart') restartFrom = raw[++i]
   else words.push(raw[i])
 }
 const autoTopic = words.includes('--auto-topic')
+// ChatGPT ช่วงคิดหัวข้อ (ยังไม่รู้ชื่อคลิป) จดไว้ที่ไฟล์พักก่อน — ล้างของรอบก่อนที่ค้างทิ้ง
+if (autoTopic) {
+  try { unlinkSync(PENDING_USAGE) } catch {}
+  process.env.CARTOON_USAGE_FILE = PENDING_USAGE
+}
 let title = words.filter((w) => w !== '--auto-topic').join(' ').trim()
 if (!title && !autoTopic) {
   console.error('ใช้: node pipeline/autopilot.mjs "<หัวข้อ>" | --auto-topic [--genre mix|<แนว>] [--lang th|en] [--minutes 5]')
@@ -47,8 +58,9 @@ if (!title && !autoTopic) {
 // ── แผนกคิดหัวข้อ (เฉพาะ --auto-topic): ChatGPT เสนอ 5 หัวข้อพร้อมคะแนน → เลือกคะแนนสูงสุดที่ยังไม่เคยทำ ──
 let topicPick = null
 if (autoTopic) {
-  const { listDoneTitles } = await import('./lib/topics.mjs')
+  const { listDoneTitles, listSeenTitles, addSeenTitles } = await import('./lib/topics.mjs')
   const done = listDoneTitles()
+  const seen = listSeenTitles()
   console.log('▶ แผนกคิดหัวข้อ')
   console.log(`   แนว: ${!config.script.genre || config.script.genre === 'mix' ? 'สุ่มหลากหลายแนว' : config.script.genre}`)
   console.log('   ChatGPT กำลังเสนอหัวข้อและให้คะแนน…')
@@ -57,7 +69,7 @@ if (autoTopic) {
   for (let attempt = 1; attempt <= 3 && !topics.length; attempt++) {
     const result = await runJob({
       agent: 'chatgpt', kind: 'prompt', label: 'คิดหัวข้อ + ให้คะแนน',
-      payload: { prompt: scoredTopicsPrompt(config, { avoid: done }), newChat: true }, timeoutMs: 20 * 60_000,
+      payload: { prompt: scoredTopicsPrompt(config, { avoid: done, seen }), newChat: true }, timeoutMs: 20 * 60_000,
     }).catch((err) => ({ error: err }))
     const doneSlugs = new Set(done.map(slugify))
     topics = parseScoredTopics(result?.text ?? '').filter((t) => !doneSlugs.has(slugify(t.title)))
@@ -71,11 +83,16 @@ if (autoTopic) {
     process.exit(2)
   }
   for (const t of topics) console.log(`   ${String(t.score).padStart(3)} คะแนน · ${t.title}${t.why ? ` — ${t.why}` : ''}`)
+  addSeenTitles(topics.map((t) => t.title))
   topicPick = { chosen: topics[0], candidates: topics, at: Date.now() }
   title = topics[0].title
   console.log(`   เลือก: ${title} (${topics[0].score} คะแนน)`)
 }
 const slug = slugify(title)
+// ค่าใช้จ่าย: token ChatGPT ของคลิปนี้ (ช่วงคิดหัวข้อจดไว้ที่ไฟล์พัก → รวมเข้าคลิปตอนนี้)
+process.env.CARTOON_USAGE_FILE = join(ROOT, 'projects', slug, 'usage.json')
+mkdirSync(join(ROOT, 'projects', slug), { recursive: true })
+adoptPendingUsage(process.env.CARTOON_USAGE_FILE)
 if (autoTopic) {
   // บอกโปรแกรมในเครื่องว่าคลิปนี้ชื่ออะไร (runner อ่านบรรทัดนี้แล้วไม่แสดง)
   console.log(`@@autopilot ${JSON.stringify({ slug, title })}`)
@@ -88,8 +105,51 @@ const DEPARTMENTS = [
   { id: 'voice', label: 'แผนกเสียงพากย์' },
   { id: 'art', label: 'แผนกกำกับภาพ' },
   { id: 'images', label: 'แผนกวาดภาพ' },
+  { id: 'clips', label: 'แผนกทำแอนิเมชัน' },
   { id: 'edit', label: 'แผนกตัดต่อ' },
 ]
+/**
+ * เริ่มใหม่ตั้งแต่แผนกที่เลือก — ย้ายผลงานของแผนกนั้นและแผนกถัดไปไปเก็บที่ _restart_<เวลา>/ (ไม่ลบ กู้คืนได้)
+ * แผนกที่ไม่มีผลงานเหลือจะถูกทำใหม่เองตามปกติ เพราะทุกแผนกเช็คจากไฟล์ที่มีอยู่
+ */
+function restartProject(from) {
+  const order = DEPARTMENTS.map((d) => d.id)
+  const start = order.indexOf(from)
+  if (start < 0) throw new Error(`ไม่รู้จักแผนก "${from}" — ใช้ได้: ${order.join(', ')}`)
+  const redo = new Set(order.slice(start))
+  const base = projectDir(slug)
+  const archive = join(base, `_restart_${new Date().toISOString().replace(/[:.]/g, '-')}`)
+  const scriptDir = projectDir(slug, 'script')
+  const shot = shotlistFiles(slug)
+  const targets = [
+    ...(redo.has('script') ? readdirSync(scriptDir).filter((n) => /^script_.*\.txt$/.test(n) || n === 'post.json').map((n) => join(scriptDir, n)) : []),
+    ...(redo.has('voice') ? [projectDir(slug, 'audio'), projectDir(slug, 'timecode'), shot.slots] : []),
+    // prompt ภาพทั้งหมด ยกเว้นช่องจังหวะช็อต (slots.json เป็นของแผนกเสียง)
+    ...(redo.has('art') ? readdirSync(shot.dir).filter((n) => n !== 'slots.json').map((n) => join(shot.dir, n)) : []),
+    ...(redo.has('images') ? [projectDir(slug, 'images')] : []),
+    ...(redo.has('clips') && !redo.has('images') ? [clipsDir(slug)] : []),
+    ...(redo.has('edit') ? [projectDir(slug, 'render')] : []),
+  ]
+  let moved = 0
+  for (const src of targets) {
+    if (!existsSync(src)) continue
+    const isDir = statSync(src).isDirectory()
+    if (isDir && !readdirSync(src).length) continue
+    const dest = join(archive, src.slice(base.length + 1))
+    mkdirSync(dirname(dest), { recursive: true })
+    try {
+      renameSync(src, dest)
+    } catch (err) {
+      // Windows: ไฟล์ถูกเปิดค้าง (เช่นวิดีโอเล่นอยู่) ย้ายไม่ได้
+      throw new Error(`ย้ายงานเดิม ${src.slice(base.length + 1)} ไม่ได้ — ปิดไฟล์/โฟลเดอร์ของคลิปนี้ที่เปิดค้างไว้แล้วลองใหม่ (${err.code ?? err.message})`)
+    }
+    if (isDir) mkdirSync(src, { recursive: true })
+    moved++
+  }
+  const label = DEPARTMENTS[start].label
+  console.log(moved ? `↺ เริ่มใหม่ตั้งแต่${label} — ย้ายงานเดิมไปเก็บที่ ${archive}` : `↺ เริ่มใหม่ตั้งแต่${label} (ยังไม่มีงานเดิมให้ย้าย)`)
+}
+
 const stateFile = join(projectDir(slug), 'autopilot.json')
 writeFileSync(join(ROOT, 'projects', '_autopilot_last.json'), JSON.stringify({ slug, title, language: config.script.language, minutes: config.script.targetMinutes, at: Date.now() }, null, 2))
 const previous = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null
@@ -132,6 +192,19 @@ function progress(id, done, total) {
   }
 }
 save()
+// เริ่มใหม่หลังเขียนสถานะ running แล้ว — ย้ายงานไม่สำเร็จจะได้บันทึกเป็นล้มเหลว แผงข้างไม่เข้าใจผิดว่าเสร็จ
+if (restartFrom) {
+  try {
+    restartProject(restartFrom)
+  } catch (err) {
+    state.status = 'failed'
+    state.error = err.message
+    save()
+    console.error(`
+❌ ${err.message}`)
+    process.exit(2)
+  }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const mtime = (f) => (existsSync(f) ? statSync(f).mtimeMs : 0)
@@ -153,14 +226,15 @@ function step(script, args, { onText } = {}) {
   })
 }
 
-const lastLine = (text) => String(text).trim().split(/\r?\n/).filter(Boolean).pop() ?? ''
+// ข้ามบรรทัดท้ายของ stack trace ("Node.js v24…", "    at …") ที่ไม่บอกอะไรผู้ใช้
+const lastLine = (text) => String(text).trim().split(/\r?\n/).filter((l) => l.trim() && !/^Node\.js v\d/.test(l.trim()) && !/^\s+at /.test(l)).pop() ?? ''
 
 /** ถาม ChatGPT ผ่านคิวของ bridge — ลองใหม่เมื่อหน้าเว็บค้างหรือ ChatGPT ตอบไม่ได้ */
-async function askChatGPT(prompt, label, { tries = 3, attachments } = {}) {
+async function askChatGPT(prompt, label, { tries = 3, attachments, timeoutMs = 40 * 60_000 } = {}) {
   let lastError
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
-      const result = await runJob({ agent: 'chatgpt', kind: 'prompt', payload: { prompt, newChat: true, ...(attachments?.length && { attachments }) }, timeoutMs: 40 * 60_000, label })
+      const result = await runJob({ agent: 'chatgpt', kind: 'prompt', payload: { prompt, newChat: true, ...(attachments?.length && { attachments }) }, timeoutMs, label })
       if (result?.text?.trim()) return result.text
       lastError = new Error('ChatGPT ตอบกลับว่าง')
     } catch (err) {
@@ -193,6 +267,12 @@ async function scriptDepartment() {
   for (let attempt = 1; attempt <= 3; attempt++) {
     dept('script', { status: 'working', attempts: attempt, expectSec: 150 + config.script.targetMinutes * 20, detail: `ChatGPT กำลังเขียนบท (${config.script.targetMinutes} นาที)` })
     const text = await askChatGPT(scriptPrompt(config, title) + feedback, `เขียนบท "${title}"`)
+    // จบด้วยสระหน้า (เ แ โ ใ ไ) = ขาดกลางคำแน่นอน (ไม่มีคำไทยจบแบบนี้) → ขอใหม่ ไม่งั้นเสียงท้ายคลิปขาด
+    if (/[เแโใไ]\s*$/.test(text.trim()) && attempt < 3) {
+      console.warn(`   บทที่ได้ขาดกลางคำ ("…${text.trim().slice(-12)}") — ขอเขียนใหม่`)
+      feedback = '\n\n⚠️ คำตอบรอบก่อนขาดกลางคำตอนท้าย — เขียนบทใหม่ทั้งหมดให้จบประโยคสุดท้ายครบถ้วน'
+      continue
+    }
     const saved = saveScript(config, title, text)
     const ratio = saved.minutes / saved.target
     // บทสั้น/ยาวผิดเป้าเล็กน้อย รอบสุดท้ายยอมรับ · ผิดเป้าหลายเท่า (เช่น เป้า 1 นาทีได้ 13 นาที) ห้ามไปต่อ — เสียเวลาทำเสียงและภาพเป็นร้อยช็อต
@@ -280,7 +360,7 @@ async function artDepartment() {
 function imageCoverage() {
   const shots = JSON.parse(readFileSync(shotlistFiles(slug).shots, 'utf8'))
   const have = new Set(collectImages(projectDir(slug, 'images')).images.map((i) => i.name))
-  return { total: shots.length, have: shots.filter((s) => have.has(s.filename)).length }
+  return { total: shots.length, have: shots.filter((s) => have.has(s.filename)).length, scenes: scenes(shots).length }
 }
 
 /**
@@ -346,13 +426,37 @@ async function imagesDepartment() {
   dept('images', { status: 'done', detail: `ภาพ ${cov.have}/${cov.total} ใบ${hasCover(slug) ? ' + ปกคลิป' : ' · ยังไม่มีปก'}` })
 }
 
-// ── แผนก 5: ตัดต่อ ──
+// ── แผนก 5: ม้าน้ำทำแอนิเมชันจากภาพ Flow ด้วย Kie API ──
+async function clipsDepartment() {
+  const settings = clipSettings(config)
+  if (!settings.enabled) return dept('clips', { status: 'done', detail: 'ปิด Kie — ใช้ภาพนิ่งซูม/เลื่อนกล้องแล้วตัดต่อ' })
+  kieKey()
+  const target = clipTarget(imageCoverage().scenes, settings.coveragePercent)
+  const before = collectClips(slug).size
+  progress('clips', Math.min(before, target), target)
+  dept('clips', { status: 'working', detail: `ม้าน้ำใช้ Kie (${kieTier(settings.tier).label} · ${kieTier(settings.tier).name}) ขยับ ${settings.coveragePercent}% ของเรื่อง (${target} ฉากสำคัญจากภาพ Flow)` })
+  let clipLog = ''
+  const run = await step('5b_clips.mjs', [slug], {
+    onText: (chunk) => {
+      clipLog += chunk
+      const newClips = [...clipLog.matchAll(/ได้คลิป\s+\d{2}_\d{2}_\d{2}(?:_\d)?\.mp4/g)].length
+      progress('clips', Math.min(before + newClips, target), target)
+    },
+  })
+  const after = collectClips(slug).size
+  progress('clips', Math.min(after, target), target)
+  if (!run.ok) console.warn(`   Kie ทำคลิปไม่สำเร็จ: ${lastLine(run.tail)} — ฉากที่ไม่ได้คลิปใช้ภาพเดิม`)
+  dept('clips', { status: 'done', detail: `คลิปขยับ ${Math.min(after, target)}/${target} ฉาก (${settings.coveragePercent}% ของเรื่อง)${!run.ok ? ' · ฉากที่เหลือใช้ภาพเดิม' : ''}` })
+}
+
+// ── แผนก 6: ตัดต่อ ──
 async function editDepartment() {
   const out = join(projectDir(slug, 'render'), `${slug}.mp4`)
   const images = projectDir(slug, 'images')
-  const newestImage = Math.max(0, ...collectImages(images).images.map((i) => mtime(i.file)))
+  const aiClips = clipSettings(config).enabled ? collectClips(slug) : new Map()
+  const newestImage = Math.max(0, ...collectImages(images).images.map((i) => mtime(i.file)), ...[...aiClips.values()].map((c) => c.mtime))
   const rendered = existsSync(join(projectDir(slug, 'render'), 'render.json')) ? JSON.parse(readFileSync(join(projectDir(slug, 'render'), 'render.json'), 'utf8')) : null
-  const sameSubs = (rendered?.subtitles ?? 'off') === (config.render.subtitles?.style ?? 'off') && (rendered?.motion ?? 'off') === (config.render.motion ?? 'off')
+  const sameSubs = (rendered?.subtitles ?? 'off') === (config.render.subtitles?.style ?? 'off') && (rendered?.motion ?? 'off') === (config.render.motion ?? 'off') && (rendered?.clips ?? 0) === aiClips.size
   if (sameSubs && mtime(out) > newestImage && mtime(out) > mtime(join(projectDir(slug, 'audio'), 'voiceover.wav'))) {
     state.video = out
     return dept('edit', { status: 'done', detail: 'ใช้วิดีโอเดิม' })
@@ -370,16 +474,32 @@ async function editDepartment() {
   }
 }
 
-const WORK = { script: scriptDepartment, voice: voiceDepartment, art: artDepartment, images: imagesDepartment, edit: editDepartment }
+const WORK = { script: scriptDepartment, voice: voiceDepartment, art: artDepartment, images: imagesDepartment, clips: clipsDepartment, edit: editDepartment }
 
 console.log(`🎬 ทำคลิปอัตโนมัติ: ${title}`)
 console.log(`   ${config.script.language === 'en' ? 'อังกฤษ' : 'ไทย'} · ${config.script.targetMinutes} นาที · เสียง ${config.tts.engine}`)
 await requireBridge()
 
+// ข้อความโพสต์ (ชื่อคลิป คำบรรยาย แฮชแท็ก) — เริ่มคิดตอน Flow วาดภาพ (ChatGPT ว่างช่วงนั้น) ไม่ต้องรอตอนท้าย
+// เปิด Kie อยู่ → เลื่อนไปคิดตอนตัดต่อแทน เพราะแผนกแอนิเมชันต้องใช้ ChatGPT เลือกฉาก/คิดท่าขยับ
+// ChatGPT ทำได้ทีละงาน ถ้างานโพสต์ค้าง แผนกแอนิเมชันจะต่อคิวรอจนหมดเวลา
+// โหมดคิดนานของ ChatGPT ใช้ได้ถึง 7 นาทีแม้คำขอสั้น · พลาดไม่ถือว่าคลิปพัง กดคิดเองในคลังวิดีโอได้
+let postJob = null
+function startPostJob() {
+  if (postJob || readPost(slug)) return
+  console.log('   (เบื้องหลัง) ให้ ChatGPT คิดชื่อคลิป + คำบรรยายระหว่างรอภาพ')
+  // ไม่ใช่งานหลัก — รอไม่เกิน 12 นาที ครั้งเดียว (เดิม 40 นาที × 2 ทำให้คลิปเสร็จแล้วแต่สถานะค้าง "กำลังทำ" เป็นชั่วโมง)
+  postJob = askChatGPT(postPrompt(clipSource(slug)), 'คิดชื่อคลิป + คำบรรยาย', { tries: 1, timeoutMs: 12 * 60_000 })
+    .then((text) => savePost(slug, parsePost(text)))
+    .then((post) => console.log(`   ได้ชื่อคลิป ${post.titles.length} แบบ + คำบรรยาย + แฮชแท็ก ${post.hashtags.length} อัน`))
+    .catch((err) => console.warn(`   คิดชื่อคลิปไม่สำเร็จ: ${err.message} — กดคิดเองได้ในคลังวิดีโอ`))
+}
+
 for (const d of DEPARTMENTS) {
   state.current = d.id
   console.log(`\n▶ ${d.label}`)
   dept(d.id, { status: 'working' })
+  if (d.id === (clipSettings(config).enabled ? 'edit' : 'images')) startPostJob()
   try {
     await WORK[d.id]()
   } catch (err) {
@@ -391,6 +511,13 @@ for (const d of DEPARTMENTS) {
     console.error('   กดทำคลิปอัตโนมัติอีกครั้งด้วยหัวข้อเดิม ระบบจะทำต่อจากจุดนี้')
     process.exit(2)
   }
+}
+
+// ข้อความโพสต์: ปกติคิดเสร็จไปแล้วระหว่างวาดภาพ — ยังไม่เสร็จ (หรือข้ามขั้นภาพเพราะมีภาพอยู่แล้ว) รอ/เริ่มตรงนี้
+startPostJob()
+if (postJob) {
+  console.log('\n▶ รอชื่อคลิป + คำบรรยายสำหรับโพสต์')
+  await postJob
 }
 
 state.current = null

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 assert.equal(elapsed(1_000, 126_000), '2:05')
 assert.equal(elapsed(200_000, 126_000), '0:00')
 assert.equal(elapsed('invalid', 126_000), '')
-assert.deepEqual(HANDOFF.map(s => s.id), ['chatgpt', 'voice', 'chatgpt', 'flow', 'edit'])
+assert.deepEqual(HANDOFF.map(s => s.id), ['chatgpt', 'voice', 'chatgpt', 'flow', 'meta', 'edit'])
 console.log('ผ่าน: เวลาใช้งานและลำดับส่งต่องาน')
 if (process.argv.includes('--check')) process.exit(0)
 
@@ -39,8 +39,27 @@ window.fetch = async (input, init) => {
   if (url.pathname.startsWith('/api/')) {
     const payload = url.pathname === '/api/voices' ? {voices:[],selected:null,choice:null}
       : url.pathname === '/api/character' ? {images:[],description:''}
-      : url.pathname === '/api/autopilot' ? {status:null,run:null}
-      : url.pathname === '/api/clip-settings' ? {orientation:'landscape',subtitles:'none',pause:'natural',options:{subtitles:[{id:'none',label:'ไม่ใส่'}],pause:[{id:'natural',label:'ปกติ'}]}} : {}
+      : url.pathname === '/api/autopilot' ? (params.get('log')==='on' ? (() => {
+          // ?log=on — คลิปที่ติดปัญหาพร้อม log จำลอง สำหรับดูหน้าต่าง terminal
+          const t0 = Date.now() - 20 * 60_000, at = (m) => t0 + m * 60_000
+          return { slug: 'demo', status: { status: 'failed', title: 'เรื่องที่ไม่ค่อยมีใครเล่าของโพโมโดโร', slug: 'demo', current: 'clips', error: 'แผนกทำแอนิเมชัน: Kie ปฏิเสธภาพเล็กเกินไป', departments: { script: { status: 'done', detail: 'ได้บท ~1.2 นาที' }, voice: { status: 'done', detail: 'ได้เสียงพากย์ + timecode' }, art: { status: 'done', detail: 'prompt ภาพครบ 21 ช็อต' }, images: { status: 'done', detail: 'ภาพ 21/21 ใบ + ปกคลิป' }, clips: { status: 'failed', detail: 'คลิปขยับ 0/9 ฉาก' }, edit: { status: 'waiting' } } }, run: null, progress: { percent: 85, departments: { clips: 0 } }, cost: { kie: { credits: 78.75, clips: 9, unknown: 0 }, usd: 0.3937, thb: 13.17, fx: { rate: 33.45, date: '2026-09-25' }, chatgpt: { calls: 6, tokens: 41250 } },
+            log: [
+              { at: at(0), src: 'run', text: '🎬 ทำคลิปอัตโนมัติ: เรื่องที่ไม่ค่อยมีใครเล่าของโพโมโดโร' },
+              { at: at(0.1), src: 'run', text: '▶ แผนกเขียนบท' },
+              { at: at(0.2), src: 'bridge', text: 'ส่งงาน prompt (a477eab4) ให้ chatgpt' },
+              { at: at(1.5), src: 'bridge', text: 'เสร็จ prompt (a477eab4) · 11002 ตัวอักษร' },
+              { at: at(3), src: 'run', text: '▶ แผนกวาดภาพ' },
+              { at: at(4), src: 'run', text: '  ได้ 12/21 ใบ', progress: true },
+              { at: at(6), src: 'bridge', text: 'งาน generate-images (0da818e3) เงียบเกินเวลา → ส่งใหม่ครั้งที่ 2' },
+              { at: at(9), src: 'bridge', text: 'เสร็จ generate-images (e9830939) · 22 ไฟล์' },
+              { at: at(10), src: 'run', text: '▶ แผนกทำแอนิเมชัน' },
+              { at: at(14), src: 'bridge', text: 'ยกเลิก prompt (8f9c74d7): งาน prompt ไม่เสร็จภายใน 4 นาที' },
+              { at: at(14.1), src: 'run', text: 'ChatGPT เลือกไม่สำเร็จ — ใช้ท่าขยับมาตรฐานแทน' },
+              { at: at(15), src: 'run', text: '  ไม่สำเร็จ: Kie สร้างคลิปไม่สำเร็จ: expected the width to be at least 300px' },
+              { at: at(15.2), src: 'run', text: '❌ หยุดที่แผนกทำแอนิเมชัน — ล้มเหลวติดกัน 2 ช็อต' },
+            ] }
+        })() : {status:null,run:null})
+      : url.pathname === '/api/clip-settings' ? {orientation:'landscape',subtitles:'none',pause:'natural',motion:'gentle',aiCoverage:params.get('kie')==='on'?'20':'off',kieTier:'cheap',kie:{hasKey:false,label:'ถูก',name:'Seedance 1.5 Pro',credits:8.75,detail:'480p · 5 วิ'},options:{subtitles:[{id:'none',label:'ไม่ใส่'}],pause:[{id:'natural',label:'ปกติ'}],motion:[{id:'gentle',label:'ซูมช้า'}],aiCoverage:[{id:'off',label:'ปิด'},{id:'20',label:'20%'},{id:'60',label:'60%'},{id:'80',label:'80%'},{id:'100',label:'100%'}],kieTier:[{id:'cheap',label:'ถูก',name:'Seedance 1.5 Pro',credits:8.75,detail:'480p · 5 วิ'},{id:'mid',label:'พอใช้',name:'Hailuo 2.3',credits:30,detail:'768p · 6 วิ'},{id:'pro',label:'เก่ง',name:'Kling 2.6',credits:55,detail:'คมชัด · 5 วิ'}]}} : {}
     return new Response(JSON.stringify(payload), {headers:{'content-type':'application/json'}})
   }
   return originalFetch(input, init)
@@ -83,7 +102,7 @@ addEventListener('DOMContentLoaded', () => {
     document.dispatchEvent(new Event('visibilitychange'))
   }
   document.getElementById('testNext').onclick = () => {
-    const stages = ['script','voice','art','images','edit']
+    const stages = ['script','voice','art','images','clips','edit']
     params.set('auto', stages[(stages.indexOf(params.get('auto'))+1)%stages.length])
     document.dispatchEvent(new Event('visibilitychange'))
   }
@@ -96,16 +115,16 @@ createServer((req, res) => {
   if (url.pathname === '/fixture-stub.js') return reply('text/javascript', stub)
   if (url.pathname === '/fixture-agents') {
     const mode = url.searchParams.get('case') ?? 'mixed'
-    const ids = ['chatgpt', 'flow', 'voice', 'edit']
-    const names = ['ChatGPT','Google Flow','เสียงพากย์','ตัดต่อ']
-    const work = ['เขียนบทเรื่องความกลัวให้เล่าเข้าใจง่าย','วาดภาพช็อตที่ 12 จาก 24','สร้างเสียงพากย์ภาษาไทย','ตัดต่อภาพและเสียงเป็นวิดีโอ']
-    const states = ['working','waiting','idle','offline']
+    const ids = ['chatgpt', 'flow', 'meta', 'voice', 'edit']
+    const names = ['ChatGPT','Google Flow','Kie API','เสียงพากย์','ตัดต่อ']
+    const work = ['เขียนบทเรื่องความกลัวให้เล่าเข้าใจง่าย','วาดภาพช็อตที่ 12 จาก 24','ขยับภาพฉากสำคัญด้วย Kie','สร้างเสียงพากย์ภาษาไทย','ตัดต่อภาพและเสียงเป็นวิดีโอ']
+    const states = ['working','waiting','working','idle','offline']
     const auto = url.searchParams.get('auto')
     const failed = mode === 'failed'
     const autoState = failed ? 'failed' : mode === 'done' ? 'done' : 'running'
     return reply('application/json', JSON.stringify({
       agents: ids.map((id,i) => ({id,name:names[i],state:mode === 'mixed' ? states[i] : ['working','waiting','idle','offline'].includes(mode) ? mode : 'idle',
-        doing:mode === 'mixed' ? [work[0],'รอบทและคำกำกับภาพ','พร้อมรับงาน','ส่วนขยายยังไม่ได้ต่อ'][i] : work[i],since:fixtureSince-((i+1)*63_000),queued:mode==='waiting'?2:0,attempt:1})),
+        doing:mode === 'mixed' ? [work[0],'รอบทและคำกำกับภาพ',work[2],'พร้อมรับงาน','ส่วนขยายยังไม่ได้ต่อ'][i] : work[i],since:fixtureSince-((i+1)*63_000),queued:mode==='waiting'?2:0,attempt:1})),
       autopilot: auto ? {title:'ทำไมเราถึงกลัวความมืด',current:auto,status:autoState,startedAt:Date.now()-300_000,
         departments:failed ? {[auto]:{status:'failed',detail:'ทดสอบงานไม่สำเร็จ'}} : null} : null, at:Date.now()
     }))

@@ -11,7 +11,12 @@ const NATIVE_HOST = 'com.cartoon_auto.bridge'
 const AGENTS = {
   chatgpt: { match: 'https://chatgpt.com/', pattern: ['https://chatgpt.com/*', 'https://chat.openai.com/*'], key: 'chatTabId' },
   // Google Flow ย้ายจาก labs.google/fx/tools/flow มาที่ flow.google.com แล้ว
-  flow: { match: 'https://flow.google.com/', pattern: 'https://flow.google.com/*', key: 'flowTabId' },
+  // ?hl=en: บัญชีที่ตั้งภาษาไทย Flow จะเป็นภาษาไทย (ปุ่ม "โปรเจ็กต์ใหม่") — ตัวขับหาปุ่มจากข้อความอังกฤษ จึงบังคับภาษาอังกฤษเสมอ
+  flow: { match: 'https://flow.google.com/?hl=en', pattern: 'https://flow.google.com/*', key: 'flowTabId' },
+}
+const CONTENT_FILES = {
+  chatgpt: ['selectors.js', 'content-common.js', 'content-chatgpt.js'],
+  flow: ['content-flow-agent.js'],
 }
 
 async function settings() {
@@ -85,6 +90,13 @@ async function openTab(match, key) {
   return tab
 }
 
+/** เปิด Flow เป็นภาษาอังกฤษ — ตัวขับอ่านข้อความบนปุ่มภาษาอังกฤษ */
+function withEnglish(url) {
+  const u = new URL(url)
+  u.searchParams.set('hl', 'en')
+  return u.toString()
+}
+
 async function handleJob(job) {
   await setStatus(`กำลังทำ ${job.kind}`)
   const tab = await ensureTab(job.payload.agent ?? jobAgent(job))
@@ -93,7 +105,7 @@ async function handleJob(job) {
   // Flow: เริ่มจากหน้าแรกทุกครั้ง → content script กด New project ได้ project ใหม่ต่อคลิป
   if (agent === 'flow' && job.kind === 'generate-images') {
     // คลิปนี้เคยมี project ใน Flow แล้ว → กลับไป project เดิม (ตัวละครเดิม ไม่เปิด project ใหม่ทุกครั้งที่ลองซ้ำ)
-    const url = /^https:\/\/flow\.google\.com\/project\//.test(job.payload.projectUrl ?? '') ? job.payload.projectUrl : AGENTS.flow.match
+    const url = /^https:\/\/flow\.google\.com\/project\//.test(job.payload.projectUrl ?? '') ? withEnglish(job.payload.projectUrl) : AGENTS.flow.match
     await chrome.tabs.update(tab.id, { url, active: true })
     await new Promise((resolve) => {
       const listener = (id, info) => {
@@ -108,11 +120,28 @@ async function handleJob(job) {
     await new Promise((r) => setTimeout(r, 3000))
   }
 
+  // ChatGPT: แชตใหม่ = โหลดหน้าแรกใหม่ (แบบเดียวกับแผงข้าง) — กดปุ่ม New chat จาก content script ไม่ได้ผลกับหน้ารุ่นใหม่ (ต.ค. 2026)
+  // โหลดจากตรงนี้ก่อนส่งงาน เพราะถ้าให้ content script โหลดหน้าเอง ตัวมันจะหายไปกลางงาน
+  if (agent === 'chatgpt' && job.kind === 'prompt' && job.payload.newChat !== false) {
+    await chrome.tabs.update(tab.id, { url: AGENTS.chatgpt.match })
+    await new Promise((resolve) => {
+      const listener = (id, info) => {
+        if (id === tab.id && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener)
+      setTimeout(resolve, 30_000)
+    })
+    await new Promise((r) => setTimeout(r, 2500)) // หน้า SPA render ช่องพิมพ์ต่ออีกนิด
+  }
+
   const response = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_JOB', job }).catch(async (err) => {
     // content script ยังไม่ถูกฉีด (เช่นเปิดหน้าค้างไว้ตั้งแต่ก่อนติดตั้ง) → ฉีดเองแล้วลองใหม่
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: agent === 'flow' ? ['content-flow-agent.js'] : ['selectors.js', 'content-common.js', 'content-chatgpt.js'],
+      files: CONTENT_FILES[agent] ?? CONTENT_FILES.chatgpt,
     })
     return chrome.tabs.sendMessage(tab.id, { type: 'RUN_JOB', job })
   })
@@ -258,8 +287,82 @@ chrome.runtime.onStartup.addListener(pollLoop)
 chrome.alarms?.onAlarm.addListener(() => {
   pollLoop()
   checkAutopilot()
+  checkExtensionUpdate()
 })
+
+/**
+ * ไฟล์ของ extension เปลี่ยน (แก้โค้ดแล้ว) → reload ตัวเองเมื่อไม่มีงานค้าง ไม่ต้องเข้า chrome://extensions เอง
+ * ลายนิ้วมือตอนโหลดเก็บใน storage.session (ล้างเองทุกครั้งที่ extension reload)
+ */
+async function checkExtensionUpdate() {
+  const { base, token, enabled } = await settings()
+  if (!enabled || !token) return
+  const info = await fetch(`${base}/ext-version`, { headers: { 'x-bridge-token': token } })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)
+  if (!info?.version) return
+  const { extVersion } = await chrome.storage.session.get('extVersion')
+  if (!extVersion) return chrome.storage.session.set({ extVersion: info.version })
+  if (extVersion === info.version || info.busy || busy.size) return
+  chrome.runtime.reload()
+}
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'FLOW_TRUSTED_ENTER') {
+    const sender = _sender
+    if (!sender.tab?.id || !/^https:\/\/flow\.google\.com\//.test(sender.tab.url ?? '')) {
+      sendResponse({ ok: false, error: 'คำขอไม่ได้มาจากแท็บ Google Flow' })
+      return
+    }
+    ;(async () => {
+      const target = { tabId: sender.tab.id }
+      const command = (method, params) => new Promise((resolve, reject) => {
+        chrome.debugger.sendCommand(target, method, params, (result) =>
+          chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve(result))
+      })
+      let attached = false
+      try {
+        await new Promise((resolve, reject) => {
+          chrome.debugger.attach(target, '1.3', () =>
+            chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve())
+        })
+        attached = true
+        const enter = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', ...enter, text: '\r', unmodifiedText: '\r' })
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', ...enter })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err?.message ?? String(err) }
+      } finally {
+        if (attached) await new Promise((resolve) => chrome.debugger.detach(target, () => resolve()))
+      }
+    })().then(sendResponse)
+    return true
+  }
+  // วาง prompt ลงช่องพิมพ์ของ ChatGPT จากฝั่งหน้าเว็บเอง (world MAIN) — paste ที่ยิงจาก content script ไม่ลงช่องพิมพ์ (เจอจริง ต.ค. 2026)
+  if (msg.type === 'CHATGPT_PASTE') {
+    if (!_sender.tab?.id || !/^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(_sender.tab.url ?? '')) {
+      sendResponse({ ok: false, error: 'คำขอไม่ได้มาจากแท็บ ChatGPT' })
+      return
+    }
+    chrome.scripting
+      .executeScript({
+        target: { tabId: _sender.tab.id },
+        world: 'MAIN',
+        args: [msg.text, msg.selectors],
+        func: (text, selectors) => {
+          const el = selectors.map((s) => document.querySelector(s)).find(Boolean)
+          if (!el) return false
+          el.focus()
+          const data = new DataTransfer()
+          data.setData('text/plain', text)
+          el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+          return true
+        },
+      })
+      .then(([r]) => sendResponse({ ok: !!r?.result, error: r?.result ? undefined : 'ไม่เจอช่องพิมพ์' }))
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message ?? err) }))
+    return true
+  }
   if (msg.type === 'ENSURE_APP') {
     ensureApp().then(sendResponse)
     return true
@@ -275,8 +378,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   // PROGRESS ทุก 20 วิ = heartbeat ด้วย — ปลุก service worker และบอก bridge ว่างานยังไม่หลุด
   if (msg.type === 'PROGRESS') {
-    post('/progress', msg.body).catch(() => {})
     if (!polling) pollLoop()
-    sendResponse({ ok: true })
+    post('/progress', msg.body)
+      .then((res) => res.json())
+      .then((data) => sendResponse({ ok: true, cancelled: !!data?.cancelled }))
+      .catch(() => sendResponse({ ok: true }))
+    return true
   }
 })

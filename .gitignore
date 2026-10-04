@@ -23,3 +23,7 @@ bridge/jobs-*.json
 projects/*/
 projects/_autopilot_last.json
 projects/selected_topic.json
+
+# ทดสอบเปรียบเทียบโมเดลเสียง (venv + โมเดล + ผลลัพธ์ ขนาดใหญ่)
+tts/eval/
+tts/.venv-voxcpm/

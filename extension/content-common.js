@@ -60,9 +60,14 @@ async function typeInto(el, text) {
     // contenteditable — วางผ่าน clipboard event เพื่อให้ editor จัดการ newline เอง
     const data = new DataTransfer()
     data.setData('text/plain', text)
+    // ข้อความยาว ChatGPT แปลงเป็นไฟล์แนบ "Pasted text.txt" (ใช้เวลา ~1 วิ) ช่องพิมพ์จึงว่าง — นับว่าวางสำเร็จแล้ว
+    // เคยเข้าใจว่าวางไม่ติด แล้วพิมพ์ซ้ำทั้งก้อน 28,000 ตัวอักษร → หน้าค้าง ปุ่มส่งกดไม่ได้ (เจอจริง ต.ค. 2026)
+    const scope = el.closest('form') ?? document
+    const attached = () => scope.querySelectorAll('button[aria-label^="Remove" i]').length
+    const before = attached()
     el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-    await sleep(150)
-    if (!el.textContent.trim()) {
+    await waitFor(() => el.textContent.trim() || attached() > before, { timeout: 3000, interval: 100 }).catch(() => null)
+    if (!el.textContent.trim() && attached() <= before) {
       // บาง editor ไม่รับ paste event สังเคราะห์ → ใช้ execCommand เป็นทางสำรอง
       document.execCommand('insertText', false, text)
       el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }))
@@ -111,9 +116,18 @@ async function toBridge(type, body, { tries = 6 } = {}) {
   throw new Error(`ส่งผลกลับโปรแกรมในเครื่องไม่สำเร็จ: ${last}`)
 }
 
-/** heartbeat ทุก 20 วิระหว่างทำงานยาว — คืนฟังก์ชันหยุด */
-function heartbeat(id) {
-  const timer = setInterval(() => toBridge('PROGRESS', { id }, { tries: 1 }).catch(() => {}), 20_000)
+/**
+ * heartbeat ทุก 20 วิระหว่างทำงานยาว — คืนฟังก์ชันหยุด
+ * bridge ตอบว่างานถูกยกเลิกแล้ว (pipeline หมดเวลา/ถูกปิด) → เรียก onCancel ให้เลิกทำ ไม่งั้นงานที่ไม่มีใครรอจะขวางคิวงานถัดไป
+ */
+function heartbeat(id, onCancel) {
+  const timer = setInterval(async () => {
+    const res = await toBridge('PROGRESS', { id }, { tries: 1 }).catch(() => null)
+    if (res?.cancelled) {
+      clearInterval(timer)
+      onCancel?.()
+    }
+  }, 20_000)
   return () => clearInterval(timer)
 }
 

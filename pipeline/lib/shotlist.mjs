@@ -10,7 +10,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync
 import { join } from 'node:path'
 import { projectDir } from './config.mjs'
 import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule } from './prompts.mjs'
-import { activeCharacter, characterRule } from './character.mjs'
+import { activeCharacter, characterRule, bodyStyleRule } from './character.mjs'
 import { coverRequest, parseCover, saveCoverPrompt, readCoverPrompt, coverShot, coverBriefLines } from './cover.mjs'
 import { orientationOf } from './prompts.mjs'
 
@@ -117,7 +117,8 @@ ${batch.map(slotLine).join('\n')}
 ข้อกำหนดของ output:
 - เรียงตามนี้: 5.1 Style Bible → 5.2 Character Bible (ครอบคลุมตัวละครของทั้งคลิป) → 5.3 Shot List
 - ส่วน 5.3 ต้องขึ้นต้นด้วยบรรทัด "=== SHOT LIST ===" แล้วตามด้วย shot
-${OUTPUT_RULES}${orientationRule(config) ? `\n${orientationRule(config)}` : ''}${charRule ? `\n${charRule}` : ''}
+${OUTPUT_RULES}${orientationRule(config) ? `\n${orientationRule(config)}` : ''}
+${bodyStyleRule(character)}${charRule ? `\n${charRule}` : ''}
 ${coverRequest(orientationOf(config) === 'portrait', language)}`,
     }
   }

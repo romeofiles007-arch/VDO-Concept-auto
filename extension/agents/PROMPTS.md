@@ -6,6 +6,7 @@
 |---|---|---|
 | ChatGPT | เต่าทะเลสวมแว่น | turtle-work.png |
 | Google Flow | ปลาหมึก | octopus-work.png |
+| Meta AI | ม้าน้ำ | seahorse-work.png |
 | เสียงพากย์ | โลมา | dolphin-work.png |
 | ตัดต่อ | ปู | crab-work.png |
 
@@ -28,6 +29,10 @@ Use case: stylized-concept. Asset type: production transparent animation sprite 
 ### dolphin
 
 Use case: stylized-concept. Asset type: production transparent animation sprite for a Thai animation-studio Chrome extension. Premium meticulously rendered 3D collectible sea-animal character, rounded soft satin/ceramic materials, subtle realistic surface detail, controlled studio highlights and soft ambient occlusion, warm key light plus cool ocean rim light. Cute yet composed and competent, big expressive eyes, gentle smile, restrained blush, never frightening or flat vector. EXACTLY FOUR equal square frames in ONE horizontal row, overall aspect ratio 4:1 if possible; otherwise make each cell portrait 3:4, total sheet 3:1. Identical locked three-quarter camera, scale, baseline and props placement in all four cells; subtle sequential work poses for a calm four-frame CSS loop, first and last poses close. Full body and all props entirely inside each cell, generous margins. Genuinely transparent alpha background; no scene, no opaque white/black rectangle, no painted checkerboard, no colored fringe, no text, no labels, no logos, no watermarks. Animals must look like sea animals, NOT humanoid robots, no robot faceplates, no human fingers. Subject: a friendly sky-blue DOLPHIN, unmistakable long rounded dolphin snout/beak, dorsal fin, broad flippers and curved tail flukes, cream belly. Upright buoyant pose wearing compact recording headphones, speaking toward a small studio microphone with pop filter on a short stand. Four subtle sequential mouth-open/mouth-closed speaking poses and slight flipper gesture, fixed position. No chair needed, full tail visible. Palette ocean blue, pale cyan and graphite equipment. No human arms or feet.
+
+### seahorse · Meta AI
+
+Use case: stylized-concept. Asset type: production transparent four-frame animation sprite for the Meta AI animation agent in an underwater creative studio UI. The octopus and crab sheets are style and layout references only. Create a charming golden-teal seahorse animator with curved snout, small crest, fins, coiled tail, large eyes, satin ceramic 3D rendering and gentle blush. It works at a compact animation desk with a flipbook of blank frames and a small motion wheel. Exactly four equal-width cells in one horizontal row. Lock the seahorse, desk, three-quarter camera, size, baseline and prop positions; show four subtle sequential page-flipping poses with the first and last similar. Full body and props inside each cell. Warm key light, cool ocean rim light, teal, sea gold and cream. Genuine transparent alpha. No scene, text, labels, logos, watermark, borders, checkerboard, other animals or human hands.
 
 ### crab
 

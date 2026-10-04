@@ -6,6 +6,7 @@
  *   references: selections.json ของคลิปต้นแบบ อ้างอิงจากโฟลเดอร์เสียง
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, isAbsolute } from 'node:path'
 import { ROOT } from './config.mjs'
 
@@ -40,12 +41,29 @@ export function writeVoice(id, changes) {
   return data
 }
 
+/** ความยาวไฟล์เสียง (วินาที) — จำไว้ตาม mtime ไม่ต้องถาม ffprobe ซ้ำทุกครั้งที่แผงข้างโหลดรายการ */
+const durationCache = new Map()
+function audioSeconds(file, mtime) {
+  const key = `${file}|${mtime}`
+  if (!durationCache.has(key)) {
+    let sec = null
+    try {
+      sec = Number.parseFloat(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8', windowsHide: true }))
+    } catch {}
+    durationCache.set(key, Number.isFinite(sec) ? sec : null)
+  }
+  return durationCache.get(key)
+}
+
 export function rawFiles(id) {
   const dir = join(voiceDir(id), 'raw')
   if (!existsSync(dir)) return []
   return readdirSync(dir)
     .filter((f) => AUDIO_EXT.includes(f.split('.').pop().toLowerCase()))
-    .map((name) => ({ name, mb: +(statSync(join(dir, name)).size / 1048576).toFixed(1) }))
+    .map((name) => {
+      const st = statSync(join(dir, name))
+      return { name, mb: +(st.size / 1048576).toFixed(1), seconds: audioSeconds(join(dir, name), st.mtimeMs), addedAt: st.mtimeMs }
+    })
 }
 
 /** path ใน voice.json อ้างอิงจากโฟลเดอร์เสียง (ย้ายโปรเจกต์ไปเครื่องอื่นได้) — path เต็มแบบเก่าก็ยังใช้ได้ */

@@ -16,10 +16,11 @@ import { collectImages } from './lib/shotfile.mjs'
 import { probeDuration, probeSize, renderVideo, MOTION_PRESETS } from './lib/ffmpeg.mjs'
 import { hhmmss } from './lib/timecode.mjs'
 import { buildAss, SUBTITLE_STYLES } from './lib/subtitles.mjs'
+import { clipSettings, collectClips } from './lib/clips.mjs'
 
 const [slug, ...rest] = process.argv.slice(2)
 if (!slug) {
-  console.error('ใช้: node pipeline/6_render.mjs <slug> [--bgm path.mp3] [--subs off|black|white|yellow] [--motion off|gentle|lively]')
+  console.error('ใช้: node pipeline/6_render.mjs <slug> [--bgm path.mp3] [--subs off|black|white|yellow] [--motion off|gentle|lively] [--clips on|off]')
   process.exit(1)
 }
 
@@ -88,9 +89,41 @@ if (subStyle !== 'off') {
 const motionArg = rest.includes('--motion') ? rest[rest.indexOf('--motion') + 1] : config.render.motion ?? 'off'
 const motion = MOTION_PRESETS[motionArg] ? motionArg : 'off'
 
-console.log(`ภาพ ${images.length} ใบ · เสียง ${hhmmss(totalDuration)} · ${portrait ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'} · ซับไตเติล${SUBTITLE_STYLES[subStyle].label} · ${MOTION_PRESETS[motion].label} · กำลัง render...`)
+// คลิปขยับจาก AI (โหมดทดลอง) — ใช้เฉพาะตอนเปิดโหมดไว้ หรือสั่ง --clips on · --clips off = ใช้ภาพล้วนแม้มีคลิป
+const clipsArg = rest.includes('--clips') ? rest[rest.indexOf('--clips') + 1] : clipSettings(config).enabled ? 'on' : 'off'
+const clips = new Map()
+if (clipsArg === 'on') {
+  const names = new Set(images.map((i) => i.name))
+  for (const [name, c] of collectClips(slug)) {
+    if (!names.has(name)) continue
+    const size = await probeSize(c.file).catch(() => null)
+    if (!size?.width) continue // ไฟล์เสีย → ใช้ภาพแทน
+    const clipPortrait = size.height > size.width
+    const ratio = size.width / size.height / (portrait ? 9 / 16 : 16 / 9)
+    clips.set(name, { file: c.file, fit: clipPortrait === portrait && Math.abs(ratio - 1) < 0.2 ? 'cover' : 'contain', duration: await probeDuration(c.file).catch(() => 0) })
+  }
+}
+
+// คลิปเล่นทั้งฉาก: ช็อตต่อเนื่อง (continuation) ของฉากเดียวกันที่อยู่ในความยาวคลิป → ไม่ตัดกลับเป็นภาพนิ่งกลางการเคลื่อนไหว
+// ช็อตที่เกินความยาวคลิปยังใช้ภาพของมันเอง (มุมกล้องใหม่ของฉาก ตัดได้เนียน)
+let timeline = images
+if (clips.size) {
+  const shotsFile = join(projectDir(slug, 'shotlist'), 'shots.json')
+  const continuation = new Set(existsSync(shotsFile) ? JSON.parse(readFileSync(shotsFile, 'utf8')).filter((s) => s.continuation).map((s) => s.filename) : [])
+  timeline = []
+  let covering = null // คลิปของฉากที่กำลังเล่น: { until }
+  for (const img of images) {
+    if (covering && continuation.has(img.name) && img.start < covering.until) continue
+    const clip = clips.get(img.name)
+    covering = clip?.duration ? { until: img.start + clip.duration - 0.3 } : null
+    timeline.push(img)
+  }
+  if (timeline.length < images.length) console.log(`คลิป AI เล่นต่อเนื่องแทนภาพนิ่งในฉากเดียวกัน ${images.length - timeline.length} ช็อต`)
+}
+
+console.log(`ภาพ ${images.length} ใบ · เสียง ${hhmmss(totalDuration)} · ${portrait ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'} · ซับไตเติล${SUBTITLE_STYLES[subStyle].label} · ${MOTION_PRESETS[motion].label}${clips.size ? ` · คลิป AI ${clips.size} ช็อต` : ''} · กำลัง render...`)
 await renderVideo({
-  images,
+  images: timeline,
   voiceover,
   bgm: bgmArg && existsSync(bgmArg) ? bgmArg : null,
   outFile,
@@ -100,10 +133,11 @@ await renderVideo({
   subtitles,
   fit,
   motion,
+  clips,
   onProgress: (done, total) => process.stdout.write(`\rขยับภาพ ${done}/${total} ช็อต${done === total ? ' · กำลังรวมเป็นวิดีโอ...\n' : ''}`),
 })
 // ค่าที่ใช้ตัดต่อ — ทำคลิปอัตโนมัติใช้ตัดสินว่าต้องตัดต่อใหม่ไหมเมื่อเปลี่ยนตั้งค่า
-writeFileSync(join(projectDir(slug, 'render'), 'render.json'), JSON.stringify({ resolution, subtitles: subStyle, motion, renderedAt: Date.now() }, null, 2))
+writeFileSync(join(projectDir(slug, 'render'), 'render.json'), JSON.stringify({ resolution, subtitles: subStyle, motion, clips: clips.size, renderedAt: Date.now() }, null, 2))
 
 const mb = (statSync(outFile).size / 1024 / 1024).toFixed(1)
 console.log(`เสร็จ: ${outFile} (${mb} MB)`)

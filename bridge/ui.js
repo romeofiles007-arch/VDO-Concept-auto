@@ -7,7 +7,7 @@
  *   STAGE 1 ได้ตาราง "# | Video Title | Genre" 5 แถว แล้วผู้ใช้คลิกเลือกจากตาราง
  * ขั้น 2-6 รันสคริปต์ใน pipeline/ ตัวเดิมผ่าน runner.js — ผลเป็นไฟล์ชุดเดียวกับรันจาก terminal
  *
- * ทุกขั้นผ่านเว็บ (ChatGPT, Google Flow) หรือรันในเครื่อง ไม่เรียก API ใดๆ
+ * ChatGPT/Flow ผ่านเว็บ; แอนิเมชัน Kie API เป็นตัวเลือกที่ปิดได้; ขั้นอื่นรันในเครื่อง
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, unlinkSync, renameSync } from 'node:fs'
 import { pipeline as pipeStreams } from 'node:stream/promises'
@@ -19,16 +19,21 @@ import { createRunner } from './runner.js'
 import { projectStatus, setupStatus, bgmFile, BGM_EXT, listProjects } from './project.js'
 import { listVoices, readVoice, writeVoice, voiceDir, voiceId, voiceReady, AUDIO_EXT } from '../pipeline/lib/voices.mjs'
 import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, edgePython, synthCloud } from '../pipeline/lib/cloud_tts.mjs'
+import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText } from '../pipeline/lib/voxcpm.mjs'
 import { hasKey } from '../pipeline/lib/env.mjs'
 import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRoundPrompt } from '../pipeline/lib/shotlist.mjs'
 import { execFileSync } from 'node:child_process'
 import { parseTimecodeFilename } from '../pipeline/lib/shotfile.mjs'
 import { listVideos, trashVideo, renameProject, revealVideo } from './videos.js'
+import { clipSource, postPrompt, parsePost, savePost } from '../pipeline/lib/post.mjs'
 import { checklist } from './checklist.js'
 import { autopilotProgress } from '../pipeline/lib/progress.mjs'
 import { readCharacter, updateCharacter, addCharacterImage, removeCharacterImage, clearCharacter, characterAttachments, activeCharacter, CHARACTER_DIR } from '../pipeline/lib/character.mjs'
 import { PAUSE_PRESETS, MOTION_PRESETS } from '../pipeline/lib/ffmpeg.mjs'
 import { SUBTITLE_STYLES } from '../pipeline/lib/subtitles.mjs'
+import { clipSettings, CLIP_COVERAGES } from '../pipeline/lib/clips.mjs'
+import { KIE_TIERS, kieTier } from '../pipeline/lib/kie.mjs'
+import { clipCost } from '../pipeline/lib/usage.mjs'
 import { readAsrTimeline, writeAsrTimeline, parseSegmentText } from '../pipeline/lib/asr.mjs'
 
 const CONFIG_FILE = join(ROOT, 'config', 'project.config.json')
@@ -52,7 +57,22 @@ const CONNECTED_WINDOW_MS = 70_000
 
 const readJson = (file, fallback) => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback)
 
-export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log }) {
+/**
+ * log ของคลิปที่กำลังดู: output ของ autopilot + เหตุการณ์ bridge ช่วงเวลาเดียวกัน เรียงตามเวลา
+ * งานจบแล้วยังส่งให้ (runner เก็บรอบล่าสุดไว้) — เปิดแผงใหม่ก็เห็นว่าติดตรงไหน
+ */
+const TEST_AGENTS = /→ (x|cancel-test|flow-selftest) |ให้ (x|cancel-test|flow-selftest)$/
+function mergeAutopilotLog(run, bridgeEvents) {
+  if (!run?.entries) return null
+  const from = run.startedAt - 1000
+  const to = run.endedAt ? run.endedAt + 60_000 : Infinity
+  const events = bridgeEvents
+    .filter((e) => e.at >= from && e.at <= to && !TEST_AGENTS.test(e.text) && !/^เริ่ม |^ทำคลิปอัตโนมัติ /.test(e.text))
+    .map((e) => ({ ...e, src: 'bridge' }))
+  return [...run.entries.map((e) => ({ ...e, src: 'run' })), ...events].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).slice(-300)
+}
+
+export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [] }) {
   const runner = createRunner({ log })
 
   function state({ freshSetup = false } = {}) {
@@ -75,7 +95,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
   }
 
   /**
-   * สถานะของแต่ละ agent: ChatGPT / Google Flow (งานในคิว) + เสียงพากย์ / ตัดต่อ (โปรแกรมในเครื่อง)
+   * สถานะของแต่ละ agent: ChatGPT / Google Flow (งานในคิว) + ม้าน้ำ Kie / เสียงพากย์ / ตัดต่อ (โปรแกรมในเครื่อง)
    * state: working | waiting (มีงานรอคิว) | idle | offline
    */
   function agentsStatus() {
@@ -94,7 +114,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const p = active.progress
         const doing =
           active.payload?.label ??
-          (agent === 'flow' ? `${STAGE[p?.stage] ?? 'สร้างภาพ'}${p?.total ? ` ${p.done ?? 0}/${p.total} ใบ` : ''}` : 'กำลังตอบ prompt')
+          (agent === 'flow' ? `${STAGE[p?.stage] ?? 'สร้างภาพ'}${p?.total ? ` ${p.done ?? 0}/${p.total} ใบ` : ''}` : agent === 'meta' ? p?.stage ?? 'กำลังสร้างคลิปขยับ' : 'กำลังตอบ prompt')
         return { state: 'working', doing, since: active.createdAt, queued, attempt: active.attempts ?? 1 }
       }
       if (queued) return { state: 'waiting', doing: `มีงานรอ ${queued} งาน${connected(agent) ? '' : ' — extension ยังไม่มารับ'}`, queued }
@@ -102,6 +122,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     }
 
     const LOCAL = {
+      meta: {},
       voice: { tts: 'สร้างเสียงพากย์', importAudio: 'ถอดเสียงที่นำเข้า', trainVoice: 'เทรนเสียง', setupTts: 'ติดตั้งระบบเสียง', timecode: 'ทำ Timecode' },
       edit: { render: 'ตัดต่อวิดีโอ' },
     }
@@ -118,13 +139,14 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       agents: [
         { id: 'chatgpt', name: 'ChatGPT', role: 'เขียนบท · กำกับภาพ', ...webAgent('chatgpt') },
         { id: 'flow', name: 'Google Flow', role: 'วาดภาพ', ...webAgent('flow') },
+        { id: 'meta', name: 'ม้าน้ำ · Kie API', role: 'ทำแอนิเมชัน', ...localAgent('meta', 'clips') },
         { id: 'voice', name: 'เสียงพากย์', role: 'ในเครื่อง', ...localAgent('voice', 'voice') },
         { id: 'edit', name: 'ตัดต่อ', role: 'ในเครื่อง', ...localAgent('edit', 'edit') },
       ],
       autopilot: auto
         ? { title: auto.title, current: auto.current, status: auto.status, startedAt: auto.startedAt, departments: auto.departments, progress: autopilotProgress(auto) }
         : running?.step === 'autopilot'
-          ? { title: running.title ?? 'กำลังคิดหัวข้อ', current: 'topic', status: 'running', startedAt: running.startedAt, progress: { percent: 1, current: 'topic', label: 'คิดหัวข้อ', step: 1, steps: 6, count: '', etaSec: null } }
+          ? { title: running.title ?? 'กำลังคิดหัวข้อ', current: 'topic', status: 'running', startedAt: running.startedAt, progress: { percent: 1, current: 'topic', label: 'คิดหัวข้อ', step: 1, steps: 7, count: '', etaSec: null } }
           : null,
       at: now,
     }
@@ -189,6 +211,10 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     mkdirSync(join(ROOT, 'projects'), { recursive: true })
     writeFileSync(TOPICS_FILE, JSON.stringify(topics, null, 2))
     return { status: 'done', topics }
+  }
+
+  function finishPost(text, job) {
+    return { status: 'done', post: savePost(job.payload.uiPost.slug, parsePost(text)) }
   }
 
   function finishScript(text, job) {
@@ -270,6 +296,19 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         if (body.wholeProject && selected && slugify(selected.title) === body.slug) unlinkSync(SELECTED_FILE)
         return json(res, 200, result), true
       }
+      // ชื่อคลิป + คำบรรยาย + แฮชแท็ก — ให้ ChatGPT คิดจากบทของคลิป (คิวเดียวกับงานอื่นของ ChatGPT)
+      if (req.method === 'POST' && path === '/api/videos/post') {
+        const { slug } = await readBody(req)
+        if (!/^[^\\/.][^\\/]*$/.test(String(slug ?? '')) || !existsSync(join(ROOT, 'projects', slug))) return json(res, 400, { error: 'ไม่พบคลิปนี้' }), true
+        const job = enqueue('chatgpt', 'prompt', { prompt: postPrompt(clipSource(slug)), newChat: true, uiStage: 'post', uiPost: { slug }, label: 'คิดชื่อคลิป + คำบรรยาย' })
+        return json(res, 200, { id: job.id }), true
+      }
+      if (req.method === 'GET' && path === '/api/videos/post') {
+        const result = jobResult(url.searchParams.get('id'), 'post', finishPost)
+        if (!result) return json(res, 404, { error: 'ไม่พบงานนี้' }), true
+        return json(res, 200, result), true
+      }
+
       if (req.method === 'POST' && path === '/api/videos/rename') {
         const body = await readBody(req)
         const selected = readJson(SELECTED_FILE, null)
@@ -281,6 +320,13 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       }
       if (req.method === 'POST' && path === '/api/videos/reveal') {
         return json(res, 200, revealVideo(await readBody(req))), true
+      }
+
+      // หัวข้อที่ทำแล้ว + เคยเสนอแล้ว — แผงข้างส่งให้ ChatGPT เลี่ยง · เสนอเสร็จแล้วบันทึกเพิ่ม
+      if (path === '/api/topics/history') {
+        const { listDoneTitles, listSeenTitles, addSeenTitles } = await import('../pipeline/lib/topics.mjs')
+        if (req.method === 'POST') addSeenTitles((await readBody(req)).titles ?? [])
+        return json(res, 200, { done: listDoneTitles(), seen: listSeenTitles() }), true
       }
 
       if (req.method === 'GET' && path === '/api/projects') {
@@ -315,7 +361,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           voices: listVoices(),
           selected: loadConfig().tts.myVoice?.voice ?? null,
           // ตัวเลือกที่ใช้อยู่จริง รูปแบบ "<engine>:<id>" — เสียงของเรา / Edge / Gemini
-          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : `my-voice:${config.tts.myVoice?.voice}`,
+          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : engine === 'voxcpm' ? `voxcpm:${config.tts.voxcpm?.voice ?? 'my_voice'}` : `my-voice:${config.tts.myVoice?.voice}`,
+          voxcpm: { ready: voxcpmInstalled(), voices: voxcpmVoices() },
           edge: { ready: existsSync(edgePython()), voices: EDGE_VOICES },
           language: config.script.language,
           gemini: { hasKey: hasKey('GEMINI_API_KEY'), model: config.tts.gemini?.model, models: GEMINI_MODELS, voices: GEMINI_VOICES },
@@ -326,6 +373,14 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
 
       if (req.method === 'POST' && path === '/api/voices/select') {
         const { id, engine = 'my-voice' } = await readBody(req)
+        if (engine === 'voxcpm') {
+          if (!voxcpmVoices().some((v) => v.id === id)) return json(res, 400, { error: `เสียง ${id} ไม่มีคลิปต้นแบบสำหรับ VoxCPM2` }), true
+          updateConfig((c) => {
+            c.tts.engine = 'voxcpm'
+            c.tts.voxcpm = { ...(c.tts.voxcpm ?? {}), voice: id }
+          })
+          return json(res, 200, { choice: `voxcpm:${id}` }), true
+        }
         if (engine === 'edge' || engine === 'gemini') {
           const catalog = engine === 'edge' ? EDGE_VOICES : GEMINI_VOICES
           if (!catalog.some((v) => v.id === id)) return json(res, 400, { error: `ไม่มีเสียง ${id}` }), true
@@ -346,8 +401,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       // ฟังตัวอย่างเสียงออนไลน์ก่อนเลือก — เก็บไฟล์ไว้ใน projects/_previews ให้ /files เสิร์ฟได้
       if (req.method === 'POST' && path === '/api/voices/preview') {
         const { engine, id, text, emotion = 'calm', speed = 1 } = await readBody(req)
-        if (!['edge', 'gemini'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์' }), true
-        const catalog = engine === 'edge' ? EDGE_VOICES : GEMINI_VOICES
+        if (!['edge', 'gemini', 'voxcpm'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์และ VoxCPM2' }), true
+        const catalog = engine === 'edge' ? EDGE_VOICES : engine === 'voxcpm' ? voxcpmVoices() : GEMINI_VOICES
         if (!catalog.some((v) => v.id === id)) return json(res, 400, { error: `ไม่มีเสียง ${id}` }), true
         // เสียงอังกฤษล้วนอ่านไทยไม่ออก → ตัวอย่างเป็นภาษาอังกฤษ
         const englishOnly = engine === 'edge' && EDGE_VOICES.find((v) => v.id === id)?.readsThai === false
@@ -359,7 +414,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const file = join(dir, name)
         if (!existsSync(file)) {
           const config = loadConfig()
-          await synthCloud(engine, [{ index: 0, text: sample, out: file }], { voice: id, model: config.tts.gemini?.model, emotion, speed }, () => {})
+          if (engine === 'voxcpm') await synthVoxcpm([{ index: 0, text: sample, out: file }], { voice: id, emotion, speed, cfg: config.tts.voxcpm?.cfg, steps: config.tts.voxcpm?.steps, eq: config.tts.voxcpm?.eq })
+          else await synthCloud(engine, [{ index: 0, text: sample, out: file }], { voice: id, model: config.tts.gemini?.model, emotion, speed }, () => {})
         }
         return json(res, 200, { url: `/files/_previews/${encodeURIComponent(name)}?v=${Math.round(statSync(file).mtimeMs)}` }), true
       }
@@ -372,6 +428,18 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const text = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
         writeFileSync(envFile, /^GEMINI_API_KEY=.*$/m.test(text) ? text.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY=${key}`) : `${text.replace(/\n?$/, '\n')}GEMINI_API_KEY=${key}\n`)
         process.env.GEMINI_API_KEY = key
+        return json(res, 200, { hasKey: true }), true
+      }
+
+      if (req.method === 'POST' && path === '/api/kie-key') {
+        const key = String((await readBody(req)).key ?? '').trim()
+        if (!/^[\w-]{20,}$/.test(key)) return json(res, 400, { error: 'รูปแบบ Kie API key ไม่ถูกต้อง' }), true
+        const envFile = join(ROOT, '.env')
+        const contents = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
+        writeFileSync(envFile, /^KIE_API_KEY=.*$/m.test(contents)
+          ? contents.replace(/^KIE_API_KEY=.*$/m, `KIE_API_KEY=${key}`)
+          : `${contents.replace(/\n?$/, '\n')}KIE_API_KEY=${key}\n`)
+        process.env.KIE_API_KEY = key
         return json(res, 200, { hasKey: true }), true
       }
 
@@ -409,6 +477,19 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         if (!file.startsWith(join(voiceDir(voice), 'raw') + sep) || !existsSync(file)) return json(res, 404, { error: 'ไม่พบไฟล์' }), true
         unlinkSync(file)
         return json(res, 200, { voices: listVoices() }), true
+      }
+
+      // เสียงใหม่แบบไม่ต้องเทรน — ไฟล์ 10–15 วิ → เสียงอ้างอิงของ VoxCPM2 (+ ถอดข้อความให้)
+      if (req.method === 'POST' && path === '/api/voices/voxcpm-ref') {
+        const { voice } = await readBody(req)
+        if (!readVoice(voice)) return json(res, 404, { error: 'ไม่พบเสียงนี้' }), true
+        if (runner.snapshot()?.status === 'running') return json(res, 409, { error: 'มีงานอื่นทำอยู่ — รอให้เสร็จก่อน' }), true
+        return json(res, 200, await voxcpmVoiceFromRaw(voice)), true
+      }
+      if (req.method === 'POST' && path === '/api/voices/voxcpm-text') {
+        const { voice, text } = await readBody(req)
+        if (!readVoice(voice)) return json(res, 404, { error: 'ไม่พบเสียงนี้' }), true
+        return json(res, 200, setVoxcpmRefText(voice, text)), true
       }
 
       if (req.method === 'POST' && path === '/api/voices/train') {
@@ -543,6 +624,12 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         }
       }
 
+      // ค่าใช้จ่ายของคลิปที่เลือก (ขั้นทำเอง — คลิปที่ไม่ได้ผ่าน autopilot ก็ดูได้)
+      if (req.method === 'GET' && path === '/api/cost') {
+        const slug = url.searchParams.get('slug') || selectedSlug()
+        return json(res, 200, slug ? await clipCost(slug).catch(() => null) : null), true
+      }
+
       if (req.method === 'POST' && path === '/api/run') {
         const { step } = await readBody(req)
         const slug = step === 'setupTts' ? null : selectedSlug()
@@ -588,12 +675,17 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const autoTopic = !title && body.autoTopic === true
         if (!title && !autoTopic) return json(res, 400, { error: 'พิมพ์หัวข้อก่อน' }), true
         const config = loadConfig()
+        if (clipSettings(config).enabled && !hasKey('KIE_API_KEY')) {
+          return json(res, 400, { error: 'เปิดแอนิเมชัน Kie อยู่ แต่ยังไม่มี API key — กรอกในตั้งค่าม้าน้ำ หรือเลือกปิดเพื่อใช้ภาพนิ่ง' }), true
+        }
         const language = ['th', 'en'].includes(body.language) ? body.language : config.script.language
         const titleLanguage = ['th', 'en'].includes(body.titleLanguage) ? body.titleLanguage : (config.script.titleLanguage ?? language)
         const minutes = Number(body.minutes) > 0 ? Number(body.minutes) : config.script.targetMinutes
         const genre = GENRES.includes(body.genre) ? body.genre : 'mix'
+        // เริ่มใหม่ตั้งแต่แผนกที่เลือก (ไม่ใส่ = ทำต่อจากที่ค้าง) — ต้องมีหัวข้อ ใช้กับคลิปที่มีอยู่แล้ว
+        const restartFrom = title && ['script', 'voice', 'art', 'images', 'clips', 'edit'].includes(body.restartFrom) ? body.restartFrom : null
         const slug = autoTopic ? null : slugify(title)
-        const started = runner.start('autopilot', slug, { title, autoTopic, genre, language, titleLanguage, minutes })
+        const started = runner.start('autopilot', slug, { title, autoTopic, genre, language, titleLanguage, minutes, restartFrom })
         // ขั้นเสียงพากย์อ่านภาษา/ความยาวเป้าหมายจาก config — ให้ตรงกับที่เลือกในแผงข้าง
         updateConfig((c) => {
           Object.assign(c.script, { language, titleLanguage, targetMinutes: minutes })
@@ -614,6 +706,13 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       }
 
       if (req.method === 'GET' && path === '/api/autopilot') {
+        const autopilotLog = (autopilotRun, slug, choosingTopic) => {
+          const snap = runner.snapshot()
+          if (snap?.step !== 'autopilot') return null
+          // คลิปอื่นที่ไม่ใช่รอบล่าสุด → ไม่มี log ของมันในหน่วยความจำ
+          if (slug && snap.slug && snap.slug !== slug && !choosingTopic) return null
+          return mergeAutopilotLog(snap, recentLog())
+        }
         const run = runner.snapshot()
         const last = readJson(join(ROOT, 'projects', '_autopilot_last.json'), null)
         const autopilotRun = run?.step === 'autopilot' ? run : null
@@ -625,7 +724,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const active = !!autopilotRun && (autopilotRun.slug === slug || choosingTopic)
         // โปรแกรมถูกปิดกลางคัน → ไฟล์ยังเขียนว่า running
         if (status?.status === 'running' && !(active && run.status === 'running')) status.status = active && run.status === 'stopped' ? 'stopped' : 'failed'
-        return json(res, 200, { slug, status, run: active ? run : null, last: last?.slug === slug ? last : null, progress: status ? autopilotProgress(status) : null }), true
+        return json(res, 200, { slug, status, run: active ? run : null, last: last?.slug === slug ? last : null, progress: status ? autopilotProgress(status) : null, log: autopilotLog(autopilotRun, slug, choosingTopic), cost: slug && status ? await clipCost(slug).catch(() => null) : null }), true
       }
 
       // เสียงต้นแบบสำหรับ voice clone + ข้อความที่พูดในไฟล์นั้น
@@ -673,6 +772,15 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           updateConfig((c) => {
             if (['landscape', 'portrait'].includes(body.orientation)) c.render.orientation = body.orientation
             if (MOTION_PRESETS[body.motion]) c.render.motion = body.motion
+            // ม้าน้ำ/Kie: 'off' หรือเปอร์เซ็นต์ของฉากทั้งเรื่อง
+            const aiCoverage = body.aiCoverage ?? body.aiClips // aiClips รองรับ extension รุ่นเก่า
+            if (aiCoverage === 'off') c.clips = { ...(c.clips ?? {}), provider: 'off' }
+            else if (CLIP_COVERAGES.includes(Number(aiCoverage))) {
+              c.clips = { ...(c.clips ?? {}), provider: 'kie', coveragePercent: Number(aiCoverage) }
+              delete c.clips.maxPerVideo
+              delete c.clips._maxPerVideo
+            }
+            if (KIE_TIERS[body.kieTier]) c.clips = { ...(c.clips ?? {}), tier: body.kieTier }
             if (SUBTITLE_STYLES[body.subtitles]) c.render.subtitles = { ...(c.render.subtitles ?? {}), style: body.subtitles }
             if (PAUSE_PRESETS[body.pause]) {
               const { segmentGapMs, paragraphGapMs } = PAUSE_PRESETS[body.pause]
@@ -681,12 +789,27 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           })
         }
         const c = loadConfig()
+        const clips = clipSettings(c)
+        const aiCoverage = clips.enabled ? String(clips.coveragePercent) : 'off'
+        // ให้ผู้ใช้ปิด/เปิดการสร้างคลิปวิดีโอด้วย Kie ได้จากปุ่มเดียวกัน
+        // ค่า off ต้องอยู่ใน options ด้วย ไม่เช่นนั้น config รองรับแต่หน้า UI เลือกปิดไม่ได้
+        const aiCoverageOptions = [
+          { id: 'off', label: 'ปิด' },
+          ...CLIP_COVERAGES.map((n) => ({ id: String(n), label: `${n}%` })),
+        ]
         return json(res, 200, {
           orientation: c.render.orientation === 'portrait' ? 'portrait' : 'landscape',
           subtitles: SUBTITLE_STYLES[c.render.subtitles?.style] ? c.render.subtitles.style : 'off',
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
+          aiCoverage,
+          aiClips: aiCoverage,
+          kieTier: clips.tier,
+          kie: { hasKey: hasKey('KIE_API_KEY'), ...kieTier(clips.tier) },
           options: {
+            aiCoverage: aiCoverageOptions,
+            aiClips: aiCoverageOptions,
+            kieTier: Object.entries(KIE_TIERS).map(([id, t]) => ({ id, label: t.label, name: t.name, credits: t.credits, detail: t.detail })),
             motion: Object.entries(MOTION_PRESETS).map(([id, m]) => ({ id, label: m.label })),
             subtitles: Object.entries(SUBTITLE_STYLES).map(([id, s]) => ({ id, label: s.label })),
             pause: Object.entries(PAUSE_PRESETS).map(([id, p]) => ({ id, label: p.label })),
@@ -802,5 +925,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     }
   }
 
-  return { handle }
+  // มีขั้นของ pipeline กำลังรันอยู่ไหม — ใช้ตัดสินว่ารีสตาร์ทโปรแกรม/extension ได้หรือยัง
+  const busy = () => runner.snapshot()?.status === 'running'
+  return { handle, busy }
 }

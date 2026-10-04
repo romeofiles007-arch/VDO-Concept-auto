@@ -55,6 +55,7 @@ export const GENRES = [
   'ตลก & ขำขัน',
   'ความผิดพลาดสุดฮาในประวัติศาสตร์',
   'เรื่องจริงสุดบ้าที่ไม่น่าเกิดขึ้นได้',
+  'ผี & เรื่องเล่าสยอง',
 ]
 
 /** แนวของแต่ละหัวข้อ: ระบุแนวเดียว → ทุกหัวข้อแนวนั้น · 'mix'/ว่าง → สุ่มคนละแนว */
@@ -102,17 +103,26 @@ ${genreRule(genre)}
  * STAGE 1 แบบมีคะแนน — ให้ ChatGPT ให้คะแนนแต่ละหัวข้อ เพื่อเลือกเองหรือให้ระบบเลือกอันที่ดีที่สุด
  * avoid = ชื่อเรื่องที่ทำไปแล้ว ห้ามเสนอซ้ำ
  */
-export function scoredTopicsPrompt(blueprint, { titleLanguage = 'th', minutes = 5, avoid = [], genre = 'mix' } = {}) {
+/** มุมเรื่องจาก PROVEN VIRAL TOPIC ANGLES — สุ่มให้หัวข้อละแบบ กันออกมาเป็นสูตรเดิมซ้ำทุกครั้ง */
+const ANGLES = [
+  'What did ancient people actually ___?', 'Why do/can\'t you ___?', 'What if ___?', 'The ___ Effect / Experiment',
+  'You never noticed that ___', 'The untold story of ___', 'How ___ almost destroyed ___', 'The most ___ in history',
+  'Inside the mind of ___', 'What happens when ___', 'The mystery of ___', '___ explained in X minutes',
+]
+const pickAngles = (n) => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n)
+
+export function scoredTopicsPrompt(blueprint, { titleLanguage = 'th', minutes = 5, avoid = [], seen = [], genre = 'mix' } = {}) {
   const title = lang(titleLanguage)
   return `${blueprint}
 
 ═══════════════════════════════════════
 ทำ STAGE 1 ตามเอกสารข้างบน แต่ใช้ตารางด้านล่างแทนตารางเดิม เพื่อให้คะแนนแต่ละหัวข้อ
 
-เสนอ 5 หัวข้อ viral ที่เล่าเป็นคลิปการ์ตูน stick-figure ยาวประมาณ ${minutes} นาทีได้ดี
+เสนอ 5 หัวข้อ viral ที่เล่าเป็นคลิปการ์ตูน 2D doodle ยาวประมาณ ${minutes} นาทีได้ดี
 **ชื่อหัวข้อทั้ง 5 ต้องเป็น${title.name}เท่านั้น**
 ${genreRule(genre)}
-${avoid.length ? `ห้ามซ้ำหรือคล้ายกับหัวข้อที่ทำไปแล้ว:\n${avoid.map((t) => `- ${t}`).join('\n')}\n` : ''}
+ใช้มุมเล่าข้อละแบบ (ห้ามซ้ำกัน): ${pickAngles(5).map((a, i) => `${i + 1}) ${a}`).join(' · ')}
+${avoid.length ? `\nห้ามซ้ำหรือคล้ายกับหัวข้อที่ทำคลิปไปแล้ว:\n${avoid.map((t) => `- ${t}`).join('\n')}\n` : ''}${seen.length ? `\nหัวข้อเหล่านี้เคยเสนอไปแล้ว — ห้ามเสนอซ้ำ และห้ามเป็นสิ่งของ/เหตุการณ์/ปรากฏการณ์เดียวกันที่แค่เปลี่ยนถ้อยคำ ให้หาเรื่องใหม่ที่ยังไม่อยู่ในรายการ:\n${seen.slice(0, 80).map((t) => `- ${t}`).join('\n')}\n` : ''}
 ให้คะแนนแต่ละหัวข้อ 1–10 อย่างตรงไปตรงมา (ห้ามให้ทุกข้อเท่ากัน):
 - Hook = เห็นชื่อแล้วอยากกดดูทันทีแค่ไหน (ความสงสัย อารมณ์ ความขัดแย้งกับความเชื่อเดิม)
 - Search = คนค้นหา/สนใจเรื่องนี้ได้ต่อเนื่องแค่ไหน (evergreen หรือกระแสที่ยังแรง)

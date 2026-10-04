@@ -19,7 +19,7 @@ export function initIcons(root = document) {
     shots: '#startShots, #resumeShots, [data-run="shotlist"]',
     image: '#startFlow, [data-run="images"]', video: '#startRender, [data-run="render"], #openLibrary, #videoModalLibrary, #libraryTitle',
     folder: '#openProjects, #videoModalReveal', listen: '#previewVoice',
-    copy: '#copyScript, #copyFlow', download: '#downloadScript, #downloadFlow, #saveFlowImages',
+    copy: '#copyScript, #copyFlow', download: '#downloadScript, #downloadFlow, #saveFlowImages, #videoModalDownload',
     save: '#saveGeminiKey, #saveTranscript, #saveRefText', upload: '.filebtn, label.ghost',
     back: '#backFromApp, #closeLibrary', external: '#showFlowTab, #openLocal',
     settings: '#startTrain, #setupTts', clock: '[data-run="timecode"]',

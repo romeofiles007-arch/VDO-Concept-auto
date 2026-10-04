@@ -12,7 +12,7 @@ import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
-import { flowPrompt, aspectOf, stripSafeArea } from './lib/prompts.mjs'
+import { flowPrompt, aspectOf, stripSafeArea, tagNames, untagShotPrompt, recolorBrief, recolorShotPrompt } from './lib/prompts.mjs'
 import { characterAttachments } from './lib/character.mjs'
 import { coverShot, coverBriefLines, hasCover, COVER_NAME } from './lib/cover.mjs'
 import { probeSize } from './lib/ffmpeg.mjs'
@@ -64,18 +64,20 @@ if (!shots.length) {
 }
 
 // brief = Style + Character Bible เดิม + เฉพาะ shot ที่จะสร้าง
-const briefHead = stripSafeArea(readFileSync(briefFile, 'utf8').split(/^=== SHOT LIST ===$/m)[0]).trim()
+const briefHead = recolorBrief(stripSafeArea(readFileSync(briefFile, 'utf8').split(/^=== SHOT LIST ===$/m)[0]).trim()) // ห้ามโทนเทา/ขาวดำ
 // แนวภาพของปก/ช็อตใหม่: ถ้ามีภาพของคลิปนี้แล้ว ใช้แนวเดียวกับภาพที่มี (คลิปเก่าแนวนอนได้ปกแนวนอน)
 let aspect = aspectOf(config)
 if (existing.length) {
   const { width, height } = await probeSize(existing[0].file).catch(() => ({}))
   if (width && height) aspect = height > width ? '9:16' : '16:9'
 }
-const shotLines = timeline.map((s) => `${s.filename} ${stripSafeArea(s.prompt).trim()}`)
+const names = tagNames(briefHead)
+const untag = (s) => ({ ...s, prompt: recolorShotPrompt(untagShotPrompt(stripSafeArea(s.prompt).trim(), names)) })
+const shotLines = timeline.map(untag).map((s) => `${s.filename} ${s.prompt}`)
 const brief = [
   briefHead,
   ...(shotLines.length ? ['=== SHOT LIST ===', ...shotLines] : []),
-  ...(cover ? coverBriefLines(cover, aspect === '9:16') : []),
+  ...(cover ? coverBriefLines(untag(cover), aspect === '9:16') : []),
 ].join('\n\n')
 
 // project ใน Flow ของคลิปนี้ — ลองซ้ำ/ทำต่อจะกลับไป project เดิม (--new-project = เปิดใหม่)
@@ -92,7 +94,7 @@ const result = await runJob({
   kind: 'generate-images',
   payload: {
     prompt: flowPrompt(brief),
-    shots: shots.map((s) => ({ filename: s.filename, shot: s.shot, prompt: s.prompt })),
+    shots: shots.map(untag).map((s) => ({ filename: s.filename, shot: s.shot, prompt: s.prompt })), // คำสั่งซ้ำ/ขอช็อตที่ขาดก็ไม่มี @TAG ในคำบรรยาย
     model: 'Nano Banana 2 Lite', // ใช้ 0 credits — extension ตรวจตัวเลข credit ก่อนสั่ง agent ทุกครั้ง
     aspect, // 16:9 แนวนอน | 9:16 แนวตั้ง
     projectTitle: title, // ตั้งชื่อ project ใน Flow เป็นชื่อเรื่อง แทนชื่อวันที่ของ Flow
@@ -103,7 +105,7 @@ const result = await runJob({
     agentMode: true,
     askAgentToRename: process.argv.includes('--rename'),
   },
-  timeoutMs: 60 * 60_000,
+  timeoutMs: 100 * 60_000, // เผื่อรอ Flow คิวเต็มได้ถึง 40 นาที
   onProgress: (p) => {
     if (p.stage === 'project') {
       if (p.projectUrl && p.projectUrl !== savedProject?.url) {
@@ -111,6 +113,10 @@ const result = await runJob({
         console.log(`project ใน Flow: ${p.projectUrl}`)
       }
       return
+    }
+    if (p.stage === 'busy') {
+      const min = Math.max(0, Math.ceil((p.retryAt - Date.now()) / 60_000))
+      return process.stdout.write(`  Flow คิวเต็ม (high demand) — รออีก ~${min} นาทีแล้วสั่งใหม่ · ได้ ${p.done}/${p.total} ใบ   `)
     }
     if (p.stage === 'retry') {
       const f = p.failed ?? {}

@@ -36,9 +36,9 @@ export const PAUSE_PRESETS = {
 
 /**
  * ตัดความเงียบหัว/ท้ายไฟล์เสียงหนึ่งประโยค (เขียนทับไฟล์เดิม) — ช่วงหยุดกลางประโยคไม่โดนตัด
- * เก็บหัว 40ms ท้าย 80ms ไว้ ไม่ให้เสียงแรก/หางเสียงขาด
+ * เก็บหัว 80ms ท้าย 80ms ไว้ ไม่ให้เสียงแรก/หางเสียงขาด (40ms เคยกินพยัญชนะต้นคำ)
  */
-export async function trimSilence(file, { threshold = -45, keepStart = 0.04, keepEnd = 0.08 } = {}) {
+export async function trimSilence(file, { threshold = -45, keepStart = 0.08, keepEnd = 0.08 } = {}) {
   const tmp = file.replace(/\.wav$/i, '.trim.wav')
   const edge = (keep) => `silenceremove=start_periods=1:start_duration=0:start_threshold=${threshold}dB:start_silence=${keep}`
   await run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-af', `${edge(keepStart)},areverse,${edge(keepEnd)},areverse`, tmp])
@@ -158,8 +158,16 @@ function motionFilter({ w, h, fit, fps, frames, amount, move }) {
   return `${frameFilter(w * SUPERSAMPLE, h * SUPERSAMPLE, fit)},zoompan=z='${z}':x='${x}':y='${y}':d=${frames}:s=${w}x${h}:fps=${fps},format=yuv420p`
 }
 
+/**
+ * ช็อตที่มีคลิปขยับจาก AI — ปรับเป็นขนาดจอ ตัดให้ยาวเท่าช็อต คลิปสั้นกว่าช็อตค้างเฟรมสุดท้ายไว้
+ * ไม่เอาเสียงของคลิป (เสียงพากย์คุมทั้งเรื่อง)
+ */
+function clipFilter({ w, h, fit, fps, frames }) {
+  return `${frameFilter(w, h, fit)},setsar=1,fps=${fps},tpad=stop_mode=clone:stop_duration=${Math.ceil(frames / fps) + 1},format=yuv420p`
+}
+
 /** สร้างคลิปสั้นของแต่ละช็อต — นับเวลาเป็นเฟรมจากเวลาจริงของช็อต ต่อกันแล้วไม่คลาดจากเสียง */
-async function renderMotionShots({ images, totalDuration, w, h, fit, fps, amount, workDir, onProgress }) {
+async function renderMotionShots({ images, totalDuration, w, h, fit, fps, amount, clips, workDir, onProgress }) {
   mkdirSync(workDir, { recursive: true })
   const shots = images.map((img, i) => {
     const from = i === 0 ? 0 : Math.round(img.start * fps)
@@ -168,9 +176,10 @@ async function renderMotionShots({ images, totalDuration, w, h, fit, fps, amount
   })
   let done = 0
   await eachLimit(shots, Math.max(2, Math.min(6, Math.floor(cpus().length / 4))), async (s) => {
+    const clip = clips?.get(s.img.name)
     await run('ffmpeg', [
-      '-y', '-v', 'error', '-i', s.img.file,
-      '-vf', motionFilter({ w, h, fit, fps, frames: s.frames, amount, move: s.move }),
+      '-y', '-v', 'error', '-i', clip?.file ?? s.img.file,
+      '-vf', clip ? clipFilter({ w, h, fit: clip.fit, fps, frames: s.frames }) : motionFilter({ w, h, fit, fps, frames: s.frames, amount, move: s.move }),
       '-frames:v', String(s.frames), '-r', String(fps),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', '-an',
       s.file,
@@ -180,7 +189,10 @@ async function renderMotionShots({ images, totalDuration, w, h, fit, fps, amount
   return writeConcatFile(shots.map((s) => concatLine(s.file)), 'motion')
 }
 
-export async function renderVideo({ images, voiceover, bgm, outFile, totalDuration, config, resolution: size, subtitles, fit = 'contain', motion = 'off', onProgress }) {
+/**
+ * @param {Map<string, {file:string, fit:string}>} [clips]  ชื่อภาพ → คลิปขยับจาก AI ที่ใช้แทนภาพของช็อตนั้น
+ */
+export async function renderVideo({ images, voiceover, bgm, outFile, totalDuration, config, resolution: size, subtitles, fit = 'contain', motion = 'off', clips, onProgress }) {
   const { resolution: configured = '1920x1080', fps = 30, bgmDb = -21, voiceoverDb = 0, crf = 20 } = config ?? {}
   const resolution = size ?? configured
   const [w, h] = resolution.split('x').map(Number)
@@ -189,9 +201,9 @@ export async function renderVideo({ images, voiceover, bgm, outFile, totalDurati
 
   let listFile
   let frame
-  if (amount > 0) {
-    // ภาพเคลื่อนไหว: แต่ละช็อตเป็นคลิปขนาดจอแล้ว ขั้นสุดท้ายแค่ต่อ + ใส่ซับ + เสียง
-    listFile = await renderMotionShots({ images, totalDuration, w, h, fit, fps, amount, workDir, onProgress })
+  if (amount > 0 || clips?.size) {
+    // ภาพเคลื่อนไหว / มีคลิปจาก AI: แต่ละช็อตเป็นคลิปขนาดจอแล้ว ขั้นสุดท้ายแค่ต่อ + ใส่ซับ + เสียง
+    listFile = await renderMotionShots({ images, totalDuration, w, h, fit, fps, amount, clips, workDir, onProgress })
     frame = 'null'
   } else {
     // ภาพแต่ละใบอยู่จนกว่าใบถัดไปจะขึ้น ใบสุดท้ายอยู่จนจบเสียง

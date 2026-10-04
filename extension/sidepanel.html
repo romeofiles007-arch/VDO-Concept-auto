@@ -133,6 +133,13 @@
   .bookSheet .meta { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
   .bookSheet select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; margin-bottom: 8px; }
   .bookSheet .controls { justify-content: flex-start; margin: 0 0 8px; }
+  .postBox { border-top: 1px solid var(--line); margin: 4px 0 10px; padding-top: 10px; display: grid; gap: 8px; }
+  .postBox h3 { font-size: 14px; margin: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .postItem { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .postItem .k { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+  .postItem .v { font-size: 13px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .postItem button { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .postItem button.copied { background: var(--ok); border-color: var(--ok); color: var(--accent-ink); }
   .bookSheet .sheetClose { position: sticky; bottom: 0; width: 100%; margin-top: 4px; }
   @media (prefers-reduced-motion: reduce) { .book { transition: none; } .book:hover, .book:focus-visible { transform: none; } }
   .videoCard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -147,6 +154,11 @@
   .videoCard select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; margin-bottom: 8px; }
   .videoCard .controls { margin: 0; }
   .danger { border: 1px solid var(--danger); background: transparent; color: var(--danger); padding: 8px 12px; border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; }
+  .voxRef { margin-top: 10px; }
+  .voxRef textarea { width: 100%; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
+  .voxRef #saveVoxRef { margin-top: 6px; width: fit-content; }
+  .restartRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; font-size: 13px; color: var(--muted); }
+  .restartRow select { flex: 1; min-width: 150px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; }
   .modalBack { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; padding: 12px; z-index: 30; }
   .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; width: 100%; max-width: 560px; max-height: 100%; overflow: auto; text-align: center; }
   .modal video { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: #000; margin: 6px 0 10px; }
@@ -253,6 +265,42 @@
   <section id="autoSection">
     <h2>⚡ ทำคลิปอัตโนมัติ</h2>
     <p class="lede">เลือกหัวข้อแล้วกดปุ่มเดียว ทุกแผนกทำงานต่อกันจนได้ MP4 · พลาดตรงไหนระบบลองใหม่เอง · กดซ้ำด้วยหัวข้อเดิม = ทำต่อจากที่ค้าง</p>
+    <div class="agentBlock controlBlock" id="autoControlBlock" data-agent="control">
+    <div class="blockHead" data-agent-label="ศูนย์ควบคุม"><svg class="blockIcon" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="blockTitle">ควบคุมอัตโนมัติ</span></div>
+    <div class="autoLive" id="autoLive">
+    <div class="status" id="autoStatus" role="status" aria-live="polite"></div>
+    <div class="autoProgress" id="autoProgress" hidden>
+      <div class="autoProgressHead"><strong id="autoPct">0%</strong><span id="autoProgressText"></span></div>
+      <div class="progressTrack" role="progressbar" aria-label="ความคืบหน้าทำคลิปอัตโนมัติ" aria-valuemin="0" aria-valuemax="100" id="autoProgressBar"><i id="autoBar"></i></div>
+    </div>
+    <div class="autoCost" id="autoCost" hidden></div>
+    <ol class="depts" id="autoDepts" hidden aria-label="ความคืบหน้าแต่ละแผนก"></ol>
+    <section class="autoTerminal" id="autoLogBox" aria-label="บันทึกการทำงาน" hidden>
+      <div class="terminalHead"><b>CARTOON AUTO · LOG</b><div class="terminalTools"><button type="button" id="logExpand" aria-pressed="false" title="ขยายบันทึกให้เต็มแผง (Esc เพื่อย่อลง)">เต็มจอ</button><button type="button" id="logFollow" aria-pressed="true" title="เลื่อนตามบรรทัดล่าสุดอัตโนมัติ">ตามล่าสุด</button></div></div>
+      <div id="autoLog" role="log" aria-live="off" tabindex="0"></div>
+      <div class="terminalFoot" id="logUpdated">รอข้อมูลจากโปรแกรมในเครื่อง</div>
+    </section>
+    </div>
+    <div class="run">
+      <button class="primary" id="startAuto">▶ ทำคลิปอัตโนมัติ</button>
+      <button class="stop" id="stopAuto" disabled>หยุด</button>
+    </div>
+    <button type="button" class="ghost newClip" id="newAuto" title="ไม่ทำต่อเรื่องเดิม — ระบบเลือกหัวข้อใหม่ที่ยังไม่เคยทำ แล้วสร้างคลิปใหม่ทั้งหมดใน project ใหม่ของ Flow">✨ สร้างคลิปใหม่ (หัวข้อใหม่)</button>
+    <div class="restartRow" id="restartRow" hidden>
+      <label for="restartFrom">ไม่เอางานเดิม เริ่มใหม่ตั้งแต่</label>
+      <select id="restartFrom">
+        <option value="script">เขียนบทใหม่ (ทำใหม่ทั้งหมด)</option>
+        <option value="voice">ทำเสียงพากย์ใหม่</option>
+        <option value="art">กำกับภาพใหม่ (prompt ภาพ)</option>
+        <option value="images">วาดภาพใหม่</option>
+        <option value="clips">ทำแอนิเมชันด้วย Kie ใหม่</option>
+        <option value="edit">ตัดต่อใหม่</option>
+      </select>
+      <button type="button" class="ghost" id="restartAuto">↺ เริ่มใหม่</button>
+    </div>
+    </div>
+    <div class="agentBlock agentSetting" id="autoTopicBlock" data-agent="chatgpt" data-agent-label="ChatGPT">
+    <div class="blockHead" data-agent-label="เต่า · ChatGPT"><span class="blockTitle">หัวข้อและบท</span></div>
     <div class="pick">หัวข้อคลิป
       <div class="seg topicMode" id="autoTopicMode" role="group" aria-label="วิธีเลือกหัวข้อ">
         <button type="button" data-value="manual">✍️ พิมพ์เอง</button>
@@ -274,6 +322,9 @@
     <label class="pick" id="autoTitleBox">หัวข้อคลิป (แก้ได้)
       <input id="autoTitle" maxlength="200" placeholder="เช่น ถ้าคุณตกลงไปในหลุมดำ จะเกิดอะไรขึ้น" autocomplete="off" />
     </label>
+    </div>
+    <div class="agentBlock agentSetting" id="autoVoiceBlock" data-agent="voice" data-agent-label="เสียงพากย์">
+    <div class="blockHead" data-agent-label="โลมา · เสียงพากย์"><span class="blockTitle">ภาษาและความยาว</span></div>
     <div class="controls">
       <div class="seg" id="autoLang" role="group" aria-label="ภาษาพากย์">
         <button type="button" data-value="th">พากย์ไทย</button>
@@ -281,8 +332,10 @@
       </div>
       <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="5" /> นาที</label>
     </div>
-    <details class="clipSettings" id="clipSettingsBox">
-      <summary id="clipSettingsSummary">ตั้งค่าคลิป</summary>
+    <p class="hint" id="autoVoice"></p>
+    </div>
+    <details class="clipSettings agentSetting agentBlock" id="clipSettingsBox" data-agent="flow" data-agent-label="Google Flow">
+      <summary data-agent-label="ปลาหมึก · Google Flow"><span class="blockTitle" id="clipSettingsSummary">ตั้งค่าคลิป</span><svg class="blockCaret" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
       <div class="pick" style="margin-top:10px">รูปแบบภาพและวิดีโอ
         <div class="seg" id="clipOrientation" role="group" aria-label="แนวภาพ">
           <button type="button" data-value="landscape">▭ แนวนอน 16:9</button>
@@ -313,24 +366,31 @@
       </div>
       <p class="hint" style="margin:0">แนวภาพและตัวละครใช้กับ prompt/ภาพที่สร้างใหม่ · ซับไตเติลใช้ตอนตัดต่อ · ช่วงเงียบใช้ตอนทำเสียง (คลิปเดิมปรับได้ในขั้นที่ 6)</p>
     </details>
-    <p class="hint" id="autoVoice"></p>
-    <div class="run">
-      <button class="primary" id="startAuto">▶ ทำคลิปอัตโนมัติ</button>
-      <button class="stop" id="stopAuto" disabled>หยุด</button>
-    </div>
-    <div class="autoProgress" id="autoProgress" hidden>
-      <div class="autoProgressHead"><strong id="autoPct">0%</strong><span id="autoProgressText"></span></div>
-      <div class="progressTrack" role="progressbar" aria-label="ความคืบหน้าทำคลิปอัตโนมัติ" aria-valuemin="0" aria-valuemax="100" id="autoProgressBar"><i id="autoBar"></i></div>
-    </div>
-    <ol class="depts" id="autoDepts" hidden aria-label="ความคืบหน้าแต่ละแผนก"></ol>
-    <div class="status" id="autoStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
-    <details id="autoLogBox" hidden><summary>รายละเอียด</summary><pre id="autoLog"></pre></details>
+    <details class="clipSettings agentSetting seahorseSettings agentBlock" id="metaSettings" data-agent="meta" data-agent-label="ม้าน้ำ · Kie API" open>
+      <summary data-agent-label="ม้าน้ำ · Kie API"><span class="blockTitle">แอนิเมชัน</span> <span id="kieModeBadge" class="kieBadge">ปิด</span><svg class="blockCaret" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
+      <p class="hint">หลัง Google Flow วาดภาพ ม้าน้ำเลือกฉากสำคัญ ส่งภาพไป Kie แล้วส่งคลิปให้แผนกตัดต่อ</p>
+      <div class="pick">สร้างแอนิเมชัน
+        <div class="seg" id="clipAi" role="group" aria-label="เปิดหรือปิด Kie API และเลือกสัดส่วนฉาก" aria-describedby="clipAiHint"></div>
+      </div>
+      <p class="hint" id="clipAiHint"></p>
+      <div id="kieOptions" hidden>
+        <div class="pick">โมเดลแอนิเมชัน
+          <div class="seg" id="kieTier" role="group" aria-label="ระดับโมเดล Kie" aria-describedby="kieModelInfo"></div>
+        </div>
+        <p class="kieModel" id="kieModelInfo"></p>
+        <label class="pick" for="kieKey">Kie API key
+          <input id="kieKey" type="password" autocomplete="off" placeholder="วาง API key ที่นี่" />
+        </label>
+        <div class="controls"><button type="button" class="ghost" id="saveKieKey">บันทึก key</button><a href="https://kie.ai/api-key" target="_blank" rel="noopener noreferrer">รับ API key ↗</a></div>
+        <p class="hint" id="kieKeyStatus" role="status" aria-live="polite"></p>
+      </div>
+    </details>
   </section>
 
   <p class="groupDivider"><span>หรือทำทีละขั้นเอง</span></p>
 
-  <section class="step" aria-label="ขั้นที่ 1 หัวข้อ">
-    <h2><span class="stepNo" aria-hidden="true">1</span>หัวข้อ</h2>
+  <section class="step agentSetting" id="topicSection" data-agent="chatgpt" data-agent-label="ChatGPT" aria-label="ขั้นที่ 1 หัวข้อ">
+    <h2 data-agent-label="เต่า · ChatGPT"><span class="stepNo" aria-hidden="true">1</span>หัวข้อ</h2>
     <p class="lede">สั่ง ChatGPT คิดหัวข้อ viral 5 ข้อตาม Blueprint แล้วคลิกเลือก</p>
     <div class="controls">
       <div class="seg" id="titleLang" role="group" aria-label="ภาษาชื่อหัวข้อ">
@@ -346,8 +406,8 @@
     <ul class="list" id="topicList" role="radiogroup" aria-label="หัวข้อ"></ul>
   </section>
 
-  <section class="step" id="scriptSection" aria-label="ขั้นที่ 2 บทพากย์" hidden>
-    <h2><span class="stepNo" aria-hidden="true">2</span>บทพากย์</h2>
+  <section class="step agentSetting" id="scriptSection" data-agent="chatgpt" data-agent-label="ChatGPT" aria-label="ขั้นที่ 2 บทพากย์" hidden>
+    <h2 data-agent-label="เต่า · ChatGPT"><span class="stepNo" aria-hidden="true">2</span>บทพากย์</h2>
     <p class="lede" id="pickedTitle"></p>
     <div class="controls">
       <div class="seg" id="voLang" role="group" aria-label="ภาษาพากย์">
@@ -373,8 +433,8 @@
     </div>
   </section>
 
-  <section class="step" id="voiceSection" aria-label="ขั้นที่ 3 เสียงพากย์">
-    <h2><span class="stepNo" aria-hidden="true">3</span>เสียงพากย์ (เสียงของเรา)</h2>
+  <section class="step agentSetting" id="voiceSection" data-agent="voice" data-agent-label="เสียงพากย์" aria-label="ขั้นที่ 3 เสียงพากย์">
+    <h2 data-agent-label="โลมา · เสียงพากย์"><span class="stepNo" aria-hidden="true">3</span>เสียงพากย์ (เสียงของเรา)</h2>
     <p class="lede">สร้างเสียงด้วยโมเดลที่เทรนจากเสียงเราเอง — ทำในเครื่องด้วยการ์ดจอ ไม่ใช้ API</p>
     <label class="pick">เสียงที่ใช้
       <span class="pickRow">
@@ -393,25 +453,23 @@
     </div>
 
     <details id="trainBox">
-      <summary>＋ เทรนเสียงใหม่</summary>
+      <summary>＋ เพิ่มเสียงใหม่</summary>
       <div class="train">
-        <label class="pick">เสียงที่จะเทรน
-          <select id="trainTarget" aria-label="เสียงที่จะเทรน"></select>
+        <label class="pick">เสียง
+          <select id="trainTarget" aria-label="เสียงที่จะเพิ่มหรือแก้"></select>
         </label>
         <label class="pick" id="newVoiceRow">ชื่อเสียง
           <input type="text" id="newVoiceName" placeholder="เช่น เสียงผม โทนเล่าเรื่อง" maxlength="60" />
         </label>
-        <p class="hint">ใช้เสียงพูดคนเดียว ไม่มีเพลงหรือเสียงรบกวน รวมกัน 10 นาทีขึ้นไปจะดี (ขั้นต่ำประมาณ 4 นาที) — รองรับ wav, mp3, m4a, flac, ogg, aac, opus</p>
-        <label class="ghost filebtn">เลือกไฟล์เสียง…<input type="file" id="trainFiles" multiple accept=".wav,.mp3,.m4a,.flac,.ogg,.aac,.opus,audio/*" /></label>
+        <p class="hint">อัดเสียงพูดคนเดียวให้ชัด 10–15 วินาที ในที่เงียบ ไม่มีเพลง — ไม่ต้องเทรน สร้างเสร็จในไม่ถึงนาที (ยาวกว่า 15 วินาทีระบบใช้แค่ช่วงแรก) · รองรับ wav, mp3, m4a, flac, ogg, aac, opus</p>
+        <label class="ghost filebtn">เลือกไฟล์เสียง…<input type="file" id="trainFiles" accept=".wav,.mp3,.m4a,.flac,.ogg,.aac,.opus,audio/*" /></label>
         <ul class="files" id="trainFileList"></ul>
-        <label class="field">รอบเทรน (epochs) <input type="number" id="trainEpochs" min="1" max="200" value="40" /></label>
-        <p class="hint">เทรนนานหลายชั่วโมง ระหว่างนั้นสร้างเสียงพากย์ไม่ได้ · กดหยุดแล้วเริ่มใหม่ จะเทรนต่อจากจุดเดิม</p>
-        <div class="run">
-          <button class="primary" id="startTrain">▶ เริ่มเทรน</button>
-          <button class="stop" id="stopTrain" disabled>■ หยุด</button>
-        </div>
+        <button type="button" class="primary wide" id="useVoxcpm">⚡ สร้างเสียงจากไฟล์นี้</button>
+        <label class="pick voxRef" id="voxRefBox" hidden><span id="voxRefLabel">ข้อความที่พูดในคลิป — แก้ให้ตรงทุกคำ (ไม่ตรง = เสียงที่ได้เพี้ยน)</span>
+          <textarea id="voxRefText" rows="3"></textarea>
+          <button type="button" class="ghost" id="saveVoxRef">บันทึกข้อความ</button>
+        </label>
         <div class="status" id="trainStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
-        <details id="trainLogBox" hidden><summary>รายละเอียด</summary><pre id="trainLog"></pre></details>
       </div>
     </details>
 
@@ -463,8 +521,8 @@
     </div>
   </section>
 
-  <section class="step" id="imageSection" aria-label="ขั้นที่ 4 Prompt ภาพ" hidden>
-    <h2><span class="stepNo" aria-hidden="true">4</span>Prompt ภาพสำหรับ Google Flow</h2>
+  <section class="step agentSetting" id="imageSection" data-agent="chatgpt" data-agent-label="ChatGPT" aria-label="ขั้นที่ 4 Prompt ภาพ" hidden>
+    <h2 data-agent-label="เต่า · ChatGPT"><span class="stepNo" aria-hidden="true">4</span>Prompt ภาพสำหรับ Google Flow</h2>
     <p class="lede">ตาม Blueprint OUTPUT 5 — Style Bible + Character Bible (@TAG) + Shot List ช็อตละ 2–3 วิ ชื่อไฟล์ = timecode ของเสียงพากย์</p>
     <div class="run">
       <button class="primary" id="startShots">▶ เริ่มสร้าง prompt ภาพ</button>
@@ -484,8 +542,8 @@
     </div>
   </section>
 
-  <section class="step" id="flowSection" aria-label="ขั้นที่ 5 สร้างภาพ" hidden>
-    <h2><span class="stepNo" aria-hidden="true">5</span>สร้างภาพใน Google Flow</h2>
+  <section class="step agentSetting" id="flowSection" data-agent="flow" data-agent-label="Google Flow" aria-label="ขั้นที่ 5 สร้างภาพ" hidden>
+    <h2 data-agent-label="ปลาหมึก · Google Flow"><span class="stepNo" aria-hidden="true">5</span>สร้างภาพใน Google Flow</h2>
     <p class="lede">เปิด project ใหม่ → เปิด Agent → ตั้งค่า Image · 16:9 · Nano Banana 2 Lite · x1 (ตรวจว่า 0 credits ก่อน) → ส่ง prompt จากขั้นที่ 4</p>
     <div class="run">
       <button class="primary" id="startFlow">▶ ส่งไป Google Flow</button>
@@ -500,8 +558,21 @@
     <p class="warn" id="flowMissing" hidden></p>
   </section>
 
-  <section class="step" id="renderSection" aria-label="ขั้นที่ 6 สร้างวิดีโอ" hidden>
-    <h2><span class="stepNo" aria-hidden="true">6</span>สร้างวิดีโอ</h2>
+  <section class="step agentSetting" id="clipsSection" data-agent="meta" data-agent-label="ม้าน้ำ · Kie API" aria-label="ขั้นที่ 6 แอนิเมชัน" hidden>
+    <h2 data-agent-label="ม้าน้ำ · Kie API"><span class="stepNo" aria-hidden="true">6</span>ทำแอนิเมชันด้วย Kie</h2>
+    <p class="lede">ม้าน้ำเลือกฉากสำคัญจากภาพของขั้นที่ 5 ส่งให้ Kie ทำเป็นคลิปขยับ แล้วขั้นตัดต่อใช้คลิปแทนภาพนิ่งของฉากนั้น</p>
+    <div class="clipsSummary"><span id="clipsSummary"></span><button type="button" class="linkish" id="editClipSettings">แก้การตั้งค่า</button></div>
+    <div class="run">
+      <button class="primary" id="startClips">▶ เริ่มทำแอนิเมชัน</button>
+      <button class="stop" id="stopClips" disabled>■ หยุด</button>
+    </div>
+    <div class="status" id="clipsStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    <p class="hint" id="clipsCost" hidden></p>
+    <details id="clipsLogBox" hidden><summary>รายละเอียด</summary><pre id="clipsLog"></pre></details>
+  </section>
+
+  <section class="step agentSetting" id="renderSection" data-agent="edit" data-agent-label="ตัดต่อ" aria-label="ขั้นที่ 7 สร้างวิดีโอ" hidden>
+    <h2 data-agent-label="ปู · ตัดต่อ"><span class="stepNo" aria-hidden="true">7</span>สร้างวิดีโอ</h2>
     <p class="lede">ประกอบภาพ (ชื่อไฟล์ = เวลาที่ภาพขึ้น) + เสียงพากย์ เป็น MP4 1080p ไม่ใส่เพลง</p>
     <p class="hint" id="renderSettingsHint"></p>
     <div class="run">
@@ -521,12 +592,14 @@
   </section>
 </main>
 
-<!-- เลื่อนลงจนมองไม่เห็นสถานะทีมงาน → แถบเล็กติดขอบบน กดแล้วกลับไปดูเต็ม -->
-<button type="button" class="agentSticky" id="agentSticky" hidden aria-controls="studioHero">
-  <span class="stickyDots" id="agentStickyDots" aria-hidden="true"></span>
-  <span class="stickyText" id="agentStickyText">ใครทำอะไรอยู่</span>
-  <span class="stickyGo" aria-hidden="true">ดูสถานะ ↑</span>
-</button>
+<!-- เลื่อนลงจนมองไม่เห็นแบนเนอร์ → แถว agent ลอยติดขอบบน เพื่อไปตั้งค่าได้ทุกเวลา -->
+<!-- สัตว์ตัวใหญ่ลอยมุมขวาล่าง ล้นขอบกล่องเล็กน้อย — เลื่อนถึงกล่องของแผนกไหนก็เปลี่ยนเป็นตัวนั้น (ตกแต่ง ไม่ดักการกด) -->
+<div class="floatMascot" id="floatMascot" aria-hidden="true" hidden><span class="floatSprite"></span></div>
+
+<nav class="agentSticky" id="agentSticky" hidden aria-label="เลือก agent เพื่อไปตั้งค่า">
+  <button type="button" class="stickyLogo" id="stickyLogo" title="Cartoon Auto — กลับขึ้นบนสุด" aria-label="กลับขึ้นบนสุด"><img src="icons/cartoon-auto.svg" alt="" width="34" height="34" /><span class="stickyName"><span>Cartoon</span> <span>Auto</span></span></button>
+  <div class="stickyCrew" id="agentStickyCrew"></div>
+</nav>
 
 <div id="appView" hidden>
   <div class="bar"><button class="ghost" id="backFromApp">← กลับ</button><span class="field">โปรแกรมในเครื่อง</span></div>
@@ -572,10 +645,11 @@
     <video id="videoModalPlayer" controls preload="metadata"></video>
     <div class="facts" id="videoModalFacts"></div>
     <div class="viewActions">
-      <button class="ghost" id="videoModalFullscreen" type="button">⛶ ดูเต็มจอ</button>
+      <button class="primary" id="videoModalFullscreen" type="button">⛶ ดูเต็มจอ</button>
       <button class="ghost" id="videoModalTab" type="button">↗ เปิดในแท็บใหม่</button>
     </div>
     <div class="controls">
+      <button class="ghost" id="videoModalDownload">⬇ ดาวน์โหลดวิดีโอ</button>
       <button class="ghost" id="videoModalCover" hidden>🖼 ดาวน์โหลดปก</button>
       <button class="ghost" id="videoModalReveal">📂 เปิดโฟลเดอร์</button>
       <button class="ghost" id="videoModalLibrary">🎬 คลังวิดีโอ</button>

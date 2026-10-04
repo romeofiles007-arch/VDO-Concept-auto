@@ -15,6 +15,7 @@ export const STEPS = {
   timecode: { label: 'ทำ Timecode', cmd: (slug) => ['node', ['pipeline/3_timecode.mjs', slug]] },
   shotlist: { label: 'เขียน Shot List', cmd: (slug) => ['node', ['pipeline/4_shotlist.mjs', slug]] },
   images: { label: 'สร้างภาพ', cmd: (slug) => ['node', ['pipeline/5_images.mjs', slug]] },
+  clips: { label: 'ทำแอนิเมชัน Kie', cmd: (slug) => ['node', ['pipeline/5b_clips.mjs', slug]] },
   render: {
     label: 'ตัดต่อวิดีโอ',
     cmd: (slug, { bgm } = {}) => ['node', ['pipeline/6_render.mjs', slug, ...(bgm ? ['--bgm', bgm] : [])]],
@@ -31,9 +32,9 @@ export const STEPS = {
   retime: { label: 'ปรับช่วงเงียบ', cmd: (slug) => ['node', ['pipeline/retime_audio.mjs', slug]] },
   autopilot: {
     label: 'ทำคลิปอัตโนมัติ',
-    cmd: (_slug, { title, autoTopic, genre, language, titleLanguage, minutes } = {}) => [
+    cmd: (_slug, { title, autoTopic, genre, language, titleLanguage, minutes, restartFrom } = {}) => [
       'node',
-      ['pipeline/autopilot.mjs', ...(autoTopic ? ['--auto-topic', ...(genre ? ['--genre', genre] : [])] : [title]), '--lang', language, '--title-lang', titleLanguage, '--minutes', String(minutes)],
+      ['pipeline/autopilot.mjs', ...(autoTopic ? ['--auto-topic', ...(genre ? ['--genre', genre] : [])] : [title]), '--lang', language, '--title-lang', titleLanguage, '--minutes', String(minutes), ...(restartFrom ? ['--restart', restartFrom] : [])],
     ],
   },
   setupTts: {
@@ -71,7 +72,7 @@ export function createRunner({ log }) {
         }
         if (text.trim()) {
           const lines = run.lines
-          const line = { text, progress: m[0] === CR }
+          const line = { text, progress: m[0] === CR, at: Date.now() }
           if (overwrite && lines.at(-1)?.progress) lines[lines.length - 1] = line
           else lines.push(line)
           if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES)
@@ -96,7 +97,7 @@ export function createRunner({ log }) {
     proc.stdout.on('data', onData)
     proc.stderr.on('data', onData)
     proc.on('error', (err) => {
-      run.lines.push({ text: `เริ่มไม่ได้: ${err.message}` })
+      run.lines.push({ text: `เริ่มไม่ได้: ${err.message}`, at: Date.now() })
       run.status = 'error'
       run.endedAt = Date.now()
     })
@@ -117,14 +118,15 @@ export function createRunner({ log }) {
     // taskkill /T ปิดทั้งต้นไม้ — ขั้น 2 มี python ลูกที่ kill() ธรรมดาไม่โดน
     if (process.platform === 'win32') spawn('taskkill', ['/PID', String(current.proc.pid), '/T', '/F'], { windowsHide: true })
     else current.proc.kill()
-    current.lines.push({ text: 'หยุดแล้ว' })
+    current.lines.push({ text: 'หยุดแล้ว', at: Date.now() })
     return snapshot()
   }
 
   function snapshot() {
     if (!current) return null
     const { proc, ...rest } = current
-    return { ...rest, label: STEPS[rest.step].label, lines: rest.lines.map((l) => l.text) }
+    // entries: บรรทัดพร้อมเวลา สำหรับหน้าต่าง log แบบ terminal ในแผงข้าง (lines คงไว้ให้โค้ดเดิม)
+    return { ...rest, label: STEPS[rest.step].label, lines: rest.lines.map((l) => l.text), entries: rest.lines.map((l) => ({ at: l.at, text: l.text, progress: !!l.progress })) }
   }
 
   return { start, stop, snapshot }

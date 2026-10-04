@@ -1,6 +1,6 @@
-# VDO Concept Blueprint — V4 หลากหลายแนว (Cartoon Stick-Figure Storytelling)
+# VDO Concept Blueprint — V4 หลากหลายแนว (2D Doodle Cartoon Storytelling)
 
-> คลิปการ์ตูน stick-figure เล่าความรู้/เรื่องจริง — ระบบอัตโนมัติจะสั่งทีละขั้นว่าให้ทำ STAGE หรือ OUTPUT ไหน
+> คลิปการ์ตูน 2D ลายเส้น doodle เล่าความรู้/เรื่องจริง — ระบบอัตโนมัติจะสั่งทีละขั้นว่าให้ทำ STAGE หรือ OUTPUT ไหน
 > ทำเฉพาะขั้นที่ถูกสั่ง และตอบเป็นข้อความในแชตเสมอ (ไม่สร้างไฟล์ให้ดาวน์โหลด)
 
 ### ลำดับงาน
@@ -52,7 +52,7 @@ OUTPUT 4 ภาพปก              → prompt ภาพปกคลิป
 
 ### 🧬 CONTENT & SCRIPT DNA
 
-- **Niche:** ช่องความรู้ + เรื่องเล่าแบบการ์ตูน stick-figure **หลากหลายแนว** — เลือกจาก 🎨 GENRE CATALOG ด้านล่าง
+- **Niche:** ช่องความรู้ + เรื่องเล่าแบบการ์ตูน 2D doodle **หลากหลายแนว** — เลือกจาก 🎨 GENRE CATALOG ด้านล่าง
   ห้ามวนอยู่แนวเดียว (โดยเฉพาะ "สมอง/จิตวิทยา") — ถ้าไม่ได้ระบุแนว ให้กระจายแนวให้มากที่สุด
 - **Format:** educational explainer / เรื่องเล่า narrated in calm 2nd-person ("คุณ", "ร่างกายของคุณ", "ถ้าคุณอยู่ตรงนั้น") — never "เรา" or "ผม/ฉัน"
   (แนวเรื่องเล่า/ประวัติศาสตร์/คดี ให้ดึงคนดูเข้าเรื่องด้วย "ลองจินตนาการว่าคุณ…" หรือ "ถ้าคุณเป็น…")
@@ -61,6 +61,7 @@ OUTPUT 4 ภาพปก              → prompt ภาพปกคลิป
 - **Narrative arc:** Hook → Reframe → Deep Dive (ข้อมูล/เหตุการณ์จริง) → Counterintuitive Twist → Modern Mirror → ปิดด้วยประโยคที่ echo ประโยคเปิด
 - **No jargon without plain-language explanation** — ทุกศัพท์เฉพาะต้องแปลทันที
 - **Always ends** ด้วยการสะท้อนเรื่องที่เล่ากลับมาสู่สิ่งที่คนดูรู้สึกหรือทำในปัจจุบัน
+- **แนวผี/เรื่องเล่าสยอง:** น้ำเสียงเล่าเรื่องช้าๆ เย็นยะเยือก ยังพูดกับ "คุณ" ("ลองนึกว่าคุณเดินผ่านตรงนั้นตอนตีสอง…") · สร้างความกลัวด้วยบรรยากาศ ความเงียบ เสียงแปลก เงา สิ่งที่มองไม่เห็น — ไม่ใช่ความโหด · ใช้ "..." หยุดก่อนจุดพีค · แยกให้ชัดว่าอะไรคือตำนาน/คำเล่าลือ อะไรคือข้อเท็จจริง/คำอธิบายทางวิทยาศาสตร์ · ห้ามเลือด บาดแผล ศพ การทำร้ายแบบสมจริง (ทั้งบทและภาพ) · ภาพ: ฉากกลางคืน โทนน้ำเงินเข้ม/เขียวหม่น แสงตะเกียง/ไฟฉาย หมอก เงายาว ผีวาดแบบการ์ตูนน่าขนลุกแต่ไม่น่าสยดสยอง · ปิดด้วยประโยคชวนขนลุกที่ echo ประโยคเปิด
 - **แนวตลก/ขำขัน:** เปลี่ยนน้ำเสียงเป็นขี้เล่น กวนๆ แต่ยังพูดกับ "คุณ" · ใช้จังหวะ setup → หยุด... → punchline · มุกเกินจริง/เทียบแบบไม่คาดคิด/ประชดตัวเองได้ · หักมุมทุก 15–30 วิ แทน hook · ห้ามมุกหยาบ เหยียด หรือล้อคนจริงแบบทำให้เสียหาย · ถ้าเป็นเรื่องจริงยังต้องถูกต้องตามข้อเท็จจริง
 
 ---
@@ -102,6 +103,7 @@ OUTPUT 4 ภาพปก              → prompt ภาพปกคลิป
 | ตลก & ขำขัน | ถ้าสัตว์พูดได้จะบ่นอะไร, นิสัยแปลกที่ทุกคนทำแต่ไม่ยอมรับ, ถ้าชีวิตจริงมีปุ่มกดข้าม |
 | ความผิดพลาดสุดฮาในประวัติศาสตร์ | สงครามที่แพ้ให้นกอีมู, กองทัพที่ยิงกันเองเพราะเมา, สิ่งประดิษฐ์ที่ล้มเหลวแบบขำๆ |
 | เรื่องจริงสุดบ้าที่ไม่น่าเกิดขึ้นได้ | ชายที่ถูกฟ้าผ่า 7 ครั้งแล้วรอด, การปล้นที่โจรลืมของไว้, กฎหมายแปลกๆ ทั่วโลก |
+| ผี & เรื่องเล่าสยอง | ผีไทยแต่ละประเภท (กระสือ ปอบ นางตานี), ตำนานสถานที่อาถรรพ์, เรื่องเล่าหลอนที่มีบันทึกจริง, ถ้าคุณต้องค้างคืนในบ้านร้าง, ผีดังของแต่ละประเทศ |
 
 **กฎความหลากหลาย:**
 - เสนอหลายหัวข้อพร้อมกัน → แต่ละหัวข้อต้องมาจาก **คนละแนว**
@@ -227,6 +229,7 @@ OUTPUT 4 ภาพปก              → prompt ภาพปกคลิป
 - ตัวละครหลักหน้าใหญ่ใกล้กล้อง อารมณ์เกินจริง (ตกใจ/สงสัย/ลุ้น)
 - สิ่งที่เป็นหัวใจของเรื่อง 1 อย่าง ชี้ด้วยลูกศรแดงหรือวงกลมแดง
 - ฉากหลังบอกบรรยากาศของเรื่อง สีสด แต่เรียบกว่าตัวละคร ไม่รก · อ่านรู้เรื่องแม้เห็นภาพเล็กบนมือถือ
+- ห้ามภาพ/ฉากหลังขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นดินสอไม่ลงสีเด็ดขาด · อารมณ์เศร้า/ตึงเครียดใช้สีเข้มอิ่ม (กรมท่า ม่วง เขียวอมฟ้า) กับแสงไฟอุ่น แทนสีเทา · ห้ามใช้คำว่า "เทา" หรือ "หม่น" บรรยายโทนฉาก
 - ชวนสงสัยแต่ตรงกับเนื้อหาจริง · สไตล์และตัวละครเดียวกับ Style Bible / Character Bible
 
 ---
@@ -245,11 +248,20 @@ ART STYLE:
 - Flat colors, bold black outlines
 - Slightly imperfect sketchy lines (drawn fast with a marker)
 
-CHARACTERS:
+CHARACTERS — 2 modes (the system says which one each clip uses; use ONE mode for every character in the clip):
+A) STICK MODE (default — no reference character image attached):
 - Simple stick figures with large circular heads
 - Dot eyes, expressive thick brow lines
 - Sometimes fully colored heads/bodies
   (red = hot/embarrassed, white = neutral)
+- Props/costume pieces drawn on the stick body (cloak, hat, tie, tool) to tell characters apart
+B) FULL-BODY MODE (a reference character image is attached):
+- Full-body cartoon characters — NOT stick figures: solid torso, shoulders, arms and legs with volume
+- Slightly big head (about 1/4–1/3 of body height), simple hands with fingers, shoes
+- Clothing drawn clearly: shirts, jackets, pants, uniforms, costumes that fit the story/era
+- Simple readable faces: dot or small oval eyes, expressive thick brows, clear mouth shapes
+- Main character = cartoon version of the reference image (face, hair, glasses, outfit, colors); side characters in the same full-body style
+- Both modes: flat colors + bold black outlines, same marker-doodle line as the scene; face turns red when hot/embarrassed
 
 ANIMALS & OBJECTS:
 - Chunky simplified cartoon shapes
@@ -261,6 +273,7 @@ BACKGROUNDS (illustrated environments — never an empty single-color wall):
 - 3–6 story props that fit the narration (e.g., kitchen = fridge with magnets, hanging pans, fruit bowl, window, calendar)
 - Lighting & time of day set the mood: warm morning sun, cool blue night + lamp glow, orange sunset, neon city
 - Rich but controlled color: one dominant hue per scene + a contrasting accent; background slightly softer/lighter than characters so characters pop
+- ALWAYS full saturated color. NEVER black-and-white, grayscale, sepia, desaturated/muted, or uncolored pencil-sketch backgrounds — sad/tense moods use deeper saturated hues (deep navy, violet, teal) + warm lamp light, not gray. Do not describe scene tones as "เทา" or "หม่น"
 - Allowed: simple cel-shading, soft cast shadows, light hatching/dots for texture, sky gradients, window light beams
 - Outdoor = sky with clouds, distant hills/buildings, ground texture · Ancient = ruins, torches, stone · Underwater = bubbles, coral, light rays · Space = stars, planets, nebula
 - Solid bold single-color backgrounds ONLY for pattern-interrupt / reveal / punchline shots (กฎ 6)
@@ -314,7 +327,7 @@ USAGE RULES:
 - ห้ามแก้สี/รูปร่าง/อุปกรณ์ข้ามช็อต
 ```
 
-**ตัวอย่าง (โปรเจกต์ "มนุษย์ 7 สายพันธุ์"):**
+**ตัวอย่าง (โปรเจกต์ "มนุษย์ 7 สายพันธุ์" — STICK MODE):**
 
 ```
 @sapiens   = Homo sapiens (ตัวหลัก)

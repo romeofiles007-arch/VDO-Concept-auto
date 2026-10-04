@@ -37,7 +37,7 @@ for (const [i, root] of roots.entries()) {
   for (const bg of ['bg', 'panel', 'pick']) assert.ok(contrast(colors.line, colors[bg]) >= 3, `ขอบ/${bg}`)
   console.log(`ผ่านธีม${i ? 'มืด' : 'สว่าง'}: contrast ข้อความต่ำสุด ${minimum.toFixed(2)}:1`)
 }
-for (const id of ['chatgpt', 'flow', 'voice', 'edit']) {
+for (const id of ['chatgpt', 'flow', 'meta', 'voice', 'edit']) {
   const rules = [...css.matchAll(new RegExp(`html\\[data-dept='${id}'\\]\\s*\\{([^}]+)\\}`, 'g'))]
   assert.equal(rules.length, 2)
   const overrides = rules.map(rule => Object.fromEntries([...rule[1].matchAll(/--([\w-]+):\s*(#[\da-f]+)/gi)].map(m => [m[1], m[2]])))
@@ -57,7 +57,7 @@ for (const id of ['chatgpt', 'flow', 'voice', 'edit']) {
   const asset = readFileSync(new URL(`../extension/agents/ocean-${id}.png`, import.meta.url))
   assert.ok(asset.readUInt32BE(16) >= 1024 && asset.readUInt32BE(20) >= 1536)
 }
-console.log('ผ่าน: ภาพและสีครบ 4 แผนก × 2 ธีม รวมพื้นภาพดำ/ขาวกรณีแย่สุด')
+console.log('ผ่าน: ภาพและสีครบ 5 แผนก × 2 ธีม รวมพื้นภาพดำ/ขาวกรณีแย่สุด')
 assert.match(js, /setInterval\(refreshAgents, 3000\)/)
 assert.match(js, /if \(document\.hidden \|\| agentRefreshing\) return/)
 assert.match(js, /hero\.dataset\.department = id/)

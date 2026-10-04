@@ -8,7 +8,7 @@
  */
 import { BLUEPRINT_FILE, topicsPrompt, scriptPrompt, parseTopics, cleanScript, estimateMinutes, slugify, scoredTopicsPrompt, parseScoredTopics, GENRES } from './prompts.js'
 import { initIcons, setIconLabel } from './icons.js'
-import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed } from './agents.js'
+import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed, SEA_ASSETS } from './agents.js'
 
 initIcons()
 
@@ -232,9 +232,9 @@ async function connectApp() {
 
 // ── 3 เสียงพากย์ด้วยเสียงของเรา ──
 let voiceRunning = false
-let trainRunning = false
+
 /** งานในเครื่อง (สร้างเสียง/เทรน) ใช้การ์ดจอเต็ม และ bridge รันได้ทีละงาน */
-const localBusy = () => voiceRunning || trainRunning || shotsRunning || flowRunning || renderRunning || autoRunning
+const localBusy = () => voiceRunning || shotsRunning || flowRunning || clipsRunning || renderRunning || autoRunning
 let voiceTimer = null
 
 function showVoiceLog(lines) {
@@ -503,7 +503,7 @@ async function loadShots(app) {
 }
 
 // ── 5 สร้างภาพใน Google Flow (Agent) ──
-const FLOW_HOME = 'https://flow.google.com/'
+const FLOW_HOME = 'https://flow.google.com/?hl=en' // บังคับภาษาอังกฤษ — บัญชีที่ตั้งภาษาไทยจะได้ปุ่มภาษาไทยที่ตัวขับหาไม่เจอ
 const FLOW_MODEL = 'Nano Banana 2 Lite'
 let flowRunning = false
 let flowTimer = null
@@ -765,6 +765,8 @@ $('importFile').addEventListener('change', async (e) => {
 
 // ── 6 สร้างวิดีโอ + หน้าต่างสำเร็จ + คลังวิดีโอ ──
 let renderRunning = false
+let clipsRunning = false
+let clipsTimer = null
 let renderTimer = null
 let modalVideo = null // { slug, file } ของวิดีโอที่เปิดในหน้าต่าง
 
@@ -782,6 +784,23 @@ async function downloadCover(app, coverUrl, title) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+/** ชื่อไฟล์ที่อ่านออก — โฟลเดอร์ในเครื่องใช้ชื่อแบบ slug (สระ/วรรณยุกต์ไทยกลายเป็น _) จึงตั้งชื่อใหม่ตอนดาวน์โหลด */
+const niceFileName = (title, ext) => `${String(title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'video'}.${ext}`
+
+/** ดาวน์โหลดวิดีโอเป็นชื่อเรื่องจริง (ไม่ใช่ชื่อ slug) */
+async function downloadVideo(app, file, title, onStatus) {
+  onStatus?.('กำลังเตรียมไฟล์วิดีโอ…')
+  const res = await fetch(mediaUrl(app, file.url))
+  if (!res.ok) throw new Error('โหลดวิดีโอไม่ได้')
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: niceFileName(file.main ? title : `${title} - ${file.name.replace(/\.mp4$/i, '')}`, 'mp4') })
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  onStatus?.('')
 }
 
 /** สั่ง Flow สร้างเฉพาะภาพปกของ project ที่เลือก แล้วรอจนเสร็จ */
@@ -808,6 +827,7 @@ const SHOWN_DONE_KEY = 'shownDoneVideo'
 function showVideoModal(app, video, file, { success }) {
   modalMediaUrl = mediaUrl(app, file.url)
   if (success) chrome.storage.local.set({ [SHOWN_DONE_KEY]: `${video.slug}:${file.createdAt}` }).catch(() => {})
+  $('videoModalDownload').onclick = () => downloadVideo(app, file, video.title).catch((err) => alert(err.message))
   $('videoModalCover').hidden = !video.cover
   $('videoModalCover').onclick = () => downloadCover(app, video.cover, video.title).catch((err) => alert(err.message))
   modalVideo = { slug: video.slug, file: file.name }
@@ -915,6 +935,61 @@ $('startRender').addEventListener('click', async () => {
   }
 })
 
+// ── ขั้นที่ 6 ม้าน้ำ: รัน pipeline/5b_clips.mjs · จบแล้วแสดงเครดิต/เงินที่ใช้กับคลิปนี้ ──
+async function showClipsCost(app) {
+  const cost = await api(app, `/api/cost?slug=${encodeURIComponent(slugify(S.selected?.title ?? ''))}`).catch(() => null)
+  $('clipsCost').hidden = !cost
+  if (cost) $('clipsCost').textContent = `จ่ายไปกับคลิปนี้ $${cost.usd.toFixed(2)} ≈ ${cost.thb.toFixed(2)} บาท · Kie ${cost.kie.credits} เครดิต · ${cost.kie.clips} คลิป`
+}
+$('startClips').addEventListener('click', async () => {
+  clipsRunning = true
+  render()
+  $('clipsLogBox').hidden = true
+  setStatus('clipsStatus', 'กำลังเตรียม…', 'busy')
+  let app
+  try {
+    app = await connectApp()
+    const run = await api(app, '/api/run', { step: 'clips' })
+    const started = run.startedAt ?? Date.now()
+    clearInterval(clipsTimer)
+    await new Promise((resolve, reject) => {
+      clipsTimer = setInterval(async () => {
+        const st = await api(app, '/api/state').catch(() => null)
+        const r = st?.run
+        if (r?.step !== 'clips') return
+        $('clipsLog').textContent = r.lines.slice(-30).join('\n')
+        $('clipsLogBox').hidden = !r.lines.length
+        if (r.status === 'running') {
+          const made = r.lines.filter((l) => /ได้คลิป/.test(l)).length
+          return setStatus('clipsStatus', `ม้าน้ำกำลังทำแอนิเมชัน… ได้ ${made} คลิป (${fmtTime(Math.round((Date.now() - started) / 1000))})`, 'busy')
+        }
+        clearInterval(clipsTimer)
+        if (r.status === 'done') resolve(r)
+        else if (r.status === 'stopped') reject(new Error('หยุดแล้ว — กดเริ่มใหม่ได้ ระบบทำต่อจากฉากที่ยังไม่มีคลิป'))
+        else {
+          $('clipsLogBox').open = true
+          reject(new Error('ทำแอนิเมชันไม่สำเร็จ — ดูรายละเอียดด้านล่าง'))
+        }
+      }, 1500)
+    })
+    setStatus('clipsStatus', 'ทำแอนิเมชันเสร็จ — ไปขั้นที่ 7 สร้างวิดีโอเพื่อใส่คลิปลงในวิดีโอ', 'ok')
+  } catch (err) {
+    setStatus('clipsStatus', err.message, err.message.startsWith('หยุด') ? '' : 'error')
+  } finally {
+    clipsRunning = false
+    render()
+    if (app) showClipsCost(app).catch(() => {})
+  }
+})
+$('stopClips').addEventListener('click', async () => {
+  const app = await localApp().catch(() => null)
+  if (app) await api(app, '/api/run/stop', {}).catch(() => {})
+})
+$('editClipSettings').addEventListener('click', () => {
+  $('metaSettings').open = true
+  $('metaSettings').scrollIntoView({ behavior: 'smooth', block: 'start' })
+})
+
 $('stopRender').addEventListener('click', async () => {
   const app = await localApp().catch(() => null)
   if (app) await api(app, '/api/run/stop', {}).catch(() => {})
@@ -926,6 +1001,7 @@ const DEPTS = [
   ['voice', 'แผนกเสียงพากย์', 'ในเครื่อง'],
   ['art', 'แผนกกำกับภาพ', 'ChatGPT'],
   ['images', 'แผนกวาดภาพ', 'Google Flow'],
+  ['clips', 'แผนกทำแอนิเมชัน', 'ม้าน้ำ · Kie API'],
   ['edit', 'แผนกตัดต่อ', 'ในเครื่อง'],
 ]
 const DEPT_MARK = { waiting: '', working: '', done: '✓', failed: '!' }
@@ -962,7 +1038,8 @@ function setBadge(auto) {
   if (text) chrome.action.setBadgeBackgroundColor({ color }).catch?.(() => {})
 }
 
-function showAuto(status, run, progress) {
+function showAuto(status, run, progress, log, cost) {
+  renderCost(cost)
   agentAutopilot = status
   // ความคืบหน้ารวม
   $('autoProgress').hidden = !status
@@ -1003,11 +1080,95 @@ function showAuto(status, run, progress) {
       list.append(li)
     }
   }
-  if (run?.lines) {
-    $('autoLog').textContent = run.lines.slice(-40).join('\n')
-    $('autoLogBox').hidden = !run.lines.length
-  }
+  if (log) renderAutoLog(log)
+  else if (run?.lines) renderAutoLog(run.lines.map((text) => ({ text, src: 'run' })))
 }
+
+// ── ค่าใช้จ่ายของคลิป: เงินจริง (Kie) เป็น $ และบาท + token ChatGPT โดยประมาณ (อยู่ในแพ็กเกจ ไม่เสียเพิ่ม) ──
+const fmtNum = (n, digits = 0) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+function renderCost(cost) {
+  const box = $('autoCost')
+  box.hidden = !cost
+  if (!cost) return
+  box.textContent = ''
+  const money = Object.assign(document.createElement('div'), { className: 'costMoney' })
+  money.append(
+    Object.assign(document.createElement('span'), { className: 'costLabel', textContent: 'จ่ายไปกับคลิปนี้' }),
+    Object.assign(document.createElement('strong'), { textContent: `$${fmtNum(cost.usd, 2)}` }),
+    Object.assign(document.createElement('span'), { className: 'costThb', textContent: `≈ ${fmtNum(cost.thb, 2)} บาท` }),
+  )
+  const rate = cost.fx?.rate ? `อัตรา ${fmtNum(cost.fx.rate, 2)} บาท/$${cost.fx.date ? ` (${cost.fx.date})` : ' (ค่าตั้งต้น)'}` : ''
+  const lines = [
+    `Kie ${fmtNum(cost.kie.credits, 2)} เครดิต · ${cost.kie.clips} คลิป${cost.kie.unknown ? ` · ยังไม่รู้ค่า ${cost.kie.unknown} งาน` : ''}`,
+    cost.chatgpt ? `ChatGPT ≈ ${fmtNum(cost.chatgpt.tokens)} token · ${cost.chatgpt.calls} ครั้ง (อยู่ในแพ็กเกจ ไม่เสียเพิ่ม)` : 'ChatGPT: ยังไม่มีข้อมูล token ของคลิปนี้',
+    `Google Flow 0 credits · เสียงทำในเครื่อง${rate ? ` · ${rate}` : ''}`,
+  ]
+  const detail = Object.assign(document.createElement('ul'), { className: 'costDetail' })
+  for (const t of lines) detail.append(Object.assign(document.createElement('li'), { textContent: t }))
+  box.append(money, detail)
+}
+
+// ── หน้าต่าง log แบบ terminal (แบบเดียวกับ Ebook Plus): เวลา · ที่มา · ระดับ · ข้อความ ──
+const LOG_LEVELS = [
+  ['ERROR', 'error', /❌|ล้มเหลว|ไม่สำเร็จ|หยุดที่|Error|error:/],
+  ['WARN', 'warn', /เตือน|⚠|ลองใหม่|คิวเต็ม|high demand|ยกเลิก|เงียบเกิน|หมดเวลา|ไม่ตอบ/],
+  ['OK', 'ok', /✅|เสร็จ|ได้คลิป|ได้วิดีโอ|ได้บท|ได้เสียง|ได้ภาพ|เซฟแล้ว|บันทึก/],
+  ['STEP', 'system', /^\s*▶|^\s*🎬/],
+  ['SEND', 'send', /^(ส่งงาน|รับงาน)/],
+]
+const logSource = (e) => {
+  if (e.src !== 'bridge') return 'RUN'
+  if (/chatgpt/i.test(e.text)) return 'CHATGPT'
+  if (/flow/i.test(e.text)) return 'FLOW'
+  return 'BRIDGE'
+}
+let logSig = ''
+function renderAutoLog(entries) {
+  const box = $('autoLog')
+  $('autoLogBox').hidden = !entries.length
+  const sig = `${entries.length}|${entries.at(-1)?.at}|${entries.at(-1)?.text}`
+  if (sig === logSig) return
+  const fresh = logSig ? entries.length - Number(logSig.split('|')[0]) : 0
+  logSig = sig
+  box.textContent = ''
+  for (const [i, e] of entries.entries()) {
+    const [level, cls] = e.progress ? ['PROG', 'progress'] : (LOG_LEVELS.find(([, , re]) => re.test(e.text)) ?? ['INFO', 'info'])
+    const line = Object.assign(document.createElement('div'), { className: `terminalLine lv-${cls}${i >= entries.length - fresh ? ' fresh' : ''}` })
+    const time = e.at ? new Date(e.at).toLocaleTimeString('th-TH', { hour12: false }) : '--:--:--'
+    line.append(
+      Object.assign(document.createElement('span'), { className: 't-time', textContent: time }),
+      Object.assign(document.createElement('span'), { className: 't-src', textContent: ` ${logSource(e)}` }),
+      Object.assign(document.createElement('span'), { className: 't-level', textContent: ` ${level}` }),
+      Object.assign(document.createElement('span'), { className: 't-sep', textContent: ' › ' }),
+      Object.assign(document.createElement('span'), { className: 't-msg', textContent: e.text.trim() }),
+    )
+    box.append(line)
+  }
+  if ($('logFollow').getAttribute('aria-pressed') === 'true') box.scrollTop = box.scrollHeight
+  const lastAt = entries.at(-1)?.at
+  $('logUpdated').textContent = `${entries.length} บรรทัด${lastAt ? ` · ล่าสุด ${new Date(lastAt).toLocaleTimeString('th-TH', { hour12: false })}` : ''}`
+}
+$('logFollow').addEventListener('click', () => {
+  const on = $('logFollow').getAttribute('aria-pressed') !== 'true'
+  $('logFollow').setAttribute('aria-pressed', String(on))
+  if (on) $('autoLog').scrollTop = $('autoLog').scrollHeight
+})
+// เลื่อนขึ้นไปอ่านเอง = หยุดตามล่าสุด · เลื่อนกลับถึงล่างสุด = ตามต่อ
+$('autoLog').addEventListener('scroll', () => {
+  const box = $('autoLog')
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24
+  $('logFollow').setAttribute('aria-pressed', String(atBottom))
+})
+const setLogExpanded = (on) => {
+  $('autoLogBox').classList.toggle('expanded', on)
+  $('logExpand').setAttribute('aria-pressed', String(on))
+  $('logExpand').textContent = on ? 'ย่อลง' : 'เต็มจอ'
+  if (on) $('autoLog').focus()
+}
+$('logExpand').addEventListener('click', () => setLogExpanded(!$('autoLogBox').classList.contains('expanded')))
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('autoLogBox').classList.contains('expanded')) setLogExpanded(false)
+})
 
 /** รอจน autopilot จบ — resolve เมื่อได้วิดีโอ, reject เมื่อหยุดหรือพัง */
 function watchAuto(app, slug) {
@@ -1022,7 +1183,7 @@ function watchAuto(app, slug) {
         slug = a.run.slug
         if (a.run.title) $('autoTitle').value = a.run.title
       }
-      showAuto(a.status, a.run, a.progress)
+      showAuto(a.status, a.run, a.progress, a.log, a.cost)
       const st = a.status
       if (a.run?.status === 'running' || st?.status === 'running') {
         const secs = Math.round((Date.now() - (st?.startedAt ?? started)) / 1000)
@@ -1033,7 +1194,7 @@ function watchAuto(app, slug) {
       if (st?.status === 'done') resolve({ ...st, slug: st.slug ?? slug })
       else if (a.run?.status === 'stopped' || st?.status === 'stopped') reject(new Error('หยุดแล้ว — กดทำคลิปอัตโนมัติอีกครั้งเพื่อทำต่อจากที่ค้าง'))
       else {
-        $('autoLogBox').open = true
+        $('autoLogBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         reject(new Error(st?.error ? `${st.error} — กดอีกครั้งเพื่อทำต่อจากจุดนี้` : 'ทำคลิปไม่สำเร็จ — ดูรายละเอียดด้านล่าง'))
       }
     }
@@ -1063,13 +1224,23 @@ async function runAuto(app, slug) {
   }
 }
 
-$('startAuto').addEventListener('click', async () => {
+$('startAuto').addEventListener('click', () => {
   const autoTopic = S.autoTopicMode === 'auto'
   const title = autoTopic ? '' : $('autoTitle').value.trim()
   if (!title && !autoTopic) {
     setStatus('autoStatus', S.autoTopicMode === 'suggest' ? 'เลือกหัวข้อจากรายการที่ AI เสนอก่อน' : 'พิมพ์หัวข้อคลิปก่อน', 'error')
     return S.autoTopicMode === 'suggest' ? $('suggestTopics').focus() : $('autoTitle').focus()
   }
+  startAutopilot({ title, autoTopic })
+})
+
+// ✨ สร้างคลิปใหม่: ช่องหัวข้อจำเรื่องเดิมไว้ กด ▶ ทีไรก็ทำต่อเรื่องเดิม — ปุ่มนี้ล้างเรื่องเดิมแล้วให้ระบบเลือกหัวข้อใหม่ที่ยังไม่เคยทำ
+$('newAuto').addEventListener('click', () => {
+  $('autoTitle').value = ''
+  startAutopilot({ title: '', autoTopic: true })
+})
+
+async function startAutopilot({ title, autoTopic }) {
   S.autoTitle = title
   autoResume = null // เริ่มคลิปใหม่ ไม่ต้องทำต่อคลิปเก่า
   S.minutes = Number($('autoMinutes').value) || S.minutes
@@ -1092,7 +1263,7 @@ $('startAuto').addEventListener('click', async () => {
     setStatus('autoStatus', err.message, 'error')
     render()
   }
-})
+}
 
 // ── ปุ่มเดียว: ระหว่างทำ = ⏸ หยุด · หยุดไว้/ติดปัญหา = ▶ ทำต่อ (ข้ามแผนกที่เสร็จแล้ว) ──
 let autoResume = null // { title, slug, stage } คลิปที่หยุดไว้ ทำต่อได้
@@ -1130,6 +1301,33 @@ $('stopAuto').addEventListener('click', async () => {
   setStatus('autoStatus', `ทำต่อจาก${r.stage ?? 'จุดที่ค้าง'}…`, 'busy')
   try {
     const { slug } = await api(app, '/api/autopilot', { title: r.title, language: r.language ?? S.language, minutes: r.minutes ?? S.minutes })
+    chrome.runtime.sendMessage({ type: 'WAKE' }).catch(() => {})
+    await runAuto(app, slug)
+  } catch (err) {
+    autoRunning = false
+    setStatus('autoStatus', err.message, 'error')
+    render()
+  }
+})
+
+$('restartAuto').addEventListener('click', async () => {
+  const target = agentAutopilot
+  if (!target?.title || autoRunning) return
+  const stage = $('restartFrom').value
+  const stageLabel = $('restartFrom').selectedOptions[0]?.text ?? stage
+  if (!confirm(`เริ่ม "${target.title}" ใหม่ — ${stageLabel}?\n\nงานเดิมตั้งแต่ขั้นนี้จะถูกย้ายไปเก็บ (ไม่ลบ) แล้วทีมทำใหม่`)) return
+  const app = await localApp().catch(() => null)
+  if (!app) return setStatus('autoStatus', 'เปิดโปรแกรมในเครื่องไม่ได้', 'error')
+  $('autoTitle').value = target.title
+  S.autoTitle = target.title
+  if (S.autoTopicMode === 'auto') S.autoTopicMode = 'manual'
+  await save()
+  autoResume = null
+  autoRunning = true
+  render()
+  setStatus('autoStatus', `เริ่มใหม่ — ${stageLabel}…`, 'busy')
+  try {
+    const { slug } = await api(app, '/api/autopilot', { title: target.title, restartFrom: stage, language: S.language, minutes: S.minutes })
     chrome.runtime.sendMessage({ type: 'WAKE' }).catch(() => {})
     await runAuto(app, slug)
   } catch (err) {
@@ -1226,11 +1424,15 @@ $('suggestTopics').addEventListener('click', async () => {
   try {
     // หัวข้อที่ทำไปแล้ว → ห้ามเสนอซ้ำ (ถ้าโปรแกรมในเครื่องยังไม่เปิดก็ข้ามไป)
     const app = await localApp().catch(() => null)
-    const avoid = app ? ((await api(app, '/api/projects').catch(() => ({}))).projects ?? []).map((p) => p.title) : []
+    const history = app ? await api(app, '/api/topics/history').catch(() => ({})) : {}
+    const avoid = history.done ?? []
+    const seen = history.seen ?? []
     const text = await withBusy('suggestStatus', 'ChatGPT กำลังคิดหัวข้อและให้คะแนน', async () =>
-      askChatGPT(scoredTopicsPrompt(await blueprint(), { titleLanguage: S.language, minutes: S.minutes, avoid, genre: S.genre })),
+      askChatGPT(scoredTopicsPrompt(await blueprint(), { titleLanguage: S.language, minutes: S.minutes, avoid, seen, genre: S.genre })),
     )
     const topics = parseScoredTopics(text)
+    // จำไว้ว่าเสนออะไรไปแล้ว — ครั้งหน้าให้ ChatGPT เลี่ยง
+    if (topics.length && app) api(app, '/api/topics/history', { titles: topics.map((t) => t.title) }).catch(() => {})
     if (!topics.length) return setStatus('suggestStatus', 'อ่านตารางหัวข้อจากคำตอบไม่ออก — กดเสนอใหม่อีกครั้ง', 'error')
     S.scoredTopics = topics
     // เลือกเรื่องคะแนนสูงสุดไว้ก่อน เปลี่ยนได้ด้วยการกดเรื่องอื่น
@@ -1262,7 +1464,7 @@ async function resumeAuto() {
     showFinishedVideo(app, a.slug, { once: true }).catch(() => {})
   }
   if (a.status.title === S.autoTitle || autoResume) {
-    showAuto(a.status, null, a.progress)
+    showAuto(a.status, null, a.progress, a.log, a.cost)
     if (autoResume) setStatus('autoStatus', `"${autoResume.title}" หยุดไว้ที่${autoResume.stage ?? 'กลางทาง'} — กด ▶ ทำต่อ`, a.status.status === 'stopped' ? '' : 'error')
     if (a.status.status === 'done') setStatus('autoStatus', 'คลิปล่าสุดทำเสร็จแล้ว — ดูได้ในคลังวิดีโอ', 'ok')
     else if (a.status.error && !autoResume) setStatus('autoStatus', `ค้างที่ ${a.status.error} — กดอีกครั้งเพื่อทำต่อ`, 'error')
@@ -1299,13 +1501,61 @@ function renderClipSettings() {
     }
   }
   for (const b of motion.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.motion))
+  // ม้าน้ำ/Kie — เลือกสัดส่วนของฉากทั้งเรื่อง
+  const ai = $('clipAi')
+  const aiOptions = clip.options.aiCoverage ?? clip.options.aiClips ?? []
+  const aiCoverage = clip.aiCoverage ?? clip.aiClips
+  ai.parentElement.hidden = !aiOptions.length
+  if (!ai.childElementCount) {
+    for (const o of aiOptions) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      ai.append(b)
+    }
+  }
+  for (const b of ai.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === aiCoverage))
+  const aiOn = !!aiCoverage && aiCoverage !== 'off'
+  $('clipAiHint').textContent = aiOn
+    ? `เปิดอยู่ — ม้าน้ำจะส่งภาพประมาณ ${aiCoverage}% ของฉากไป Kie (มีค่าใช้จ่ายต่อฉาก) แล้วตัดต่อกับภาพที่เหลือ`
+    : 'ปิดอยู่ — ทุกฉากใช้ภาพนิ่งซูม/เลื่อนกล้อง แล้วตัดต่อได้ทันที ไม่เรียก Kie'
+  $('kieOptions').hidden = !aiOn
+  $('clipsSummary').textContent = aiOn
+    ? `ขยับ ${aiCoverage}% ของฉาก · ${clip.kie?.label ?? ''} ${clip.kie?.name ? `(${clip.kie.name} ≈ ${clip.kie.credits} เครดิต/ฉาก)` : ''}${clip.kie?.hasKey ? '' : ' · ยังไม่มี API key'}`
+    : 'ปิดแอนิเมชันอยู่ — เปิดในกล่องม้าน้ำด้านบนก่อน'
+  $('startClips').dataset.off = String(!aiOn || !clip.kie?.hasKey)
+  // ระดับโมเดล: ถูก · พอใช้ · เก่ง
+  const tiers = clip.options.kieTier ?? []
+  const tierBox = $('kieTier')
+  tierBox.parentElement.hidden = !tiers.length
+  if (!tierBox.childElementCount) {
+    for (const t of tiers) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: t.label })
+      b.dataset.value = t.id
+      b.title = `${t.name} · ${t.detail} · ≈ ${t.credits} เครดิต/ฉาก`
+      tierBox.append(b)
+    }
+  }
+  for (const b of tierBox.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.value === clip.kieTier))
+    b.disabled = localBusy()
+  }
+  const tier = clip.kie ?? {}
+  $('kieModelInfo').textContent = tier.name ? `${tier.name}` : ''
+  if (tier.name) {
+    const perClip = (tier.credits * 0.005).toFixed(3)
+    $('kieModelInfo').append(Object.assign(document.createElement('small'), {
+      textContent: `${tier.detail} · ≈ ${tier.credits} เครดิต ($${perClip})/ฉาก · ล้มแล้วสลับโมเดลสำรองให้เอง`,
+    }))
+  }
+  $('kieModeBadge').textContent = aiOn ? `เปิด ${aiCoverage}%` : 'ปิด'
+  $('kieKeyStatus').textContent = clip.kie?.hasKey ? 'บันทึก API key แล้ว · เก็บไว้ในเครื่อง' : 'ยังไม่มี API key — กรอกก่อนเริ่มสร้างแอนิเมชัน'
   const motionLabel = motionOptions.find((o) => o.id === clip.motion)?.label
   const subLabel = clip.options.subtitles.find((o) => o.id === clip.subtitles)?.label
   const pauseLabel = clip.options.pause.find((o) => o.id === clip.pause)?.label
   const summary = `${clip.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'} · ซับไตเติล${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · เงียบ${pauseLabel}`
   $('clipSettingsSummary').textContent = `ตั้งค่าคลิป: ${summary}${character?.active ? ' · ตัวละครของฉัน' : ''}`
   $('renderSettingsHint').textContent = `ซับไตเติล: ${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · แนวภาพตามภาพที่สร้างไว้ (เปลี่ยนได้ที่ ⚡ ตั้งค่าคลิป)`
-  for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button')]) el.disabled = localBusy()
+  for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button'), ...ai.querySelectorAll('button')]) el.disabled = localBusy()
 }
 
 async function saveClipSettings(change) {
@@ -1328,6 +1578,25 @@ $('clipPause').addEventListener('click', (e) => {
 $('clipMotion').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (b && !localBusy()) saveClipSettings({ motion: b.dataset.value })
+})
+$('clipAi').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !localBusy()) saveClipSettings({ aiCoverage: b.dataset.value })
+})
+$('kieTier').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !localBusy()) saveClipSettings({ kieTier: b.dataset.value })
+})
+$('saveKieKey').addEventListener('click', async () => {
+  const key = $('kieKey').value.trim()
+  if (!key) return $('kieKeyStatus').textContent = 'วาง Kie API key ก่อนบันทึก'
+  try {
+    const app = await localApp()
+    await api(app, '/api/kie-key', { key })
+    $('kieKey').value = ''
+    clip = await api(app, '/api/clip-settings')
+    renderClipSettings()
+  } catch (err) { $('kieKeyStatus').textContent = err.message }
 })
 $('clipSubtitles').addEventListener('change', (e) => saveClipSettings({ subtitles: e.target.value }))
 
@@ -1596,6 +1865,11 @@ async function loadChecklist() {
     app?.ok ? api(app, '/api/checklist').catch((err) => ({ error: err.message })) : null,
   ])
   items.push(siteCheck('chatgpt', 'ChatGPT (เขียนบท กำกับภาพ)', chat, CHATGPT_URL), siteCheck('flow', 'Google Flow (วาดภาพ 0 credits)', flow, 'https://flow.google.com/'))
+  // Kie API ทำงานในเครื่อง — ตรวจว่าตั้ง key แล้ว ไม่ต้องเปิดแท็บเว็บ
+  const aiCoverage = clip?.aiCoverage ?? clip?.aiClips
+  if (aiCoverage && aiCoverage !== 'off') {
+    items.push({ id: 'kie', group: 'ตัวเลือกเสริม', label: `Kie API (แอนิเมชัน ${aiCoverage}% ของเรื่อง)`, need: 'required', status: clip?.kie?.hasKey ? 'ok' : 'missing', detail: clip?.kie?.hasKey ? 'API key พร้อมใช้' : 'ยังไม่มี API key — กรอกในตั้งค่าม้าน้ำ' })
+  }
   if (machine?.items) items.push(...machine.items)
   else if (machine?.error) setStatus('checklistStatus', machine.error, 'error')
 
@@ -1637,23 +1911,147 @@ const studioHero = (() => {
   const hero = $('studioHero')
   const actor = $('heroActor')
   const crew = new Map()
+  const stickyCrew = new Map()
   let actorId = null
   let pinned = null // { id, until } แผนกที่ผู้ใช้กดดู
   let last = null // ข้อมูลรอบล่าสุด — กดดูแล้วแสดงทันทีโดยไม่ต้องถามโปรแกรมในเครื่องใหม่
 
+  const tips = new Map() // ป้ายหน้าที่ของแต่ละตัว ขึ้นทันทีตอนชี้/โฟกัส (title ของเบราว์เซอร์ขึ้นช้าและไม่บอกหน้าที่)
+  // กดสัตว์ในแถบด้านบน → ไปเฉพาะขั้นใน "หรือทำทีละขั้นเอง" (ไม่ไปการ์ดอัตโนมัติ) แม้ขั้นนั้นยังล็อกอยู่
+  // เต่ามี 3 ขั้น (1 หัวข้อ · 2 บท · 4 prompt ภาพ) → กดซ้ำเลื่อนไปขั้นถัดไปของเต่า
+  const settingTargets = { chatgpt: ['topicSection', 'scriptSection', 'imageSection'], voice: ['voiceSection'], flow: ['flowSection'], meta: ['clipsSection'], edit: ['renderSection'] }
+  const stepCursor = {}
+  let focusTimer = null
+  const focusSetting = (ids) => {
+    const list = [ids].flat().map((id) => $(id)).filter((el) => el && !el.hidden)
+    if (!list.length) return
+    const key = [ids].flat().join()
+    const target = list[(stepCursor[key] = ((stepCursor[key] ?? -1) + 1) % list.length)]
+    document.querySelectorAll('[data-focused="true"]').forEach((el) => delete el.dataset.focused)
+    const owner = target.closest('details')
+    if (owner) owner.open = true
+    const destination = target
+    destination.dataset.focused = 'true'
+    clearTimeout(focusTimer)
+    focusTimer = setTimeout(() => delete destination.dataset.focused, 2400)
+    destination.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   for (const d of DEPARTMENTS) {
     const b = Object.assign(document.createElement('button'), { type: 'button' })
     b.dataset.state = 'offline'
     b.append(portrait(d.id))
-    b.addEventListener('click', () => {
+    const tip = Object.assign(document.createElement('span'), { className: 'crewTip', role: 'tooltip', id: `crewTip-${d.id}` })
+    tip.append(
+      Object.assign(document.createElement('b'), { textContent: `${d.animal} · ${d.name}` }),
+      Object.assign(document.createElement('span'), { textContent: d.duty ?? d.role }),
+      Object.assign(document.createElement('small'), { className: 'crewTipState', textContent: 'สถานะ: ไม่ได้ต่อ' }),
+      Object.assign(document.createElement('small'), { textContent: 'กดเพื่อดูงานของแผนกนี้' }),
+    )
+    b.setAttribute('aria-describedby', tip.id)
+    tips.set(d.id, tip)
+    const selectAgent = () => {
       pinned = pinned?.id === d.id ? null : { id: d.id, until: Date.now() + 20_000 }
       if (last) update(...last)
-    })
+      focusSetting(settingTargets[d.id])
+    }
+    b.addEventListener('click', selectAgent)
     const li = document.createElement('li')
-    li.append(b)
+    li.append(b, tip)
     $('heroCrew').append(li)
     crew.set(d.id, b)
+    const sticky = Object.assign(document.createElement('button'), { type: 'button', className: 'stickyAgent' })
+    sticky.dataset.agent = d.id
+    sticky.append(portrait(d.id))
+    sticky.addEventListener('click', selectAgent)
+    $('agentStickyCrew').append(sticky)
+    $('stickyLogo').onclick = () => scrollTo({ top: 0, behavior: 'smooth' })
+    stickyCrew.set(d.id, sticky)
   }
+  // ── สัตว์ลอย: กล่องของแผนกไหนพาดเส้นกลางจอ → เปลี่ยนเป็นตัวนั้น
+  // ใช้ IntersectionObserver เส้นบางที่ 45% ของจอ (ไม่ฟัง scroll และไม่มี rAF ตามกติกาของตกแต่ง)
+  const mascot = $('floatMascot')
+  let mascotId = null
+  // ธีมสีทั้งแผง (ฉากใหญ่ · พื้น · ปุ่ม) = แผนกของกล่องที่เลื่อนมาถึง · อยู่นอกกล่องแผนก (แบนเนอร์/กล่องควบคุม) → แผนกที่กำลังทำงาน
+  let leadDept = null
+  const applyDept = () => {
+    const dept = mascotId ?? leadDept
+    if (dept) document.documentElement.dataset.dept = dept
+    else delete document.documentElement.dataset.dept
+  }
+  const onLine = new Set()
+  const syncMascot = () => {
+    // ซ้อนกันได้ (กล่องในการ์ดอัตโนมัติ) → เลือกตัวที่อยู่ลึกสุดตามลำดับในหน้า
+    const hit = [...onLine].filter((el) => !el.hidden).sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).at(-1)
+    const id = hit?.dataset.agent && SEA_ASSETS[hit.dataset.agent] ? hit.dataset.agent : null
+    mascot.hidden = !id
+    if (!id) {
+      mascotId = null
+      for (const btn of stickyCrew.values()) btn.removeAttribute('aria-current')
+      return applyDept()
+    }
+    if (id === mascotId) return
+    mascotId = id
+    mascot.dataset.agent = id
+    mascot.classList.remove('swap')
+    void mascot.offsetWidth // เริ่ม animation เปลี่ยนตัวใหม่ทุกครั้ง
+    mascot.classList.add('swap')
+    for (const [sid, btn] of stickyCrew) btn.toggleAttribute('aria-current', sid === id)
+    applyDept()
+  }
+  const lineObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) e.isIntersecting ? onLine.add(e.target) : onLine.delete(e.target)
+    syncMascot()
+  }, { rootMargin: '-45% 0px -54% 0px' })
+  // เฉพาะขั้นใน "หรือทำทีละขั้นเอง" — การ์ดอัตโนมัติไม่เรียกสัตว์ลอย และไม่เปลี่ยนธีม
+  for (const el of document.querySelectorAll('main > section.step[data-agent]')) lineObserver.observe(el)
+
+  // ── ลากสัตว์ลอยไปวางตรงไหนก็ได้ · จำตำแหน่งไว้ในเบราว์เซอร์นี้ · ดับเบิลคลิก = กลับมุมขวาล่าง ──
+  const MASCOT_KEY = 'floatMascotPos'
+  const placeMascot = (pos) => {
+    if (!pos) {
+      mascot.style.left = mascot.style.top = mascot.style.right = mascot.style.bottom = ''
+      return
+    }
+    const r = mascot.getBoundingClientRect()
+    const w = r.width || 120
+    const h = r.height || 160
+    // ให้ล้นขอบได้ครึ่งตัว แต่ไม่หลุดจอ
+    const x = Math.min(Math.max(pos.x * innerWidth, -w / 2), innerWidth - w / 2)
+    const y = Math.min(Math.max(pos.y * innerHeight, 0), innerHeight - h / 2)
+    Object.assign(mascot.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' })
+  }
+  let savedPos = null
+  try { savedPos = JSON.parse(localStorage.getItem(MASCOT_KEY) ?? 'null') } catch {}
+  placeMascot(savedPos)
+  let drag = null
+  mascot.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const r = mascot.getBoundingClientRect()
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top }
+    mascot.setPointerCapture(e.pointerId)
+    mascot.classList.add('dragging')
+  })
+  mascot.addEventListener('pointermove', (e) => {
+    if (!drag) return
+    savedPos = { x: (e.clientX - drag.dx) / innerWidth, y: (e.clientY - drag.dy) / innerHeight }
+    placeMascot(savedPos)
+  })
+  const endDrag = () => {
+    if (!drag) return
+    drag = null
+    mascot.classList.remove('dragging')
+    try { localStorage.setItem(MASCOT_KEY, JSON.stringify(savedPos)) } catch {}
+  }
+  mascot.addEventListener('pointerup', endDrag)
+  mascot.addEventListener('pointercancel', endDrag)
+  mascot.addEventListener('dblclick', () => {
+    savedPos = null
+    placeMascot(null)
+    try { localStorage.removeItem(MASCOT_KEY) } catch {}
+  })
+  addEventListener('resize', () => placeMascot(savedPos))
+
   const setActor = (id, state) => {
     if (id !== actorId) {
       actor.replaceChildren(portrait(id))
@@ -1677,8 +2075,6 @@ const studioHero = (() => {
   // ติดปัญหา → กดแบนเนอร์ไปดูรายละเอียดในกล่องทำคลิปอัตโนมัติ
   hero.querySelector('.heroBanner').addEventListener('click', () => {
     if (hero.dataset.mood !== 'failed') return
-    const details = $('autoLogBox')
-    if (!details.hidden) details.open = true
     $('autoSection').scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 
@@ -1732,9 +2128,8 @@ const studioHero = (() => {
     }
     hero.dataset.mood = mood
     // ภาพและสีตามตัวละครที่แสดง ใช้สถานะเดิม ไม่ถามเพิ่ม
-    const deptColor = DEPARTMENTS.some(d => d.id === lead?.id) ? lead.id : null
-    if (deptColor) document.documentElement.dataset.dept = deptColor
-    else delete document.documentElement.dataset.dept
+    leadDept = DEPARTMENTS.some(d => d.id === lead?.id) ? lead.id : null
+    applyDept()
     setActor(lead?.id ?? 'chatgpt', mood === 'working' ? 'working' : mood === 'waiting' ? 'waiting' : mood === 'offline' ? 'offline' : 'idle')
     text('heroTitle', title)
     text('heroSub', sub)
@@ -1756,22 +2151,23 @@ const studioHero = (() => {
     for (const [id, b] of crew) {
       const a = byId.get(id)
       const state = Object.hasOwn(AGENT_WORD, a?.state) ? a.state : 'offline'
+      const sticky = stickyCrew.get(id)
       b.dataset.state = state
       b.dataset.failed = String(failed && stage?.id === id)
       if (id === lead?.id && (pinned || (mood !== 'idle' && mood !== 'offline'))) b.setAttribute('aria-current', 'true')
       else b.removeAttribute('aria-current')
       const label = `${a?.animal ?? ''} · ${a?.name ?? id}: ${AGENT_WORD[state]}${a?.doing ? ` · ${a.doing}` : ''}`
-      b.title = label
       b.setAttribute('aria-label', label)
+      sticky.dataset.state = state
+      sticky.dataset.failed = b.dataset.failed
+      sticky.setAttribute('aria-label', `${label} · กดเพื่อไปตั้งค่า`)
+      if (id === lead?.id && (pinned || (mood !== 'idle' && mood !== 'offline'))) sticky.setAttribute('aria-current', 'true')
+      else sticky.removeAttribute('aria-current')
+      const tipState = tips.get(id)?.querySelector('.crewTipState')
+      const stateLine = `สถานะ: ${b.dataset.failed === 'true' ? 'มีปัญหา' : AGENT_WORD[state]}${a?.doing && a.doing !== AGENT_WORD[state] ? ` · ${a.doing}` : ''}`
+      if (tipState && tipState.textContent !== stateLine) tipState.textContent = stateLine
     }
 
-    // แถบติดขอบบนใช้ข้อความและตัวละครชุดเดียวกัน
-    text('agentStickyText', `${auto && pct != null ? `${pct}% · ` : ''}${title}${step ? ` · ${step.replace('⚡ ', '')}` : ''}`)
-    const dots = $('agentStickyDots')
-    if (dots.dataset.lead !== (lead?.id ?? '')) {
-      dots.replaceChildren(portrait(lead?.id ?? 'chatgpt'))
-      dots.dataset.lead = lead?.id ?? ''
-    }
   }
   return { update }
 })()
@@ -1799,6 +2195,7 @@ async function refreshAgents() {
     const agents = data?.agents ?? [
       { id: 'chatgpt', name: 'ChatGPT', role: 'เขียนบท · กำกับภาพ', state: 'offline', doing: 'โปรแกรมในเครื่องยังไม่เปิด' },
       { id: 'flow', name: 'Google Flow', role: 'วาดภาพ', state: 'offline', doing: 'โปรแกรมในเครื่องยังไม่เปิด' },
+      { id: 'meta', name: 'ม้าน้ำ · Kie API', role: 'ทำแอนิเมชัน', state: 'offline', doing: 'โปรแกรมในเครื่องยังไม่เปิด' },
       { id: 'voice', name: 'เสียงพากย์', role: 'ในเครื่อง', state: 'offline', doing: '' },
       { id: 'edit', name: 'ตัดต่อ', role: 'ในเครื่อง', state: 'offline', doing: '' },
     ]
@@ -1830,7 +2227,7 @@ setInterval(refreshAgents, 3000)
 document.addEventListener('visibilitychange', refreshAgents)
 refreshAgents()
 
-// แถบเล็กติดขอบบนเมื่อเลื่อนจนแบนเนอร์สถานะพ้นจอ — กดแล้วกลับขึ้นไปดู
+// แถว agent ลอยติดขอบบนเมื่อเลื่อนจนแบนเนอร์พ้นจอ — ปุ่มแต่ละตัวไปยัง setting ของตัวเอง
 {
   const hero = $('studioHero')
   const sticky = $('agentSticky')
@@ -1840,7 +2237,6 @@ refreshAgents()
   addEventListener('scroll', syncSticky, { passive: true })
   addEventListener('resize', syncSticky, { passive: true })
   syncSticky()
-  sticky.addEventListener('click', () => hero.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
 // คลังวิดีโอ
@@ -1920,6 +2316,70 @@ new ResizeObserver(() => {
 
 let bookReturnFocus = null
 
+/** คัดลอกข้อความ แล้วเปลี่ยนป้ายปุ่มชั่วครู่ให้รู้ว่าคัดลอกแล้ว */
+async function copyText(button, text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    const label = button.textContent
+    button.textContent = '✓ คัดลอกแล้ว'
+    button.classList.add('copied')
+    setTimeout(() => {
+      button.textContent = label
+      button.classList.remove('copied')
+    }, 1500)
+  } catch {
+    setStatus('libraryStatus', 'คัดลอกไม่ได้ — ลองกดอีกครั้ง', 'error')
+  }
+}
+
+/** ชื่อคลิป · คำบรรยาย · แฮชแท็ก สำหรับโพสต์ — กด copy ทีละส่วน หรือคัดลอกคำบรรยาย + แฮชแท็กพร้อมกัน */
+function postSection(app, video) {
+  const el = libEl
+  const box = el('section', { className: 'postBox', 'aria-label': 'ข้อความสำหรับโพสต์' })
+  const item = (label, value, copyLabel = 'คัดลอก') => {
+    const btn = el('button', { type: 'button', className: 'ghost', textContent: copyLabel })
+    btn.addEventListener('click', () => copyText(btn, value))
+    return el('div', { className: 'postItem' }, el('div', {}, el('span', { className: 'k', textContent: label }), el('div', { className: 'v', textContent: value })), btn)
+  }
+  const status = el('p', { className: 'hint', textContent: '' })
+  const generate = el('button', { type: 'button', className: video.post ? 'ghost' : 'primary', textContent: video.post ? '↻ คิดใหม่' : '✨ คิดชื่อคลิป + คำบรรยาย' })
+  generate.addEventListener('click', async () => {
+    if (localBusy()) return (status.textContent = 'มีงานอื่นทำอยู่ — รอให้เสร็จก่อน')
+    generate.disabled = true
+    status.textContent = 'ChatGPT กำลังคิดชื่อคลิปและคำบรรยายจากบท…'
+    try {
+      const { id } = await api(app, '/api/videos/post', { slug: video.slug })
+      chrome.runtime.sendMessage({ type: 'WAKE' }).catch(() => {})
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500))
+        const r = await api(app, `/api/videos/post?id=${encodeURIComponent(id)}`)
+        if (['queued', 'running'].includes(r.status)) continue
+        if (r.status !== 'done') throw new Error(r.error ?? 'คิดไม่สำเร็จ')
+        video.post = r.post
+        box.replaceWith(postSection(app, video))
+        return
+      }
+    } catch (err) {
+      status.textContent = `คิดไม่สำเร็จ: ${err.message}`
+      generate.disabled = false
+    }
+  })
+
+  box.append(el('h3', {}, el('span', { textContent: '📝 ข้อความสำหรับโพสต์' }), generate))
+  const post = video.post
+  if (!post) {
+    box.append(el('p', { className: 'hint', textContent: 'ให้ ChatGPT คิดชื่อคลิป 3 แบบ คำบรรยาย และแฮชแท็กจากบทของคลิปนี้ แล้วกดคัดลอกไปวางใน TikTok / YouTube / Reels' }), status)
+    return box
+  }
+  const tags = post.hashtags.join(' ')
+  post.titles.forEach((t, i) => box.append(item(`ชื่อคลิป ${i + 1}`, t)))
+  box.append(item('คำบรรยาย', post.description), item('แฮชแท็ก', tags))
+  const all = el('button', { type: 'button', className: 'primary', textContent: '📋 คัดลอกคำบรรยาย + แฮชแท็ก' })
+  all.addEventListener('click', () => copyText(all, `${post.description}\n\n${tags}`))
+  box.append(all, status)
+  return box
+}
+
 function closeBookSheet() {
   $('bookSheet').hidden = true
   bookReturnFocus?.focus?.()
@@ -1956,7 +2416,7 @@ function openBookSheet(app, video, opener) {
 
   const btn = (text, className, onClick, title) => {
     const b = el('button', { type: 'button', className, textContent: text, title: title ?? '' })
-    const name = text.startsWith('▶') ? 'play' : text.startsWith('📂') ? 'folder' : text.startsWith('🗑') ? 'trash' : text.startsWith('🖼') ? 'image' : 'edit'
+    const name = text.startsWith('▶') ? 'play' : text.startsWith('📂') ? 'folder' : text.startsWith('🗑') ? 'trash' : text.startsWith('🖼') ? 'image' : text.startsWith('⬇') ? 'download' : 'edit'
     setIconLabel(b, name, text === '📂' ? 'เปิดโฟลเดอร์' : text)
     b.addEventListener('click', onClick)
     return b
@@ -1996,6 +2456,7 @@ function openBookSheet(app, video, opener) {
         await loadLibrary()
         setStatus('libraryStatus', `เปลี่ยนชื่อเป็น "${res.title}" แล้ว`, 'ok')
       })),
+      btn('⬇ ดาวน์โหลดวิดีโอ', 'ghost', () => act(() => downloadVideo(app, file, video.title, (t) => setStatus('libraryStatus', t, t ? 'busy' : ''))), 'บันทึกวิดีโอเป็นชื่อเรื่อง'),
       ...(video.cover ? [btn('🖼 ดาวน์โหลดปก', 'ghost', () => act(() => downloadCover(app, video.cover, video.title)), 'บันทึกภาพปกคลิป (cover.png)')] : []),
       btn(video.cover ? '🖼 สร้างปกใหม่' : '🖼 สร้างปก', 'ghost', () => act(async () => {
             if (localBusy()) throw new Error('มีงานอื่นทำอยู่ — รอให้เสร็จก่อน')
@@ -2031,7 +2492,7 @@ function openBookSheet(app, video, opener) {
 
   const close = el('button', { type: 'button', className: 'primary sheetClose', textContent: 'ปิด' })
   close.addEventListener('click', closeBookSheet)
-  $('bookSheetBody').replaceChildren(el('div', { className: 'sheetHead' }, cover, info), body, close)
+  $('bookSheetBody').replaceChildren(el('div', { className: 'sheetHead' }, cover, info), body, postSection(app, video), close)
   $('bookSheet').hidden = false
   close.focus()
 }
@@ -2045,7 +2506,6 @@ $('closeLibrary').addEventListener('click', () => {
 const V = { voices: [], selected: null, choice: null, edge: null, gemini: null, training: null, epochs: 40, loaded: false }
 const NEW_VOICE = '__new__'
 const STATUS_TEXT = { draft: 'ยังไม่เทรน', training: 'หยุดกลางคัน', failed: 'เทรนไม่สำเร็จ' }
-let trainTimer = null
 let uploading = false
 
 async function localApp() {
@@ -2056,7 +2516,6 @@ async function localApp() {
 
 async function loadVoices(app) {
   Object.assign(V, await api(app, '/api/voices'), { loaded: true })
-  if (V.training && !trainRunning) watchTrain(app, V.training)
   render()
 }
 
@@ -2069,15 +2528,20 @@ function renderVoices() {
   if (!V.loaded) pick.append(new Option('กำลังเชื่อมโปรแกรมในเครื่อง…', ''))
   // ช่องเลือกเสียงรวมทุกแหล่ง ค่าเป็น "<engine>:<id>"
   const group = (label) => Object.assign(document.createElement('optgroup'), { label })
-  const mine = group('เสียงของเรา (ในเครื่อง)')
   for (const v of V.voices) {
-    const note = v.ready ? '' : ` — ${v.id === V.training ? 'กำลังเทรน' : (STATUS_TEXT[v.status] ?? v.status)}`
-    const opt = new Option(v.label + note, `my-voice:${v.id}`)
-    opt.disabled = !v.ready
-    mine.append(opt)
-    if (!v.ready) target.append(new Option(v.label + note, v.id))
+    const vox = V.voxcpm?.voices?.find((x) => x.id === v.id)
+    target.append(new Option(`${v.label}${vox ? '' : ' — ยังไม่มีคลิปเสียง'}`, v.id))
   }
-  if (V.voices.length) pick.append(mine)
+  // VoxCPM2 — โคลนเสียงของเราจากคลิปต้นแบบ อ่านไทยแม่นกว่า (ไม่ต้องเทรน)
+  if (V.voxcpm?.voices?.length) {
+    const g = group(`VoxCPM2 — เสียงของเรา อ่านแม่นกว่า${V.voxcpm.ready ? '' : ' (ยังไม่ได้ติดตั้ง)'}`)
+    for (const v of V.voxcpm.voices) {
+      const opt = new Option(`${v.label} · VoxCPM2`, `voxcpm:${v.id}`)
+      opt.disabled = !V.voxcpm.ready
+      g.append(opt)
+    }
+    pick.prepend(g)
+  }
   if (V.edge) {
     // พากย์ไทย: ซ่อนเสียงอังกฤษล้วน — อ่านไทยไม่ออก (Microsoft ไม่ส่งเสียงกลับมา) · พากย์อังกฤษ: แสดงครบทุกเสียง
     const thai = (S.language ?? V.language) !== 'en'
@@ -2108,15 +2572,20 @@ function renderVoices() {
   const engine = pick.value.split(':')[0]
   $('voiceNote').textContent = {
     'my-voice': 'ปรับได้ทั้งอารมณ์และความเร็ว · ใช้การ์ดจอ',
+    voxcpm: 'อ่านไทย ตัวเลข คำอังกฤษได้แม่นที่สุด · เลือกอารมณ์และความเร็วได้ · ใช้การ์ดจอ (ฟังตัวอย่างครั้งแรกรอโหลดโมเดล ~30 วิ)',
     edge: 'ปรับได้แค่ความเร็ว (Edge ไม่มีอารมณ์เสียงภาษาไทย) · เร็วมาก ไม่ใช้การ์ดจอ',
     gemini: `อารมณ์และความเร็วส่งเป็นคำสั่งให้ Gemini · โควตาฟรีจำกัดต่อวัน · รุ่น ${V.gemini?.model ?? ''}`,
   }[engine] ?? ''
   // เสียงที่ตั้งไว้เป็นอังกฤษล้วนแต่ตอนนี้พากย์ไทย → ขั้นเสียงจะใช้ Niwat แทนให้เอง บอกให้รู้
-  if (!choiceShown) $('voiceNote').textContent = `เสียงที่ตั้งไว้ (${V.choice.split(':').pop()}) พากย์ไทยไม่ได้ — ระบบจะใช้ Niwat แทน หรือเลือกเสียงใหม่จากรายการ`
+  if (!choiceShown) {
+    $('voiceNote').textContent = V.choice.startsWith('my-voice:')
+      ? 'เสียงที่ตั้งไว้เป็นระบบเสียงแบบเดิมที่เลิกใช้แล้ว — เลือกเสียง VoxCPM2 จากรายการ'
+      : `เสียงที่ตั้งไว้ (${V.choice.split(':').pop()}) พากย์ไทยไม่ได้ — ระบบจะใช้ Niwat แทน หรือเลือกเสียงใหม่จากรายการ`
+  }
   $('geminiKeyRow').hidden = !(engine === 'gemini' && !V.gemini?.hasKey)
-  $('previewVoice').hidden = engine === 'my-voice' || !V.loaded
+  $('previewVoice').hidden = !V.loaded || !engine || engine === 'my-voice'
   target.prepend(new Option('＋ สร้างเสียงใหม่', NEW_VOICE))
-  target.value = [...target.options].some((o) => o.value === keepTarget) ? keepTarget : (V.training ?? NEW_VOICE)
+  target.value = [...target.options].some((o) => o.value === keepTarget) ? keepTarget : NEW_VOICE
 
   const locked = busy || localBusy() || uploading
   pick.disabled = locked || !V.loaded
@@ -2126,6 +2595,21 @@ function renderVoices() {
   $('newVoiceName').disabled = locked
 
   const voice = V.voices.find((v) => v.id === target.value)
+  // เสียงที่ทำกับ VoxCPM2 แล้ว → แสดงข้อความอ้างอิงให้แก้ได้
+  const voxVoice = V.voxcpm?.voices?.find((v) => v.id === target.value)
+  $('voxRefBox').hidden = !voxVoice?.refText
+  if (voxVoice?.refText && document.activeElement !== $('voxRefText')) $('voxRefText').value = voxVoice.refText
+  $('useVoxcpm').disabled = locked || !V.voxcpm?.ready
+
+  const raw = voice?.raw ?? []
+  const newest = [...raw].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0))[0]
+  $('useVoxcpm').textContent = voxVoice?.refSource ? '⚡ สร้างเสียงใหม่จากไฟล์นี้' : '⚡ สร้างเสียงจากไฟล์นี้'
+  $('useVoxcpm').disabled = locked || !V.voxcpm?.ready || !raw.length
+  // เสียงอ้างอิงทำจากไฟล์เก่า แต่ผู้ใช้อัปโหลดไฟล์ใหม่แล้ว → เตือนให้กดใหม่
+  const staleRef = voxVoice?.refSource && newest && newest.name !== voxVoice.refSource
+  $('voxRefLabel').textContent = staleRef
+    ? `⚠️ เสียงอ้างอิงยังเป็นไฟล์เก่า (${voxVoice.refSource}) — กด ⚡ อีกครั้งเพื่อใช้ไฟล์ใหม่ ${newest.name}`
+    : `ข้อความที่พูดในคลิปอ้างอิง${voxVoice?.refSource ? ` (${voxVoice.refSource})` : ''} — แก้ให้ตรงทุกคำ (ไม่ตรง = เสียงที่ได้เพี้ยน)`
   const list = $('trainFileList')
   list.textContent = ''
   for (const f of voice?.raw ?? []) {
@@ -2135,16 +2619,11 @@ function renderVoices() {
     del.dataset.icon = 'close'
     del.disabled = locked
     del.addEventListener('click', () => removeTrainFile(voice.id, f.name))
-    li.append(Object.assign(document.createElement('span'), { textContent: `${f.name} · ${f.mb} MB` }), del)
+    li.append(Object.assign(document.createElement('span'), { textContent: `${f.name} · ${f.seconds ? `${Math.round(f.seconds)} วินาที` : `${f.mb} MB`}` }), del)
     list.append(li)
   }
 
-  if (document.activeElement !== $('trainEpochs')) $('trainEpochs').value = V.epochs
-  $('trainEpochs').disabled = locked
   $('trainFiles').disabled = locked
-  $('startTrain').disabled = locked
-  setIconLabel($('startTrain'), 'settings', { training: 'เทรนต่อจากจุดเดิม', failed: 'ลองเทรนอีกครั้ง' }[voice?.status] ?? 'เริ่มเทรน')
-  $('stopTrain').disabled = !trainRunning
 }
 
 $('voicePick').addEventListener('change', async (e) => {
@@ -2259,68 +2738,39 @@ async function removeTrainFile(voice, name) {
   }
 }
 
-/** ติดตามการเทรนจาก bridge — ปิดแผงแล้วเปิดใหม่ก็ตามต่อได้ */
-function watchTrain(app, id) {
-  clearInterval(trainTimer)
-  trainRunning = true
-  V.training = id
-  $('trainBox').open = true
+// ── เสียงใหม่แบบไม่ต้องเทรน: ไฟล์ 10–15 วิ → VoxCPM2 ──
+$('useVoxcpm').addEventListener('click', async () => {
+  uploading = true
   render()
-  $('trainTarget').value = id
-  const tick = async () => {
-    let st
-    try {
-      st = await api(app, '/api/state')
-    } catch (err) {
-      return setStatus('trainStatus', `ติดต่อโปรแกรมในเครื่องไม่ได้: ${err.message}`, 'error')
-    }
-    const run = st.run
-    if (run?.step !== 'trainVoice') return
-    $('trainLog').textContent = run.lines.slice(-60).join('\n')
-    $('trainLogBox').hidden = !run.lines.length
-    if (run.status === 'running') {
-      const stage = [...run.lines].reverse().find((l) => /^\[\d\/5\]/.test(l)) ?? 'เตรียมเทรน'
-      const secs = Math.round((Date.now() - run.startedAt) / 1000)
-      return setStatus('trainStatus', `${stage} · ผ่านไป ${fmtTime(secs)}`, 'busy')
-    }
-    clearInterval(trainTimer)
-    trainRunning = false
-    V.training = null
-    await loadVoices(app).catch(() => {})
-    if (run.status === 'done') {
-      setStatus('trainStatus', 'เทรนเสร็จแล้ว — เลือกเสียงนี้ในช่อง "เสียงที่ใช้" ได้เลย', 'ok')
-    } else if (run.status === 'stopped') {
-      setStatus('trainStatus', 'หยุดแล้ว — กด "เทรนต่อ" เพื่อเทรนต่อจากจุดเดิม')
-    } else {
-      $('trainLogBox').open = true
-      setStatus('trainStatus', 'เทรนไม่สำเร็จ — ดูรายละเอียดด้านล่าง', 'error')
-    }
-    render()
-  }
-  tick()
-  trainTimer = setInterval(tick, 3000)
-}
-
-$('startTrain').addEventListener('click', async () => {
-  uploading = true // ล็อกปุ่มระหว่างส่งคำสั่ง
-  render()
+  setStatus('trainStatus', 'กำลังเตรียมเสียงอ้างอิงและถอดข้อความที่พูด… (ครั้งแรกรอโหลด Whisper ~30 วิ)', 'busy')
   try {
     const app = await localApp()
     const id = await ensureTrainVoice(app)
-    if (!V.voices.find((v) => v.id === id)?.raw.length) throw new Error('เลือกไฟล์เสียงสำหรับเทรนก่อน')
-    await api(app, '/api/voices/train', { voice: id, epochs: Number($('trainEpochs').value) })
-    uploading = false
-    watchTrain(app, id)
+    if (!V.voices.find((v) => v.id === id)?.raw.length) throw new Error('เลือกไฟล์เสียงก่อน (พูดชัด 10–15 วินาที)')
+    setStatus('trainStatus', 'กำลังสร้างเสียงและถอดข้อความที่พูด… (ครั้งแรกรอโหลด Whisper ~30 วิ)', 'busy')
+    const { text } = await api(app, '/api/voices/voxcpm-ref', { voice: id })
+    await api(app, '/api/voices/select', { engine: 'voxcpm', id })
+    await loadVoices(app)
+    $('voxRefText').value = text
+    $('voxRefBox').hidden = false
+    setStatus('trainStatus', 'พร้อมใช้แล้ว และเลือกเป็นเสียงพากย์ให้แล้ว — ตรวจข้อความด้านล่างให้ตรงกับที่พูดในคลิป แล้วกดฟังตัวอย่าง', 'ok')
   } catch (err) {
-    uploading = false
     setStatus('trainStatus', err.message, 'error')
+  } finally {
+    uploading = false
     render()
   }
 })
-
-$('stopTrain').addEventListener('click', async () => {
-  const app = await localApp().catch(() => null)
-  if (app) await api(app, '/api/run/stop', {}).catch(() => {})
+$('saveVoxRef').addEventListener('click', async () => {
+  try {
+    const app = await localApp()
+    const id = $('trainTarget').value
+    await api(app, '/api/voices/voxcpm-text', { voice: id, text: $('voxRefText').value })
+    await loadVoices(app)
+    setStatus('trainStatus', 'บันทึกข้อความแล้ว — กดฟังตัวอย่างเพื่อเช็คเสียง', 'ok')
+  } catch (err) {
+    setStatus('trainStatus', err.message, 'error')
+  }
 })
 
 /** เปิดแผงใหม่ระหว่างที่เสียงยังสร้างอยู่ → ต่อการติดตามให้เอง */
@@ -2369,7 +2819,24 @@ for (const [id, key] of [['titleLang', 'titleLanguage'], ['voLang', 'language'],
   })
 }
 
-// ── วาดหน้า ──
+// ── วาดหน้า ──
+/**
+ * ขั้นที่ยังทำไม่ได้: ไม่ซ่อนทั้งขั้น — แสดงหัวขั้น (รูปสัตว์ · ป้ายแผนก) แบบพับไว้ พร้อมบอกว่าต้องทำอะไรก่อน
+ * ผู้ใช้เห็นทีมครบทุกตัวตั้งแต่แรก (ปลาหมึก/ปูไม่หายไปจนกว่าจะถึงคิว)
+ */
+function lockStep(id, locked, reason) {
+  const section = $(id)
+  section.hidden = false
+  section.toggleAttribute('data-locked', locked)
+  let note = section.querySelector(':scope > .lockNote')
+  if (!note) {
+    note = Object.assign(document.createElement('p'), { className: 'lockNote' })
+    section.querySelector(':scope > h2').after(note)
+  }
+  note.textContent = locked ? `ยังทำขั้นนี้ไม่ได้ — ${reason}` : ''
+  note.hidden = !locked
+}
+
 function render() {
   for (const [id, key] of [['titleLang', 'titleLanguage'], ['voLang', 'language'], ['emotion', 'emotion']]) {
     for (const b of $(id).querySelectorAll('button')) {
@@ -2402,7 +2869,7 @@ function render() {
   }
   $('question').hidden = !S.topics.length
 
-  $('scriptSection').hidden = !S.selected
+  lockStep('scriptSection', !S.selected, 'เลือกหัวข้อในขั้นที่ 1 ก่อน')
   if (S.selected) $('pickedTitle').textContent = `หัวข้อ: ${S.selected.title}`
   if (document.activeElement !== $('minutes')) $('minutes').value = S.minutes
   $('minutes').disabled = busy
@@ -2429,23 +2896,27 @@ function render() {
   if (document.activeElement !== $('speed')) $('speed').value = S.speed
   for (const b of $('emotion').querySelectorAll('button')) b.disabled = busy || localBusy()
 
-  $('imageSection').hidden = !sc
+  lockStep('imageSection', !sc, 'ต้องมีบทพากย์จากขั้นที่ 2 ก่อน')
   $('startShots').disabled = busy || localBusy() || !sc
   setIconLabel($('startShots'), 'shots', shotsData ? 'สร้าง prompt ภาพใหม่' : 'เริ่มสร้าง prompt ภาพ')
   $('resumeShots').disabled = busy || localBusy()
   $('stopShots').disabled = !shotsRunning
 
-  $('flowSection').hidden = !shotsData
+  lockStep('flowSection', !shotsData, 'ต้องมี prompt ภาพจากขั้นที่ 4 ก่อน')
+  lockStep('clipsSection', !shotsData, 'ต้องมีภาพจากขั้นที่ 5 ก่อน')
+  $('startClips').disabled = busy || localBusy() || !shotsData || $('startClips').dataset.off === 'true'
+  $('stopClips').disabled = !clipsRunning
   $('startFlow').disabled = busy || localBusy() || !shotsData?.withPrompt
   $('stopFlow').disabled = !flowRunning
 
-  $('renderSection').hidden = !sc
+  lockStep('renderSection', !sc, 'ต้องมีบทพากย์ก่อน แล้วทำเสียง (ขั้นที่ 3) และภาพ (ขั้นที่ 5)')
   $('startRender').disabled = busy || localBusy() || !sc
   $('stopRender').disabled = !renderRunning
   $('retimeAudio').disabled = busy || localBusy() || !sc
   renderClipSettings()
 
   $('startAuto').disabled = busy || localBusy()
+  $('newAuto').disabled = busy || localBusy()
   renderTopicMode()
   // ปุ่มหยุด ↔ ทำต่อ
   const resumeMode = !autoRunning && !!autoResume
@@ -2455,6 +2926,12 @@ function render() {
   $('stopAuto').textContent = resumeMode ? 'ทำต่อ' : 'หยุด'
   $('stopAuto').dataset.icon = resumeMode ? 'next' : 'stop'
   $('stopAuto').title = resumeMode ? `ทำต่อ "${autoResume.title}" จาก${autoResume.stage ?? 'จุดที่ค้าง'}` : 'หยุดไว้ก่อน กดทำต่อได้ภายหลัง'
+  // เริ่มใหม่: คลิปที่หยุด/พัง/เสร็จแล้ว — ทิ้งงานเดิมตั้งแต่แผนกที่เลือก
+  const restartTarget = !autoRunning && agentAutopilot?.title && agentAutopilot.status !== 'running' ? agentAutopilot : null
+  $('restartRow').hidden = !restartTarget
+  $('restartAuto').disabled = busy || localBusy()
+  $('restartFrom').disabled = busy || localBusy()
+  if (restartTarget) $('restartAuto').title = `เริ่ม "${restartTarget.title}" ใหม่ — งานเดิมย้ายไปเก็บในโฟลเดอร์ _restart (กู้คืนได้)`
   $('autoTitle').disabled = autoRunning
   $('autoMinutes').disabled = autoRunning
   if (document.activeElement !== $('autoMinutes')) $('autoMinutes').value = S.minutes
