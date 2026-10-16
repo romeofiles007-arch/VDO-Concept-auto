@@ -102,7 +102,12 @@ const SEL = {
   newProject: () => $$('button').find((b) => L.newProject.test(text(b)) && visible(b)),
   agentChip: () => document.querySelector('button.agent-mode-chip'),
   settingsTrigger: () => byAria(L.settingsTrigger).find(visible),
-  agentSettings: () => byAria(L.agentSettings).find(visible),
+  // ต.ค. 2026 หัวหน้า project มีปุ่มเฟือง "Settings/การตั้งค่า" (View mode · Grid size) เพิ่มมาชื่อซ้ำกัน และอยู่ก่อนใน DOM
+  // → เจาะจงปุ่มในช่องพิมพ์ (ไอคอน tune) ไม่งั้นไปเปิดแผงผิดแล้วรอ Agent settings จนหมดเวลา
+  agentSettings: () => {
+    const btns = byAria(L.agentSettings).filter(visible)
+    return btns.find((b) => b.closest('flow-base-prompt-box, flow-creative-agent-prompt-box, flow-prompt-box')) ?? btns.find((b) => text(b) === 'tune')
+  },
   agentPanel: () => document.querySelector('flow-agent-panel'),
   editor: () => $$('flow-prompt-box .ProseMirror, flow-base-prompt-box .ProseMirror').find(visible) ?? $$('.ProseMirror[contenteditable="true"]').find(visible),
   send: () => byAria(L.send).find(visible),

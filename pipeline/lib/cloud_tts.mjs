@@ -21,6 +21,40 @@ export function edgePython() {
   return join(ROOT, 'tts', '.venv-edge', 'Scripts', 'python.exe')
 }
 
+function pythonEnv() {
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
+  delete env.PYTHONHOME
+  delete env.PYTHONPATH
+  return env
+}
+
+/** รัน worker ของ edge-tts หนึ่งรอบ → ข้อความ error หรือ null ถ้าสำเร็จ */
+function edgeRun(jobFile, onEvent) {
+  let error = null
+  return new Promise((resolve) => {
+    const proc = spawn(edgePython(), [join(ROOT, 'tts/cloud/edge_synth.py'), jobFile], { cwd: ROOT, env: pythonEnv(), windowsHide: true })
+    createInterface({ input: proc.stdout }).on('line', (line) => {
+      try {
+        const msg = JSON.parse(line)
+        if (msg.event === 'error') error = msg.message
+        else if (msg.event !== 'loading' && msg.event !== 'done') onEvent(msg)
+      } catch {}
+    })
+    let stderr = ''
+    proc.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)))
+    proc.on('close', (c) => resolve(c === 0 ? null : error || stderr.trim() || `edge-tts จบด้วย exit ${c}`))
+  })
+}
+
+/** pip install --upgrade edge-tts ใน venv ที่ใช้อยู่ → true ถ้าติดตั้งสำเร็จ */
+function edgeUpgrade() {
+  return new Promise((resolve) => {
+    const proc = spawn(edgePython(), ['-m', 'pip', 'install', '-q', '--upgrade', 'edge-tts'], { cwd: ROOT, env: pythonEnv(), windowsHide: true })
+    proc.on('error', () => resolve(false))
+    proc.on('close', (c) => resolve(c === 0))
+  })
+}
+
 // รายชื่อเสียงทั้งหมดที่พากย์ได้จริง — สร้างใหม่ด้วย node scripts/update-edge-voices.mjs
 const EDGE_CATALOG = JSON.parse(readFileSync(join(ROOT, 'pipeline', 'lib', 'edge_voices.json'), 'utf8'))
 
@@ -177,27 +211,16 @@ export async function synthCloud(engine, segments, { voice, model, emotion, spee
     mkdirSync(dirname(segments[0].out), { recursive: true })
     const jobFile = join(dirname(segments[0].out), '.edge_job.json')
     writeFileSync(jobFile, JSON.stringify({ voice, rate: edgeRate(speed), segments: jobs }, null, 2))
-    const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }
-    delete env.PYTHONHOME
-    delete env.PYTHONPATH
-    let error = null
-    const code = await new Promise((resolve) => {
-      const proc = spawn(edgePython(), [join(ROOT, 'tts/cloud/edge_synth.py'), jobFile], { cwd: ROOT, env, windowsHide: true })
-      createInterface({ input: proc.stdout }).on('line', (line) => {
-        try {
-          const msg = JSON.parse(line)
-          if (msg.event === 'error') error = msg.message
-          else if (msg.event !== 'loading' && msg.event !== 'done') onEvent(msg)
-        } catch {}
-      })
-      let stderr = ''
-      proc.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)))
-      proc.on('close', (c) => {
-        if (c !== 0 && !error) error = stderr.trim() || `edge-tts จบด้วย exit ${c}`
-        resolve(c)
-      })
-    })
-    if (code !== 0) throw new Error(error)
+    let error = await edgeRun(jobFile, onEvent)
+    // 403 ทุกคำขอ = Microsoft เลิกรับ edge-tts รุ่นเก่า (เจอจริง ต.ค. 2026: 7.2.8 โดนปฏิเสธ 7.3.1 ผ่าน) → อัปเดตเองแล้วลองอีกรอบ
+    if (error && /\b403\b/.test(error)) {
+      onEvent({ event: 'loading', engine: 'edge-tts รุ่นใหม่ (Microsoft ปฏิเสธรุ่นเดิม 403)' })
+      if (await edgeUpgrade()) error = await edgeRun(jobFile, onEvent)
+      if (error && /\b403\b/.test(error)) {
+        throw new Error('Edge TTS ปฏิเสธคำขอ (403) แม้อัปเดต edge-tts เป็นรุ่นล่าสุดแล้ว — Microsoft อาจปิดชั่วคราว ลองใหม่ภายหลังหรือเปลี่ยนไปใช้เสียงอื่น')
+      }
+    }
+    if (error) throw new Error(error)
     for (const s of jobs) {
       const wav = s.out.replace(/\.mp3$/i, '.wav')
       await run('ffmpeg', ['-y', '-v', 'error', '-i', s.out, '-ar', String(sampleRate), '-ac', '1', wav])

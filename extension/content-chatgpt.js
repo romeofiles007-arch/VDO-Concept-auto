@@ -63,10 +63,28 @@ const assistantTurns = () => {
 const userTurns = () => [...document.querySelectorAll('[data-message-author-role="user"], [data-user-message-bubble]')]
 // คำตอบที่อ้างไฟล์แนบของ prompt ยาวจะมีป้าย "Pasted text" แทรกท้ายประโยค — ไม่ใช่เนื้อคำตอบ
 const CITATION = /[ \t]*Pasted text(?:\([\d-]+\))?(?:\.txt)?/g
+/**
+ * ตาราง → markdown (| a | b |) — หน้ารุ่นใหม่ (ต.ค. 2026) ห่อข้อความทุกช่องด้วย <p> innerText จึงแตกแต่ละช่องเป็นคนละบรรทัด
+ * ไม่ใช่แถวละบรรทัดคั่น tab อย่างเดิม ตัวอ่านตารางหัวข้อ/shotlist เลยไม่เจอแถวสักแถว
+ */
+function tableMarkdown(table) {
+  return [...table.rows]
+    .map((r, i) => {
+      const cells = [...r.cells]
+      const line = `| ${cells.map((c) => c.innerText.replace(/\s+/g, ' ').replace(/\|/g, '/').trim()).join(' | ')} |`
+      return i === 0 && cells.some((c) => c.tagName === 'TH') ? `${line}\n|${' --- |'.repeat(cells.length)}` : line
+    })
+    .join('\n')
+}
 function turnText(turn) {
   let text = turn?.innerText ?? ''
   const head = turn?.querySelector(`:scope > ${NEW_HEAD}`)?.innerText
   if (head && text.startsWith(head)) text = text.slice(head.length)
+  for (const table of turn?.querySelectorAll('table') ?? []) {
+    const raw = table.innerText.trim()
+    const at = raw ? text.indexOf(raw) : -1
+    text = at >= 0 ? text.slice(0, at) + tableMarkdown(table) + text.slice(at + raw.length) : `${text}\n\n${tableMarkdown(table)}`
+  }
   return text.replace(CITATION, '').trim()
 }
 function turnFinished(turn) {
