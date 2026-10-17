@@ -365,8 +365,16 @@ main > section.step { padding-top: 0; margin-bottom: 22px; background: color-mix
 @keyframes stop-glow { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--stop-red) 20%, transparent), 0 0 26px 6px color-mix(in srgb, var(--stop-red) 45%, transparent); } }
 @media (prefers-reduced-motion: reduce) { #stopAuto.stop { animation: none !important; } }
 
-/* ✨ สร้างคลิปใหม่ — ใต้ปุ่มหลัก เต็มแถว ไม่แย่งความเด่นจากปุ่ม ▶ */
-#newAuto { display: block; width: 100%; margin-top: 8px; }
+/* ✨ เริ่มวิดีโอใหม่ — ใต้ปุ่มหลัก เต็มแถว · ผู้ใช้เคยหาไม่เจอตอนเป็นปุ่มเส้นบางๆ จึงให้กรอบสีแผนกและตัวหนา
+   แต่ยังเป็นพื้นโปร่ง ไม่แย่งความเด่นจากปุ่ม ▶ */
+#newAuto {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 100%; margin-top: 10px; padding: 9px 12px;
+  border: 2px solid var(--accent); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+#newAuto b { font-size: 14px; }
+#newAuto small { font-size: 12px; opacity: .88; }
 
 /* ── ⚡ ทำคลิปอัตโนมัติ: แบ่งเป็นกล่องตามแผนก สีตามสัตว์ ──
    การ์ดหลักเป็นพื้นกลาง ไม่ย้อมสีแผนกใด · กล่องย่อยถือสีของสัตว์ตัวเอง (เต่า/โลมา/ปลาหมึก/ม้าน้ำ)
@@ -601,3 +609,15 @@ main > section.step.agentSetting > h2 { min-height: 0; padding-top: 11px; paddin
 .floatMascot { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
 .floatMascot.dragging { cursor: grabbing; filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .38)); }
 .floatMascot.dragging .floatSprite { transform: scale(1.04); }
+
+/* ── อัปเดตจาก GitHub: แถบเตือนใต้ภาพทีมงาน — โผล่เฉพาะเมื่อมีของใหม่ ── */
+.updateBanner { border: 2px solid var(--accent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); padding: 12px 14px; }
+.updateHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.updateHead strong { font-size: 14px; }
+.updateHead .primary { flex: none; }
+.updateBanner .hint { margin: 6px 0 0; }
+.updateBanner details { margin-top: 6px; font-size: 13px; }
+.updateCommits { margin: 6px 0 0; padding-left: 18px; }
+.updateCommits li { margin: 3px 0; }
+.updateCommits small { opacity: .7; }
+.updateBanner.done { border-color: var(--line); }

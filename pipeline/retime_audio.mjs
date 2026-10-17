@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, copyFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { loadConfig, projectDir, ROOT } from './lib/config.mjs'
+import { loadConfig, updateConfig, projectDir, ROOT } from './lib/config.mjs'
 import { probeDuration, concatAudio, trimSilence, eachLimit, PAUSE_PRESETS } from './lib/ffmpeg.mjs'
 import { buildTimeline, timecodeFilename, hhmmss } from './lib/timecode.mjs'
 import { readAsrTimeline } from './lib/asr.mjs'
@@ -78,10 +78,7 @@ console.log(`เสียงพากย์ ${hhmmss(oldTimeline.totalDuration)}
 
 // config ใหม่ต้องตรงกับเสียงที่เพิ่งต่อ — 3_timecode อ่านช่วงเว้นจาก config
 {
-  const cfgFile = join(ROOT, 'config', 'project.config.json')
-  const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'))
-  Object.assign(cfg.tts, { segmentGapMs: pause.segmentGapMs, paragraphGapMs: pause.paragraphGapMs, ...(PAUSE_PRESETS[pauseArg] && { pause: pauseArg }) })
-  writeFileSync(cfgFile, JSON.stringify(cfg, null, 2) + '\n')
+  updateConfig((cfg) => Object.assign(cfg.tts, { segmentGapMs: pause.segmentGapMs, paragraphGapMs: pause.paragraphGapMs, ...(PAUSE_PRESETS[pauseArg] && { pause: pauseArg }) }))
 }
 execFileSync(process.execPath, [join(ROOT, 'pipeline', '3_timecode.mjs'), slug], { cwd: ROOT, stdio: 'ignore' })
 

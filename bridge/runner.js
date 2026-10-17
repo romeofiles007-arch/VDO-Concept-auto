@@ -8,32 +8,33 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 
+// process.execPath แทน 'node' — แพ็กเกจลูกค้าใช้ node ที่แถมไว้ใน runtime/ ซึ่งอาจไม่อยู่ใน PATH ของเครื่อง
 const MAX_LINES = 400
 
 export const STEPS = {
-  tts: { label: 'ทำเสียงพากย์', cmd: (slug) => ['node', ['pipeline/2_tts.mjs', slug]] },
-  timecode: { label: 'ทำ Timecode', cmd: (slug) => ['node', ['pipeline/3_timecode.mjs', slug]] },
-  shotlist: { label: 'เขียน Shot List', cmd: (slug) => ['node', ['pipeline/4_shotlist.mjs', slug]] },
-  images: { label: 'สร้างภาพ', cmd: (slug) => ['node', ['pipeline/5_images.mjs', slug]] },
-  clips: { label: 'ทำแอนิเมชัน Kie', cmd: (slug) => ['node', ['pipeline/5b_clips.mjs', slug]] },
+  tts: { label: 'ทำเสียงพากย์', cmd: (slug) => [process.execPath, ['pipeline/2_tts.mjs', slug]] },
+  timecode: { label: 'ทำ Timecode', cmd: (slug) => [process.execPath, ['pipeline/3_timecode.mjs', slug]] },
+  shotlist: { label: 'เขียน Shot List', cmd: (slug) => [process.execPath, ['pipeline/4_shotlist.mjs', slug]] },
+  images: { label: 'สร้างภาพ', cmd: (slug) => [process.execPath, ['pipeline/5_images.mjs', slug]] },
+  clips: { label: 'ทำแอนิเมชัน Kie', cmd: (slug) => [process.execPath, ['pipeline/5b_clips.mjs', slug]] },
   render: {
     label: 'ตัดต่อวิดีโอ',
-    cmd: (slug, { bgm } = {}) => ['node', ['pipeline/6_render.mjs', slug, ...(bgm ? ['--bgm', bgm] : [])]],
+    cmd: (slug, { bgm } = {}) => [process.execPath, ['pipeline/6_render.mjs', slug, ...(bgm ? ['--bgm', bgm] : [])]],
   },
   importAudio: {
     label: 'นำเข้าและถอดเสียงพากย์',
-    cmd: (slug, { file, language } = {}) => ['node', ['pipeline/import_audio.mjs', slug, file, '--language', language ?? 'th']],
+    cmd: (slug, { file, language } = {}) => [process.execPath, ['pipeline/import_audio.mjs', slug, file, '--language', language ?? 'th']],
   },
   trainVoice: {
     label: 'เทรนเสียง',
-    cmd: (_slug, { voice, epochs } = {}) => ['node', ['pipeline/train_voice.mjs', voice, '--epochs', String(epochs)]],
+    cmd: (_slug, { voice, epochs } = {}) => [process.execPath, ['pipeline/train_voice.mjs', voice, '--epochs', String(epochs)]],
   },
-  cover: { label: 'สร้างภาพปกคลิป', cmd: (slug) => ['node', ['pipeline/5_images.mjs', slug, '--cover-only']] },
-  retime: { label: 'ปรับช่วงเงียบ', cmd: (slug) => ['node', ['pipeline/retime_audio.mjs', slug]] },
+  cover: { label: 'สร้างภาพปกคลิป', cmd: (slug) => [process.execPath, ['pipeline/5_images.mjs', slug, '--cover-only']] },
+  retime: { label: 'ปรับช่วงเงียบ', cmd: (slug) => [process.execPath, ['pipeline/retime_audio.mjs', slug]] },
   autopilot: {
     label: 'ทำคลิปอัตโนมัติ',
     cmd: (_slug, { title, autoTopic, genre, language, titleLanguage, minutes, restartFrom } = {}) => [
-      'node',
+      process.execPath,
       ['pipeline/autopilot.mjs', ...(autoTopic ? ['--auto-topic', ...(genre ? ['--genre', genre] : [])] : [title]), '--lang', language, '--title-lang', titleLanguage, '--minutes', String(minutes), ...(restartFrom ? ['--restart', restartFrom] : [])],
     ],
   },
@@ -111,14 +112,29 @@ export function createRunner({ log }) {
     return snapshot()
   }
 
+  /** ปิดทั้งต้นไม้ของ process — ขั้น 2 มี python ลูก autopilot มีขั้นย่อยเป็น node ลูก ที่ kill() ธรรมดาไม่โดน */
+  function killTree(proc) {
+    if (process.platform === 'win32') spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
+    else proc.kill('SIGKILL')
+  }
+
   function stop() {
     if (current?.status !== 'running') return snapshot()
-    current.status = 'stopped'
-    current.endedAt = Date.now()
-    // taskkill /T ปิดทั้งต้นไม้ — ขั้น 2 มี python ลูกที่ kill() ธรรมดาไม่โดน
-    if (process.platform === 'win32') spawn('taskkill', ['/PID', String(current.proc.pid), '/T', '/F'], { windowsHide: true })
-    else current.proc.kill()
-    current.lines.push({ text: 'หยุดแล้ว', at: Date.now() })
+    const run = current
+    run.status = 'stopped'
+    run.endedAt = Date.now()
+    killTree(run.proc)
+    run.lines.push({ text: 'หยุดแล้ว', at: Date.now() })
+    // ตรวจว่าตายจริง — ถ้าสั่งแล้วไม่ตาย process จะทำต่อจนจบเงียบๆ ทั้งที่หน้าจอบอกว่าหยุดแล้ว
+    const check = (tries) => setTimeout(() => {
+      if (run.proc.exitCode !== null || run.proc.signalCode !== null) return
+      log(`${STEPS[run.step].label} ยังไม่หยุดหลังสั่ง — สั่งปิดซ้ำ (${tries})`)
+      killTree(run.proc)
+      try { process.kill(run.proc.pid, 'SIGKILL') } catch {}
+      if (tries < 5) check(tries + 1)
+      else run.lines.push({ text: `⚠️ ปิดโปรแกรมขั้นนี้ไม่ได้ (PID ${run.proc.pid}) — เปิด Task Manager แล้วปิด node.exe ตัวนี้เอง`, at: Date.now() })
+    }, 3000)
+    check(1)
     return snapshot()
   }
 

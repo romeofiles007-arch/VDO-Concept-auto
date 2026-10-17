@@ -168,9 +168,11 @@ export function setupStatus(config, { fresh = false } = {}) {
 
 function withVoice(cache, config) {
   const mv = config.tts.myVoice
-  // เสียงออนไลน์: ไม่ต้องใช้การ์ดจอ แค่มี edge-tts หรือ Gemini key
-  if (['edge', 'gemini'].includes(config.tts.engine)) {
-    const ready = config.tts.engine === 'edge' ? existsSync(edgePython()) : hasKey('GEMINI_API_KEY')
+  // เสียงออนไลน์: ไม่ต้องใช้การ์ดจอ แค่มี edge-tts หรือ key ของ Gemini / ElevenLabs (+ Voice ID)
+  if (['edge', 'gemini', 'elevenlabs'].includes(config.tts.engine)) {
+    const ready = config.tts.engine === 'edge' ? existsSync(edgePython())
+      : config.tts.engine === 'gemini' ? hasKey('GEMINI_API_KEY')
+      : hasKey('ELEVENLABS_API_KEY') && !!config.tts.elevenlabs?.voiceId
     return { ...cache, engine: config.tts.engine, python: true, venv: ready, voice: ready, referenceText: config.tts.engine }
   }
   if (config.tts.engine === 'my-voice' && mv) {

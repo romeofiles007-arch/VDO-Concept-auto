@@ -18,6 +18,7 @@ import { ROOT } from '../pipeline/lib/config.mjs'
 import { loadEnv } from '../pipeline/lib/env.mjs'
 import { createUi } from './ui.js'
 import { watchBridgeCode, extensionVersion } from './selfupdate.js'
+import { createUpdater } from './update.js'
 
 loadEnv()
 
@@ -179,7 +180,9 @@ function enqueue(agent, kind, payload) {
   return job
 }
 
-const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog })
+// อัปเดตจาก GitHub — ห้ามดึงโค้ดใหม่ระหว่างมีงานค้าง (workInProgress ประกาศด้านล่าง เรียกตอนใช้งานจริงเท่านั้น)
+const updater = createUpdater({ log, busy: () => workInProgress() })
+const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater })
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)

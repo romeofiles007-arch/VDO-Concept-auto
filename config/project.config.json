@@ -22,6 +22,7 @@
       "my-voice",
       "edge",
       "gemini",
+      "elevenlabs",
       "f5-tts-thai",
       "chatterbox"
     ],
@@ -58,7 +59,14 @@
     "gemini": {
       "_note": "Gemini TTS — ต้องมี GEMINI_API_KEY ใน .env (รุ่น flash มีโควตาฟรีรายวัน)",
       "model": "gemini-3.1-flash-tts-preview",
-      "voice": "Gacrux"
+      "voice": "Charon"
+    },
+    "elevenlabs": {
+      "_note": "ElevenLabs — เสียงที่โคลนไว้ในบัญชี อ้างด้วย Voice ID · ต้องมี ELEVENLABS_API_KEY ใน .env · ใช้เครดิตตามจำนวนตัวอักษรของบท",
+      "voiceId": "",
+      "voiceName": "",
+      "model": "eleven_v4",
+      "_model": "eleven_v4 (รองรับไทย ล่าสุด) | eleven_v3 (รองรับไทย) | eleven_multilingual_v2 | eleven_flash_v2_5 (สองรุ่นหลังไม่รองรับไทย)"
     },
     "trimSilence": true,
     "pause": "tight"
@@ -81,7 +89,7 @@
     "characterLockRefs": true
   },
   "clips": {
-    "provider": "kie",
+    "provider": "off",
     "_provider": "off (ภาพนิ่งซูม/เลื่อนกล้องด้วย ffmpeg) | kie (ม้าน้ำส่งภาพบางฉากไป Kie API แบบมีค่าใช้จ่าย)",
     "coveragePercent": 60,
     "_coveragePercent": "สัดส่วนฉากทั้งเรื่องที่จะให้ Kie ทำเป็นแอนิเมชัน: 20 | 60 | 80 | 100 (ChatGPT เลือกฉากสำคัญและกระจายทั่วเรื่อง)",
@@ -95,7 +103,7 @@
     "bgmDb": -21,
     "bgmFile": "",
     "crossfadeOnChapter": true,
-    "motion": "gentle",
+    "motion": "lively",
     "_motion": "off (ภาพนิ่ง) | gentle (ซูม/เลื่อนกล้องเบาๆ ทุกช็อต) | lively (ขยับมาก) — ไม่ใช้ AI ทำในเครื่องด้วย ffmpeg",
     "orientation": "portrait",
     "_orientation": "landscape (16:9, 1920x1080) | portrait (9:16, 1080x1920) — ภาพใน Flow ใช้ตามนี้ ตอนตัดต่ออ่านจากภาพจริง",

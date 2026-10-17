@@ -27,3 +27,7 @@ projects/selected_topic.json
 # ทดสอบเปรียบเทียบโมเดลเสียง (venv + โมเดล + ผลลัพธ์ ขนาดใหญ่)
 tts/eval/
 tts/.venv-voxcpm/
+
+# แพ็กเกจส่งลูกค้า (scripts/build-package.mjs) — ใหญ่หลายร้อย MB และมีไบนารีแถม
+dist/
+runtime/

@@ -17,6 +17,9 @@ const CHATGPT_URL = 'https://chatgpt.com/'
 const WORDS_PER_MINUTE = 150
 const S = { topics: [], selected: null, script: null, titleLanguage: 'en', language: 'th', minutes: 10, emotion: 'calm', speed: 1 }
 let busy = false
+// อัปเดตจาก GitHub — ประกาศไว้บนสุด เพราะ render() เรียก renderUpdate() ได้ตั้งแต่ก่อนถึงส่วนอัปเดตท้ายไฟล์
+let gitUpdate = null
+let updateApplied = null // { count } อัปเดตสำเร็จรอบนี้ — ค้างข้อความไว้จนแผงโหลดใหม่
 
 // ── เก็บสถานะไว้ใน extension — ปิดแผงแล้วเปิดใหม่ยังอยู่ ──
 async function load() {
@@ -2503,7 +2506,8 @@ $('closeLibrary').addEventListener('click', () => {
 })
 
 // ── คลังเสียง: เลือกเสียงที่ใช้ + เทรนเสียงใหม่ ──
-const V = { voices: [], selected: null, choice: null, edge: null, gemini: null, training: null, epochs: 40, loaded: false }
+// pendingChoice: เลือก ElevenLabs ในรายการแล้วแต่ยังไม่ได้ใส่ Voice ID — โชว์ไว้ในช่องเลือกก่อน ยังไม่บันทึกลง config
+const V = { voices: [], selected: null, choice: null, pendingChoice: null, edge: null, gemini: null, elevenlabs: null, training: null, epochs: 40, loaded: false }
 const NEW_VOICE = '__new__'
 const STATUS_TEXT = { draft: 'ยังไม่เทรน', training: 'หยุดกลางคัน', failed: 'เทรนไม่สำเร็จ' }
 let uploading = false
@@ -2567,14 +2571,25 @@ function renderVoices() {
     for (const v of V.gemini.voices) g.append(new Option(v.label, `gemini:${v.id}`))
     pick.append(g)
   }
-  const choiceShown = !V.choice || [...pick.options].some((o) => o.value === V.choice)
-  if (V.choice && choiceShown) pick.value = V.choice
-  const engine = pick.value.split(':')[0]
+  // ElevenLabs ไม่มีรายการเสียงให้เลือก — มีช่องเดียว แล้วใส่ Voice ID ของเสียงที่โคลนไว้ในช่องด้านล่าง
+  const el = V.elevenlabs
+  if (el) {
+    const g = group('ElevenLabs — เสียงโคลนในบัญชีของคุณ')
+    g.append(new Option(el.voiceId ? `${el.voiceName || el.voiceId} · ElevenLabs` : 'ElevenLabs · ใส่ Voice ID…', `elevenlabs:${el.voiceId ?? ''}`))
+    pick.append(g)
+  }
+  const shown = V.pendingChoice ?? V.choice
+  const choiceShown = !shown || [...pick.options].some((o) => o.value === shown)
+  if (shown && choiceShown) pick.value = shown
+  const [engine, pickedId] = pick.value.split(/:(.*)/)
   $('voiceNote').textContent = {
     'my-voice': 'ปรับได้ทั้งอารมณ์และความเร็ว · ใช้การ์ดจอ',
     voxcpm: 'อ่านไทย ตัวเลข คำอังกฤษได้แม่นที่สุด · เลือกอารมณ์และความเร็วได้ · ใช้การ์ดจอ (ฟังตัวอย่างครั้งแรกรอโหลดโมเดล ~30 วิ)',
     edge: 'ปรับได้แค่ความเร็ว (Edge ไม่มีอารมณ์เสียงภาษาไทย) · เร็วมาก ไม่ใช้การ์ดจอ',
     gemini: `อารมณ์และความเร็วส่งเป็นคำสั่งให้ Gemini · โควตาฟรีจำกัดต่อวัน · รุ่น ${V.gemini?.model ?? ''}`,
+    elevenlabs: el?.model === 'eleven_v3'
+      ? 'อารมณ์และความเร็วใช้ค่าที่ตั้งไว้กับเสียงบน ElevenLabs · ไม่ใช้การ์ดจอ · ใช้เครดิตตามจำนวนตัวอักษร'
+      : 'ปรับความเร็วได้ 0.7–1.2 (ถ้ารุ่นนี้ไม่รับ ระบบใช้ค่าของเสียงบน ElevenLabs แทน) · อารมณ์ใช้ค่าที่ตั้งไว้กับเสียง · ใช้เครดิตตามจำนวนตัวอักษร',
   }[engine] ?? ''
   // เสียงที่ตั้งไว้เป็นอังกฤษล้วนแต่ตอนนี้พากย์ไทย → ขั้นเสียงจะใช้ Niwat แทนให้เอง บอกให้รู้
   if (!choiceShown) {
@@ -2583,7 +2598,8 @@ function renderVoices() {
       : `เสียงที่ตั้งไว้ (${V.choice.split(':').pop()}) พากย์ไทยไม่ได้ — ระบบจะใช้ Niwat แทน หรือเลือกเสียงใหม่จากรายการ`
   }
   $('geminiKeyRow').hidden = !(engine === 'gemini' && !V.gemini?.hasKey)
-  $('previewVoice').hidden = !V.loaded || !engine || engine === 'my-voice'
+  renderEleven(engine)
+  $('previewVoice').hidden = !V.loaded || !engine || engine === 'my-voice' || (engine === 'elevenlabs' && !pickedId)
   target.prepend(new Option('＋ สร้างเสียงใหม่', NEW_VOICE))
   target.value = [...target.options].some((o) => o.value === keepTarget) ? keepTarget : NEW_VOICE
 
@@ -2630,6 +2646,14 @@ $('voicePick').addEventListener('change', async (e) => {
   const [engine, id] = e.target.value.split(/:(.*)/)
   const label = e.target.selectedOptions[0]?.text ?? id
   $('previewAudio').hidden = true
+  V.pendingChoice = null
+  // ElevenLabs ที่ยังไม่มี Voice ID → แค่เปิดช่องให้กรอก ยังไม่เปลี่ยนเสียงที่ใช้จริง
+  if (engine === 'elevenlabs' && !id) {
+    V.pendingChoice = e.target.value
+    setStatus('voiceStatus', 'ใส่ API key และ Voice ID ด้านล่าง แล้วกด "ตรวจและใช้เสียงนี้"')
+    render()
+    return $('elevenVoiceId').focus()
+  }
   try {
     const { choice } = await api(await localApp(), '/api/voices/select', { engine, id })
     V.choice = choice
@@ -2662,6 +2686,47 @@ $('previewVoice').addEventListener('click', async () => {
     $('previewVoice').disabled = false
   }
 })
+
+/** ช่องตั้งค่า ElevenLabs — แสดงเมื่อเลือก ElevenLabs ในรายการเสียง */
+function renderEleven(engine) {
+  const el = V.elevenlabs
+  $('elevenRow').hidden = !(el && engine === 'elevenlabs')
+  if (!el) return
+  const model = $('elevenModel')
+  if (!model.options.length) for (const m of el.models ?? []) model.append(new Option(m.label, m.id))
+  if (document.activeElement !== model) model.value = el.model
+  if (document.activeElement !== $('elevenVoiceId') && !$('elevenVoiceId').value) $('elevenVoiceId').value = el.voiceId ?? ''
+  $('elevenKey').placeholder = el.hasKey ? 'ใส่ key ไว้แล้ว — เว้นว่างได้ ใส่ใหม่เมื่ออยากเปลี่ยน' : 'วาง ElevenLabs API key'
+  const locked = busy || localBusy()
+  for (const id of ['elevenKey', 'elevenVoiceId', 'elevenModel', 'saveEleven']) $(id).disabled = locked
+}
+
+/** ส่งให้โปรแกรมในเครื่องตรวจกับ ElevenLabs จริง แล้วตั้งเป็นเสียงที่ใช้ */
+async function saveEleven() {
+  const key = $('elevenKey').value.trim()
+  const voiceId = $('elevenVoiceId').value.trim()
+  if (!voiceId) return setStatus('voiceStatus', 'ใส่ Voice ID ก่อน', 'error'), $('elevenVoiceId').focus()
+  if (!key && !V.elevenlabs?.hasKey) return setStatus('voiceStatus', 'ใส่ ElevenLabs API key ก่อน', 'error'), $('elevenKey').focus()
+  $('saveEleven').disabled = true
+  setStatus('voiceStatus', 'กำลังตรวจ Voice ID กับ ElevenLabs…', 'busy')
+  try {
+    const r = await api(await localApp(), '/api/elevenlabs', { key, voiceId, model: $('elevenModel').value })
+    Object.assign(V.elevenlabs, { hasKey: true, voiceId: r.voiceId, voiceName: r.voiceName, model: r.model })
+    V.choice = r.choice
+    V.pendingChoice = null
+    $('elevenKey').value = ''
+    $('elevenVoiceId').value = r.voiceId
+    setStatus('voiceStatus', `ใช้เสียง ElevenLabs: ${r.voiceName}${r.category ? ` (${r.category})` : ''}`, 'ok')
+  } catch (err) {
+    setStatus('voiceStatus', err.message, 'error')
+  }
+  render()
+}
+
+$('saveEleven').addEventListener('click', saveEleven)
+$('elevenVoiceId').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEleven() })
+// เปลี่ยนรุ่นของเสียงที่ตั้งไว้แล้ว → บันทึกทันที ไม่ต้องกดปุ่มซ้ำ
+$('elevenModel').addEventListener('change', () => { if (V.elevenlabs?.voiceId && !V.pendingChoice) saveEleven() })
 
 $('saveGeminiKey').addEventListener('click', async () => {
   const key = $('geminiKey').value.trim()
@@ -2820,6 +2885,7 @@ for (const [id, key] of [['titleLang', 'titleLanguage'], ['voLang', 'language'],
 }
 
 // ── วาดหน้า ──
+
 /**
  * ขั้นที่ยังทำไม่ได้: ไม่ซ่อนทั้งขั้น — แสดงหัวขั้น (รูปสัตว์ · ป้ายแผนก) แบบพับไว้ พร้อมบอกว่าต้องทำอะไรก่อน
  * ผู้ใช้เห็นทีมครบทุกตัวตั้งแต่แรก (ปลาหมึก/ปูไม่หายไปจนกว่าจะถึงคิว)
@@ -2940,7 +3006,7 @@ function render() {
     b.setAttribute('aria-pressed', String(b.dataset.value === S.language))
     b.disabled = busy || localBusy()
   }
-  const voiceName = V.choice?.startsWith('edge:') ? `Edge · ${V.choice.slice(5)}` : V.choice?.startsWith('gemini:') ? `Gemini · ${V.choice.slice(7)}` : V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
+  const voiceName = V.choice?.startsWith('edge:') ? `Edge · ${V.choice.slice(5)}` : V.choice?.startsWith('gemini:') ? `Gemini · ${V.choice.slice(7)}` : V.choice?.startsWith('elevenlabs:') ? `ElevenLabs · ${V.elevenlabs?.voiceName || V.choice.slice(11)}` : V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
   $('autoVoice').textContent = voiceName ? `เสียงพากย์: ${voiceName} (เปลี่ยนได้ที่ขั้นที่ 3)` : ''
 
   $('nextSection').hidden = !sc
@@ -2948,9 +3014,91 @@ function render() {
   $('openProjects').disabled = busy || localBusy()
   $('openLocal').disabled = busy || localBusy()
   renderVoices()
+  renderUpdate() // ปุ่มอัปเดตล็อกตามสถานะงาน
 }
+
+// ── อัปเดตจาก GitHub — โปรแกรมในเครื่องตรวจเองทุก 30 นาที แผงนี้แค่อ่านผลมาแสดง ──
+
+function renderUpdate() {
+  const banner = $('updateBanner')
+  if (updateApplied) {
+    banner.hidden = false
+    banner.classList.add('done')
+    $('updateTitle').textContent = `✅ อัปเดตแล้ว ${updateApplied.count} รายการ`
+    $('updateNote').textContent = 'โปรแกรมในเครื่องจะรีสตาร์ทเอง และแผงนี้จะโหลดตัวใหม่เองภายในไม่กี่นาที — ไม่ต้องทำอะไร'
+      + (updateApplied.stashKept ? ' · ⚠️ ไฟล์ที่แก้ไว้ในเครื่องบางไฟล์ชนกับอัปเดต ระบบใช้ของใหม่ไปก่อน ส่วนของเดิมเก็บไว้ใน git stash (ไม่หาย) — ให้คนดูแลโค้ดรวมให้' : '')
+    $('applyUpdate').hidden = true
+    $('updateDetails').hidden = true
+    return
+  }
+  banner.classList.remove('done')
+  banner.hidden = !gitUpdate?.available
+  if (banner.hidden) return
+  $('updateTitle').textContent = `🔔 มีอัปเดตใหม่ ${gitUpdate.behind} รายการบน GitHub`
+  const working = busy || localBusy() || gitUpdate.applying
+  const notes = [...(gitUpdate.notes ?? [])]
+  if (gitUpdate.ahead) notes.unshift(`เครื่องนี้มีงาน ${gitUpdate.ahead} commit ที่ยังไม่ได้ส่งขึ้น GitHub — ต้อง push ก่อนจึงอัปเดตได้`)
+  else if (working) notes.unshift('กำลังทำงานอยู่ — กดอัปเดตได้เมื่อทำคลิปเสร็จหรือกดหยุด')
+  if (gitUpdate.dirty?.length) notes.push(`การตั้งค่าที่แก้ไว้ในเครื่อง (${gitUpdate.dirty.length} ไฟล์) จะถูกเก็บไว้ให้ ไม่หาย`)
+  $('updateNote').textContent = notes.join(' · ')
+  $('applyUpdate').hidden = false
+  $('applyUpdate').disabled = working || gitUpdate.ahead > 0
+  $('updateDetails').hidden = false
+  const list = $('updateCommits')
+  list.textContent = ''
+  for (const c of gitUpdate.commits ?? []) {
+    const li = document.createElement('li')
+    li.append(c.subject, ' ', Object.assign(document.createElement('small'), { textContent: new Date(c.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) }))
+    list.append(li)
+  }
+  if (gitUpdate.behind > (gitUpdate.commits?.length ?? 0)) list.append(Object.assign(document.createElement('li'), { textContent: `…และอีก ${gitUpdate.behind - gitUpdate.commits.length} รายการ` }))
+}
+
+async function loadUpdate(action) {
+  try {
+    const app = await localApp()
+    gitUpdate = await api(app, action ? `/api/update/${action}` : '/api/update', action ? {} : undefined)
+  } catch (err) {
+    if (action) throw err
+  }
+  renderUpdate()
+  return gitUpdate
+}
+
+$('checkUpdate').addEventListener('click', async () => {
+  $('checkUpdate').disabled = true
+  setStatus('projectsStatus', 'กำลังตรวจอัปเดตจาก GitHub…', 'busy')
+  try {
+    const u = await loadUpdate('check')
+    if (u.error) setStatus('projectsStatus', u.error, 'error')
+    else if (u.available) setStatus('projectsStatus', '')
+    else setStatus('projectsStatus', u.ahead ? `เป็นรุ่นล่าสุดแล้ว (เครื่องนี้นำหน้า GitHub ${u.ahead} commit ที่ยังไม่ได้ push)` : 'เป็นรุ่นล่าสุดแล้ว ✓', 'ok')
+  } catch (err) {
+    setStatus('projectsStatus', err.message, 'error')
+  } finally {
+    $('checkUpdate').disabled = false
+  }
+})
+
+$('applyUpdate').addEventListener('click', async () => {
+  $('applyUpdate').disabled = true
+  $('updateNote').textContent = 'กำลังดึงอัปเดตจาก GitHub…'
+  try {
+    const app = await localApp()
+    const count = gitUpdate?.behind ?? 0
+    gitUpdate = await api(app, '/api/update/apply', {})
+    updateApplied = { count, stashKept: !!gitUpdate.applied?.stashKept }
+  } catch (err) {
+    await loadUpdate().catch(() => {})
+    $('updateNote').textContent = err.message // หลัง renderUpdate ใน loadUpdate — ไม่งั้นข้อความ error ถูกทับ
+    return
+  }
+  renderUpdate()
+})
 
 await load()
 render()
 resumeVoice()
 resumeAuto()
+loadUpdate()
+setInterval(() => loadUpdate(), 10 * 60_000)

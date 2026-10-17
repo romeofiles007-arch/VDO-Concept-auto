@@ -99,7 +99,7 @@ export async function checklist({ connected } = {}) {
   const packages = [['f5_tts_th', 'F5-TTS-THAI'], ['faster_whisper', 'Whisper'], ['edge_tts', 'Edge TTS'], ['torch', 'PyTorch']]
   const lacking = packages.filter(([dir]) => !sitePackage(dir)).map(([, name]) => name)
   add({
-    id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (tts\\.venv)', need: config.tts.engine === 'gemini' ? 'optional' : 'required',
+    id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (tts\\.venv)', need: ['gemini', 'elevenlabs'].includes(config.tts.engine) ? 'optional' : 'required',
     status: venv && !lacking.length ? 'ok' : 'missing',
     detail: !venv ? 'ยังไม่ได้ติดตั้ง — ใช้สร้างเสียงไทย เทรนเสียง ถอดเสียง และเสียง Edge' : lacking.length ? `ยังขาด ${lacking.join(', ')}` : 'F5-TTS-THAI · Whisper · Edge TTS พร้อม',
     fix: venv && !lacking.length ? null : { text: 'กดปุ่มนี้เพื่อติดตั้ง (ดาวน์โหลด ~5 GB ใช้เวลา 10–30 นาที) หรือรันคำสั่งในโฟลเดอร์โปรเจกต์', command: SETUP_CMD, action: 'setupTts' },
@@ -127,6 +127,11 @@ export async function checklist({ connected } = {}) {
     voiceOk = existsSync(edgePython())
     voiceDetail = `Edge · ${config.tts.edge?.voice}`
     voiceFix = voiceOk ? null : { text: 'ติดตั้งระบบเสียงในเครื่อง (มี Edge TTS รวมอยู่)', action: 'setupTts', command: SETUP_CMD }
+  } else if (engine === 'elevenlabs') {
+    const el = config.tts.elevenlabs ?? {}
+    voiceOk = hasKey('ELEVENLABS_API_KEY') && !!el.voiceId
+    voiceDetail = `ElevenLabs · ${el.voiceName || el.voiceId || 'ยังไม่ได้ใส่ Voice ID'}${hasKey('ELEVENLABS_API_KEY') ? '' : ' · ยังไม่มี API key'}`
+    voiceFix = voiceOk ? null : { text: 'ใส่ API key และ Voice ID ของเสียงที่โคลนไว้ ในขั้นที่ 3 ของแผงข้าง', url: 'https://elevenlabs.io/app/settings/api-keys' }
   } else if (engine === 'gemini') {
     voiceOk = hasKey('GEMINI_API_KEY')
     voiceDetail = `Gemini · ${config.tts.gemini?.voice}${voiceOk ? '' : ' · ยังไม่มี API key'}`

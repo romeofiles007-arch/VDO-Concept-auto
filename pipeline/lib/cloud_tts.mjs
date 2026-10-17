@@ -1,8 +1,9 @@
 /**
  * เสียงคนอื่น (ออนไลน์) — อีกตัวเลือกนอกจากเสียงของเรา
  *
- *   edge    Microsoft Edge TTS ผ่าน edge-tts — ฟรี ไม่ต้องใช้ key (บริการไม่เป็นทางการ อาจเปลี่ยนได้)
- *   gemini  Gemini TTS — ต้องมี GEMINI_API_KEY (รุ่น flash มีโควตาฟรี แต่จำกัดจำนวนครั้งต่อวัน)
+ *   edge        Microsoft Edge TTS ผ่าน edge-tts — ฟรี ไม่ต้องใช้ key (บริการไม่เป็นทางการ อาจเปลี่ยนได้)
+ *   gemini      Gemini TTS — ต้องมี GEMINI_API_KEY (รุ่น flash มีโควตาฟรี แต่จำกัดจำนวนครั้งต่อวัน)
+ *   elevenlabs  ElevenLabs — เสียงที่โคลนไว้ในบัญชี อ้างด้วย Voice ID · ต้องมี ELEVENLABS_API_KEY · ใช้เครดิตตามจำนวนตัวอักษร
  *
  * ทำทีละ segment เหมือนเสียงของเรา → ความยาวแต่ละไฟล์ใช้ทำ timecode ต่อได้ทันที
  */
@@ -14,10 +15,15 @@ import { ROOT } from './config.mjs'
 import { run } from './ffmpeg.mjs'
 import { loadEnv } from './env.mjs'
 
-/** edge-tts ลงไว้ใน tts/.venv ตัวเดียวกับระบบเสียงหลัก — .venv-edge ใช้กับเครื่องที่ลงแค่ edge-tts */
+/**
+ * edge-tts ลงไว้ใน tts/.venv ตัวเดียวกับระบบเสียงหลัก · runtime/python คือ Python ที่แถมมากับแพ็กเกจลูกค้า
+ * (มี edge-tts ในตัว ใช้ได้ทันทีโดยไม่ต้องติดตั้ง) · .venv-edge ใช้กับเครื่องที่ลงแค่ edge-tts
+ */
 export function edgePython() {
   const main = join(ROOT, 'tts', '.venv')
   if (existsSync(join(main, 'Lib', 'site-packages', 'edge_tts'))) return join(main, 'Scripts', 'python.exe')
+  const bundled = join(ROOT, 'runtime', 'python')
+  if (existsSync(join(bundled, 'Lib', 'site-packages', 'edge_tts'))) return join(bundled, 'python.exe')
   return join(ROOT, 'tts', '.venv-edge', 'Scripts', 'python.exe')
 }
 
@@ -108,6 +114,87 @@ export const GEMINI_VOICES = [
   ['Laomedeia', 'ร่าเริง'], ['Sadachbia', 'มีชีวิตชีวา'], ['Fenrir', 'ตื่นเต้นง่าย'], ['Leda', 'วัยรุ่น'], ['Pulcherrima', 'ตรงไปตรงมา'],
 ].map(([id, tone]) => ({ id, label: `${id} — ${tone}` }))
 
+/**
+ * รุ่นของ ElevenLabs — ภาษาไทยมีเฉพาะ v4 / v3 (Multilingual v2 และ Flash v2.5 รองรับ 29–32 ภาษาที่ไม่มีไทย)
+ * ใส่ไว้ใน label ให้เห็นตอนเลือก เพราะเลือกผิดรุ่นแล้วเสียงไทยจะอ่านเพี้ยนทั้งคลิปแต่ไม่มี error
+ * อ้างอิงหน้า "What models do you offer" ของ ElevenLabs (ต.ค. 2026 — v4 ออก 28 ก.ย. 2026)
+ */
+export const ELEVEN_MODELS = [
+  { id: 'eleven_v4', label: 'Eleven v4 — รองรับไทย ใหม่ล่าสุด (แนะนำ)', thai: true },
+  { id: 'eleven_v3', label: 'Eleven v3 — รองรับไทย (รุ่นก่อน)', thai: true },
+  { id: 'eleven_multilingual_v2', label: 'Multilingual v2 — อังกฤษคุณภาพสูง (ไม่รองรับไทย)', thai: false },
+  { id: 'eleven_flash_v2_5', label: 'Flash v2.5 — เร็ว ใช้เครดิตครึ่งเดียว (ไม่รองรับไทย)', thai: false },
+]
+export const elevenModelFits = (model, language) => language !== 'th' || ELEVEN_MODELS.find((m) => m.id === model)?.thai !== false
+
+/** Voice ID ของ ElevenLabs เป็นตัวอักษร/ตัวเลข ~20 ตัว — กันพิมพ์ชื่อเสียงมาแทน ID */
+export const isElevenVoiceId = (id) => /^[A-Za-z0-9]{15,40}$/.test(String(id ?? ''))
+
+/** อ่าน error ของ ElevenLabs ({detail:{status,message}}) เป็นข้อความที่บอกว่าต้องแก้อะไร */
+function elevenError(status, data) {
+  const code = data?.detail?.status ?? ''
+  const message = data?.detail?.message ?? (typeof data?.detail === 'string' ? data.detail : '') ?? ''
+  // ดูรหัสก่อนสถานะ HTTP — ElevenLabs ส่งเครดิตหมด/สิทธิ์ไม่พอมาเป็น 401 เหมือน key ผิด
+  if (code === 'quota_exceeded') return 'เครดิต ElevenLabs ไม่พอสำหรับบทนี้ — เติมเครดิต หรือเปลี่ยนไปใช้เสียงอื่น'
+  if (code === 'missing_permissions') return 'API key นี้ไม่มีสิทธิ์ Text to Speech — สร้าง key ใหม่ที่เปิดสิทธิ์ Text to Speech และ Voices (อ่าน)'
+  if (code === 'invalid_api_key' || status === 401) return 'ElevenLabs API key ไม่ถูกต้อง — ใส่ใหม่ในขั้นที่ 3'
+  if (code === 'voice_not_found' || status === 404) return 'ไม่พบ Voice ID นี้ในบัญชี ElevenLabs — คัดลอกจากหน้า Voices (ปุ่ม ID ของเสียง) แล้วใส่ใหม่'
+  return `ElevenLabs ปฏิเสธ (${status}${code ? ` ${code}` : ''}): ${message || 'ไม่ทราบสาเหตุ'}`
+}
+
+function elevenKey() {
+  loadEnv()
+  const key = process.env.ELEVENLABS_API_KEY?.trim()
+  if (!key) throw new Error('ยังไม่ได้ใส่ ElevenLabs API key — ใส่ในขั้นที่ 3 ของแผงข้าง หรือในไฟล์ .env (ELEVENLABS_API_KEY)')
+  return key
+}
+
+/** ตรวจว่า key + Voice ID ใช้ได้จริง แล้วคืนชื่อเสียงไว้แสดงในแผงข้าง */
+export async function elevenVoiceInfo(voiceId, key = elevenKey()) {
+  if (!isElevenVoiceId(voiceId)) throw new Error('Voice ID ไม่ถูกต้อง — เป็นรหัสตัวอักษรอังกฤษ/ตัวเลข ~20 ตัว ไม่ใช่ชื่อเสียง')
+  const res = await fetch(`https://api.elevenlabs.io/v1/voices/${voiceId}`, { headers: { 'xi-api-key': key } })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(elevenError(res.status, data))
+  return { id: data.voice_id ?? voiceId, name: data.name ?? voiceId, category: data.category ?? null }
+}
+
+// รุ่นที่ ElevenLabs ปฏิเสธ voice_settings ที่ส่งไป — จำไว้ ประโยคถัดไปไม่ต้องลองซ้ำ
+const elevenNoSettings = new Set(['eleven_v3'])
+
+async function elevenOne(text, { voice, model, speed, key }) {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=pcm_24000`
+  const body = { text, model_id: model }
+  // ส่งความเร็ว 0.7–1.2 ไปด้วย ยกเว้นรุ่นที่ใช้ค่าที่ตั้งไว้กับเสียงบน ElevenLabs (v3: stability รับแค่บางค่า)
+  if (!elevenNoSettings.has(model)) body.voice_settings = { speed: Math.min(1.2, Math.max(0.7, Number(speed) || 1)) }
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'xi-api-key': key },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) {
+      const pcm = Buffer.from(await res.arrayBuffer())
+      if (pcm.length > 0) return pcm
+      if (attempt >= 3) throw new Error('ElevenLabs ไม่ส่งเสียงกลับมา')
+      await sleep(2000)
+      continue
+    }
+    const data = await res.json().catch(() => ({}))
+    // รุ่นใหม่ (เช่น v4) อาจไม่รับค่าปรับเสียงบางตัว — ตัดทิ้งแล้วลองใหม่ ดีกว่าพังทั้งคลิปเพราะค่าความเร็ว
+    if ((res.status === 400 || res.status === 422) && body.voice_settings) {
+      elevenNoSettings.add(model)
+      delete body.voice_settings
+      continue
+    }
+    // 429 = ยิงพร้อมกันเกินแพ็กเกจ / ระบบยุ่ง · 5xx = ฝั่ง ElevenLabs ล่ม → รอแล้วลองใหม่ ที่เหลือแก้ด้วยการรอไม่ได้
+    if ((res.status === 429 || res.status >= 500) && data?.detail?.status !== 'quota_exceeded' && attempt < 6) {
+      await sleep(Math.min(30_000, 3000 * attempt))
+      continue
+    }
+    throw new Error(elevenError(res.status, data))
+  }
+}
+
 const EMOTION_STYLE = {
   calm: 'in a calm, warm storytelling voice',
   excited: 'in an excited, energetic voice',
@@ -185,7 +272,7 @@ async function geminiOne(text, { model, voice, emotion, speed, key }) {
 
 /**
  * สังเคราะห์ทุก segment ด้วยเสียงออนไลน์ แล้วได้ไฟล์ .wav 24kHz ตาม seg.out
- * @param {'edge'|'gemini'} engine
+ * @param {'edge'|'gemini'|'elevenlabs'} engine  elevenlabs: voice = Voice ID ของเสียงในบัญชี
  * @param {(msg: object) => void} onEvent  event รูปแบบเดียวกับ worker python (loading/loaded/segment/done/error)
  */
 export async function synthCloud(engine, segments, { voice, model, emotion, speed, sampleRate = 24000 }, onEvent) {
@@ -193,7 +280,18 @@ export async function synthCloud(engine, segments, { voice, model, emotion, spee
   const total = segments.length
   onEvent({ event: 'loading', engine })
 
-  if (engine === 'gemini') {
+  if (engine === 'elevenlabs') {
+    const key = elevenKey()
+    if (!isElevenVoiceId(voice)) throw new Error('ยังไม่ได้ใส่ Voice ID ของ ElevenLabs — ใส่ในขั้นที่ 3 ของแผงข้าง')
+    onEvent({ event: 'loaded', seconds: 0 })
+    for (const [i, seg] of segments.entries()) {
+      const t0 = Date.now()
+      mkdirSync(dirname(seg.out), { recursive: true })
+      // ขอ pcm_24000 ตรงๆ → ห่อเป็น wav ได้เลย ไม่ต้องผ่าน ffmpeg และได้ 24kHz ตรงกับ engine อื่น
+      writeWav(seg.out, await elevenOne(seg.text, { voice, model: model || ELEVEN_MODELS[0].id, speed, key }), 24000)
+      onEvent({ event: 'segment', index: i, total, seconds: (Date.now() - t0) / 1000 })
+    }
+  } else if (engine === 'gemini') {
     loadEnv()
     const key = process.env.GEMINI_API_KEY?.trim()
     if (!key) throw new Error('ยังไม่ได้ใส่ Gemini API key — ใส่ในแผงข้าง หรือในไฟล์ .env (GEMINI_API_KEY)')

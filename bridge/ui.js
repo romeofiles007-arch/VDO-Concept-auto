@@ -12,13 +12,13 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, unlinkSync, renameSync } from 'node:fs'
 import { pipeline as pipeStreams } from 'node:stream/promises'
 import { join, resolve, sep, extname } from 'node:path'
-import { ROOT, loadConfig, slugify } from '../pipeline/lib/config.mjs'
+import { ROOT, loadConfig, updateConfig, slugify } from '../pipeline/lib/config.mjs'
 import { topicsPrompt, scriptPrompt, parseTopics, cleanScript, GENRES } from '../pipeline/lib/prompts.mjs'
 import { saveScript, loadScript } from '../pipeline/lib/stage2.mjs'
 import { createRunner } from './runner.js'
 import { projectStatus, setupStatus, bgmFile, BGM_EXT, listProjects } from './project.js'
 import { listVoices, readVoice, writeVoice, voiceDir, voiceId, voiceReady, AUDIO_EXT } from '../pipeline/lib/voices.mjs'
-import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, edgePython, synthCloud } from '../pipeline/lib/cloud_tts.mjs'
+import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, ELEVEN_MODELS, edgePython, synthCloud, elevenVoiceInfo, isElevenVoiceId } from '../pipeline/lib/cloud_tts.mjs'
 import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText } from '../pipeline/lib/voxcpm.mjs'
 import { hasKey } from '../pipeline/lib/env.mjs'
 import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRoundPrompt } from '../pipeline/lib/shotlist.mjs'
@@ -36,7 +36,6 @@ import { KIE_TIERS, kieTier } from '../pipeline/lib/kie.mjs'
 import { clipCost } from '../pipeline/lib/usage.mjs'
 import { readAsrTimeline, writeAsrTimeline, parseSegmentText } from '../pipeline/lib/asr.mjs'
 
-const CONFIG_FILE = join(ROOT, 'config', 'project.config.json')
 const MIME = {
   '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8',
@@ -72,7 +71,7 @@ function mergeAutopilotLog(run, bridgeEvents) {
   return [...run.entries.map((e) => ({ ...e, src: 'run' })), ...events].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).slice(-300)
 }
 
-export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [] }) {
+export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null }) {
   const runner = createRunner({ log })
 
   function state({ freshSetup = false } = {}) {
@@ -177,12 +176,6 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     }
     res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes' })
     createReadStream(file).pipe(res)
-  }
-
-  function updateConfig(mutate) {
-    const config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'))
-    mutate(config)
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n')
   }
 
   /**
@@ -361,11 +354,19 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           voices: listVoices(),
           selected: loadConfig().tts.myVoice?.voice ?? null,
           // ตัวเลือกที่ใช้อยู่จริง รูปแบบ "<engine>:<id>" — เสียงของเรา / Edge / Gemini
-          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : engine === 'voxcpm' ? `voxcpm:${config.tts.voxcpm?.voice ?? 'my_voice'}` : `my-voice:${config.tts.myVoice?.voice}`,
+          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : engine === 'elevenlabs' ? `elevenlabs:${config.tts.elevenlabs?.voiceId ?? ''}` : engine === 'voxcpm' ? `voxcpm:${config.tts.voxcpm?.voice ?? 'my_voice'}` : `my-voice:${config.tts.myVoice?.voice}`,
           voxcpm: { ready: voxcpmInstalled(), voices: voxcpmVoices() },
           edge: { ready: existsSync(edgePython()), voices: EDGE_VOICES },
           language: config.script.language,
           gemini: { hasKey: hasKey('GEMINI_API_KEY'), model: config.tts.gemini?.model, models: GEMINI_MODELS, voices: GEMINI_VOICES },
+          // ElevenLabs ไม่มีรายการเสียงตายตัว — ผู้ใช้ใส่ Voice ID ของเสียงที่โคลนไว้ในบัญชีตัวเอง
+          elevenlabs: {
+            hasKey: hasKey('ELEVENLABS_API_KEY'),
+            voiceId: config.tts.elevenlabs?.voiceId ?? '',
+            voiceName: config.tts.elevenlabs?.voiceName ?? '',
+            model: config.tts.elevenlabs?.model ?? ELEVEN_MODELS[0].id,
+            models: ELEVEN_MODELS,
+          },
           training: run?.step === 'trainVoice' && run.status === 'running' ? run.slug : null,
           epochs: loadConfig().tts.myVoice?.trainEpochs ?? 40,
         }), true
@@ -380,6 +381,11 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             c.tts.voxcpm = { ...(c.tts.voxcpm ?? {}), voice: id }
           })
           return json(res, 200, { choice: `voxcpm:${id}` }), true
+        }
+        if (engine === 'elevenlabs') {
+          if (!isElevenVoiceId(loadConfig().tts.elevenlabs?.voiceId)) return json(res, 400, { error: 'ใส่ Voice ID ของ ElevenLabs แล้วกดบันทึกก่อน' }), true
+          updateConfig((c) => { c.tts.engine = 'elevenlabs' })
+          return json(res, 200, { choice: `elevenlabs:${loadConfig().tts.elevenlabs.voiceId}` }), true
         }
         if (engine === 'edge' || engine === 'gemini') {
           const catalog = engine === 'edge' ? EDGE_VOICES : GEMINI_VOICES
@@ -401,21 +407,27 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       // ฟังตัวอย่างเสียงออนไลน์ก่อนเลือก — เก็บไฟล์ไว้ใน projects/_previews ให้ /files เสิร์ฟได้
       if (req.method === 'POST' && path === '/api/voices/preview') {
         const { engine, id, text, emotion = 'calm', speed = 1 } = await readBody(req)
-        if (!['edge', 'gemini', 'voxcpm'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์และ VoxCPM2' }), true
-        const catalog = engine === 'edge' ? EDGE_VOICES : engine === 'voxcpm' ? voxcpmVoices() : GEMINI_VOICES
-        if (!catalog.some((v) => v.id === id)) return json(res, 400, { error: `ไม่มีเสียง ${id}` }), true
+        if (!['edge', 'gemini', 'voxcpm', 'elevenlabs'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์และ VoxCPM2' }), true
+        if (engine === 'elevenlabs') {
+          if (!isElevenVoiceId(id)) return json(res, 400, { error: 'Voice ID ของ ElevenLabs ไม่ถูกต้อง' }), true
+        } else {
+          const catalog = engine === 'edge' ? EDGE_VOICES : engine === 'voxcpm' ? voxcpmVoices() : GEMINI_VOICES
+          if (!catalog.some((v) => v.id === id)) return json(res, 400, { error: `ไม่มีเสียง ${id}` }), true
+        }
         // เสียงอังกฤษล้วนอ่านไทยไม่ออก → ตัวอย่างเป็นภาษาอังกฤษ
         const englishOnly = engine === 'edge' && EDGE_VOICES.find((v) => v.id === id)?.readsThai === false
         const sample = String(text ?? '').trim().slice(0, 300) || (englishOnly
           ? 'Imagine you could stop time for one second. Physicists say the moment you call now might not exist at all.'
           : 'ลองจินตนาการว่าคุณหยุดเวลาได้หนึ่งวินาที... นักฟิสิกส์บอกว่าสิ่งที่คุณเรียกว่า ตอนนี้ อาจไม่มีอยู่จริงเลย')
         const dir = join(ROOT, 'projects', '_previews')
-        const name = `${engine}_${id}_${emotion}_${Number(speed).toFixed(2)}_${Buffer.from(sample).toString('base64url').slice(-12)}.wav`
+        // รุ่นของ ElevenLabs อยู่ในชื่อไฟล์ด้วย — เปลี่ยนรุ่นแล้วต้องได้ตัวอย่างใหม่ ไม่ใช่ไฟล์เก่าจากแคช
+        const variant = engine === 'elevenlabs' ? `_${loadConfig().tts.elevenlabs?.model ?? ''}` : ''
+        const name = `${engine}_${id}${variant}_${emotion}_${Number(speed).toFixed(2)}_${Buffer.from(sample).toString('base64url').slice(-12)}.wav`
         const file = join(dir, name)
         if (!existsSync(file)) {
           const config = loadConfig()
           if (engine === 'voxcpm') await synthVoxcpm([{ index: 0, text: sample, out: file }], { voice: id, emotion, speed, cfg: config.tts.voxcpm?.cfg, steps: config.tts.voxcpm?.steps, eq: config.tts.voxcpm?.eq })
-          else await synthCloud(engine, [{ index: 0, text: sample, out: file }], { voice: id, model: config.tts.gemini?.model, emotion, speed }, () => {})
+          else await synthCloud(engine, [{ index: 0, text: sample, out: file }], { voice: id, model: config.tts[engine]?.model, emotion, speed }, () => {})
         }
         return json(res, 200, { url: `/files/_previews/${encodeURIComponent(name)}?v=${Math.round(statSync(file).mtimeMs)}` }), true
       }
@@ -429,6 +441,34 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         writeFileSync(envFile, /^GEMINI_API_KEY=.*$/m.test(text) ? text.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY=${key}`) : `${text.replace(/\n?$/, '\n')}GEMINI_API_KEY=${key}\n`)
         process.env.GEMINI_API_KEY = key
         return json(res, 200, { hasKey: true }), true
+      }
+
+      // ElevenLabs: บันทึก key (ถ้าส่งมา) + Voice ID + รุ่น — ตรวจกับ ElevenLabs จริงก่อนบันทึก จะได้รู้ทันทีว่า ID/key ผิด
+      // ไม่ใช่ไปรู้ตอนทำเสียงกลางคลิป แล้วตั้งเป็นเสียงที่ใช้เลย
+      if (req.method === 'POST' && path === '/api/elevenlabs') {
+        const body = await readBody(req)
+        const key = String(body.key ?? '').trim()
+        const voiceId = String(body.voiceId ?? '').trim()
+        const model = ELEVEN_MODELS.some((m) => m.id === body.model) ? body.model : (loadConfig().tts.elevenlabs?.model ?? ELEVEN_MODELS[0].id)
+        if (key && !/^[\w-]{20,}$/.test(key)) return json(res, 400, { error: 'รูปแบบ ElevenLabs API key ไม่ถูกต้อง' }), true
+        if (!key && !hasKey('ELEVENLABS_API_KEY')) return json(res, 400, { error: 'ใส่ ElevenLabs API key ก่อน' }), true
+        let info
+        try {
+          info = await elevenVoiceInfo(voiceId, key || undefined)
+        } catch (err) {
+          return json(res, 400, { error: err.message }), true
+        }
+        if (key) {
+          const envFile = join(ROOT, '.env')
+          const text = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
+          writeFileSync(envFile, /^ELEVENLABS_API_KEY=.*$/m.test(text) ? text.replace(/^ELEVENLABS_API_KEY=.*$/m, `ELEVENLABS_API_KEY=${key}`) : `${text.replace(/\n?$/, '\n')}ELEVENLABS_API_KEY=${key}\n`)
+          process.env.ELEVENLABS_API_KEY = key
+        }
+        updateConfig((c) => {
+          c.tts.engine = 'elevenlabs'
+          c.tts.elevenlabs = { ...(c.tts.elevenlabs ?? {}), voiceId: info.id, voiceName: info.name, model }
+        })
+        return json(res, 200, { choice: `elevenlabs:${info.id}`, voiceId: info.id, voiceName: info.name, category: info.category, model }), true
       }
 
       if (req.method === 'POST' && path === '/api/kie-key') {
@@ -638,14 +678,34 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         return json(res, 200, runner.start(step, slug, { bgm })), true
       }
 
+      // ── อัปเดตจาก GitHub ──
+      if (path.startsWith('/api/update') && !updater) return json(res, 404, { error: 'ไม่มีระบบอัปเดต' }), true
+      if (req.method === 'GET' && path === '/api/update') return json(res, 200, updater.snapshot()), true
+      if (req.method === 'POST' && path === '/api/update/check') return json(res, 200, await updater.check()), true
+      if (req.method === 'POST' && path === '/api/update/apply') {
+        try {
+          return json(res, 200, await updater.apply()), true
+        } catch (err) {
+          return json(res, 409, { error: err.message, ...updater.snapshot() }), true
+        }
+      }
+
       if (req.method === 'POST' && path === '/api/run/stop') {
         const run = runner.snapshot()
         const stopped = runner.stop() ?? {}
-        if (run?.step === 'autopilot' && run.status === 'running') {
-          // งานที่ยังรอคิวอยู่ ไม่ต้องให้ ChatGPT/Flow หยิบไปทำหลังหยุดแล้ว
+        if (run?.status === 'running') {
+          // ยกเลิกทั้งงานที่รอคิว และงานที่ ChatGPT/Flow กำลังทำอยู่ — เดิมยกเลิกแค่ที่รอคิว
+          // งานที่กำลังทำจึงทำต่อจนจบและเขียนภาพลงเครื่องต่ออีก ≥90 วิ (จนกว่าจะถูกจับว่าเป็นงานกำพร้า)
+          // ผู้ใช้เห็นว่ากดหยุดแล้วแต่ระบบ "แอบทำต่อ" · cancelled: แท็บเลิกทำในรอบ heartbeat ถัดไป (≤20 วิ)
+          // และ bridge ไม่รับไฟล์ของงานนี้อีกตั้งแต่วินาทีนี้
           for (const job of jobs.values()) {
-            if (job.status === 'queued') Object.assign(job, { status: 'error', error: 'หยุดโดยผู้ใช้' })
+            if (job.status === 'queued' || job.status === 'running') {
+              Object.assign(job, { status: 'error', error: 'หยุดโดยผู้ใช้', cancelled: true, touchedAt: Date.now() })
+              log(`ยกเลิก ${job.kind} (${job.id.slice(0, 8)}): หยุดโดยผู้ใช้`)
+            }
           }
+        }
+        if (run?.step === 'autopilot' && run.status === 'running') {
           // บันทึกว่าหยุดเอง — กด "ทำต่อ" ได้ แม้โปรแกรมในเครื่องถูกปิดไปก่อน
           const file = run.slug ? join(ROOT, 'projects', run.slug, 'autopilot.json') : null
           const st = file && existsSync(file) ? readJson(file, null) : null

@@ -1,9 +1,15 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-echo ติดตั้ง Cartoon Auto ให้กดไอคอน extension แล้วใช้ได้เลย
+echo ติดตั้ง Cartoon Auto — ดับเบิลคลิกครั้งเดียว แล้วกดไอคอน extension ใช้งานได้เลย
 echo.
-where node >nul 2>nul
+
+rem แพ็กเกจลูกค้าแถม node / ffmpeg ไว้ใน runtime\ — ใช้ตัวนั้นก่อน ไม่ต้องติดตั้งอะไรเพิ่ม
+set "NODE=node"
+if exist "%~dp0runtime\node\node.exe" set "NODE=%~dp0runtime\node\node.exe"
+if exist "%~dp0runtime\ffmpeg\ffmpeg.exe" set "PATH=%~dp0runtime\ffmpeg;%PATH%"
+
+"%NODE%" --version >nul 2>nul
 if errorlevel 1 (
   echo ยังไม่มี Node.js — ลงจาก https://nodejs.org แล้วดับเบิลคลิกไฟล์นี้ใหม่
   pause
@@ -16,7 +22,8 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-node native\install.mjs
+
+"%NODE%" native\install.mjs
 if errorlevel 1 (
   echo.
   echo ติดตั้งไม่สำเร็จ — ดูข้อความ error ด้านบน
@@ -26,11 +33,13 @@ if errorlevel 1 (
 
 echo.
 if exist "tts\.venv\Scripts\python.exe" (
-  echo ระบบเสียงติดตั้งไว้แล้ว
+  echo ระบบเสียงในเครื่องติดตั้งไว้แล้ว
 ) else (
-  echo ระบบเสียงในเครื่อง ^(สร้างเสียงไทย เทรนเสียงตัวเอง ถอดเสียง Edge TTS^)
+  if exist "runtime\python\python.exe" echo เสียงพากย์ Edge ^(ไทย/อังกฤษ^) ใช้ได้ทันที ไม่ต้องติดตั้งเพิ่ม
+  echo.
+  echo [ไม่บังคับ] ระบบเสียงในเครื่อง — โคลนเสียงตัวเอง เทรนเสียง ถอดเสียงจากไฟล์
   echo ต้องมีการ์ดจอ NVIDIA + Python 3.10 และดาวน์โหลดประมาณ 5GB
-  choice /c YN /m "ติดตั้งตอนนี้เลยไหม"
+  choice /c YN /m "ติดตั้งตอนนี้เลยไหม (ไม่แน่ใจ ให้กด N)"
   if not errorlevel 2 (
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup-tts.ps1
   ) else (
@@ -38,11 +47,5 @@ if exist "tts\.venv\Scripts\python.exe" (
   )
 )
 
-echo.
-echo ขั้นต่อไปใน Chrome:
-echo   1. เปิด chrome://extensions แล้วเปิด Developer mode
-echo   2. ถ้ามี Cartoon Auto Bridge อยู่แล้ว กดปุ่มรีโหลด
-echo      ถ้ายังไม่มี กด Load unpacked แล้วเลือกโฟลเดอร์ extension
-echo   3. กดไอคอน extension — โปรแกรมเปิดเอง
 echo.
 pause

@@ -16,7 +16,7 @@ import { segmentScript, estimateMinutes } from './lib/segment.mjs'
 import { probeDuration, concatAudio, trimSilence, eachLimit, run } from './lib/ffmpeg.mjs'
 import { hhmmss } from './lib/timecode.mjs'
 import { selectedVoice } from './lib/voices.mjs'
-import { synthCloud, edgeVoiceFits, defaultEdgeVoice } from './lib/cloud_tts.mjs'
+import { synthCloud, edgeVoiceFits, defaultEdgeVoice, elevenModelFits } from './lib/cloud_tts.mjs'
 import { synthVoxcpm } from './lib/voxcpm.mjs'
 import { clearAsrTimeline } from './lib/asr.mjs'
 
@@ -40,7 +40,10 @@ const metaFile = join(scriptDir, 'meta.json')
 const meta = existsSync(metaFile) ? JSON.parse(readFileSync(metaFile, 'utf8')) : {}
 const language = meta.language ?? config.script.language
 
-const cloud = ['edge', 'gemini'].includes(config.tts.engine) ? config.tts[config.tts.engine] : null
+const CLOUD_ENGINES = ['edge', 'gemini', 'elevenlabs']
+const cloud = CLOUD_ENGINES.includes(config.tts.engine) ? { ...(config.tts[config.tts.engine] ?? {}) } : null
+// ElevenLabs อ้างเสียงด้วย Voice ID (เสียงที่โคลนไว้ในบัญชี) — ส่งต่อในช่อง voice เหมือน engine อื่น
+if (cloud && config.tts.engine === 'elevenlabs') cloud.voice = cloud.voiceId
 const myVoice = config.tts.engine === 'my-voice' ? config.tts.myVoice : null
 // VoxCPM2: โคลนเสียงของเราจากคลิปต้นแบบ — ใช้อารมณ์/ความเร็วชุดเดียวกับเสียงของเรา
 const vox = config.tts.engine === 'voxcpm' ? { voice: 'my_voice', ...(config.tts.voxcpm ?? {}) } : null
@@ -108,14 +111,19 @@ writeFileSync(join(audioDir, 'segments.json'), JSON.stringify(segments, null, 2)
 function printEvent(msg) {
   if (msg.event === 'loading') console.log(`กำลังโหลดโมเดล ${msg.engine}...`)
   if (msg.event === 'loaded') console.log(`โหลดเสร็จใน ${msg.seconds} วิ`)
-  if (msg.event === 'segment') process.stdout.write(`  ${msg.index + 1}/${msg.total} segments`)
+  if (msg.event === 'segment') process.stdout.write(`
+  ${msg.index + 1}/${msg.total} segments`)
   if (msg.event === 'error') console.error(`
 TTS ล้มเหลว: ${msg.message}`)
   if (msg.event === 'done') console.log(`
 สังเคราะห์ ${msg.total} segments ใน ${msg.seconds} วิ`)
 }
 
-// ── เสียงคนอื่น (ออนไลน์): Edge / Gemini ──
+// ── เสียงคนอื่น (ออนไลน์): Edge / Gemini / ElevenLabs ──
+if (cloud && config.tts.engine === 'elevenlabs' && !elevenModelFits(cloud.model, language)) {
+  console.warn(`รุ่น ${cloud.model} ของ ElevenLabs ไม่รองรับภาษาไทย — ใช้ eleven_v4 แทนสำหรับคลิปนี้`)
+  cloud.model = 'eleven_v4'
+}
 if (cloud && config.tts.engine === 'edge' && !edgeVoiceFits(cloud.voice, language)) {
   const fallback = defaultEdgeVoice(language)
   console.warn(`เสียง ${cloud.voice} อ่านภาษาไทยไม่ได้ (Microsoft จะไม่ส่งเสียงกลับมา) — ใช้ ${fallback} แทนสำหรับคลิปนี้`)
@@ -124,7 +132,7 @@ if (cloud && config.tts.engine === 'edge' && !edgeVoiceFits(cloud.voice, languag
 }
 if (cloud) {
   const shared = config.tts.myVoice ?? {}
-  console.log(`เสียง ${config.tts.engine} · ${cloud.voice}${cloud.model ? ` (${cloud.model})` : ''} · อารมณ์ ${shared.emotion ?? 'calm'} · ความเร็ว ${shared.speed ?? 1}`)
+  console.log(`เสียง ${config.tts.engine} · ${cloud.voiceName ?? cloud.voice}${cloud.model ? ` (${cloud.model})` : ''} · อารมณ์ ${shared.emotion ?? 'calm'} · ความเร็ว ${shared.speed ?? 1}`)
   try {
     await synthCloud(
       config.tts.engine,

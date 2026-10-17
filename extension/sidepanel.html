@@ -246,6 +246,15 @@
     <ul class="heroCrew" id="heroCrew" aria-label="ทีมงานแต่ละแผนก"></ul>
   </section>
 
+  <section class="updateBanner" id="updateBanner" hidden aria-label="อัปเดตจาก GitHub">
+    <div class="updateHead">
+      <strong id="updateTitle"></strong>
+      <button class="primary" id="applyUpdate" type="button">⬇ อัปเดตเลย</button>
+    </div>
+    <p class="hint" id="updateNote"></p>
+    <details id="updateDetails"><summary>มีอะไรใหม่</summary><ul class="updateCommits" id="updateCommits"></ul></details>
+  </section>
+
   <section>
     <div class="projectBar">
       <div>
@@ -254,6 +263,7 @@
       </div>
       <div class="controls" style="margin:0;justify-content:flex-end">
         <button class="ghost" id="openChecklist" title="ดูว่าเครื่องนี้ต้องลงอะไรเพิ่มบ้าง">🧰 ตรวจความพร้อม</button>
+        <button class="ghost" id="checkUpdate" title="ตรวจว่ามีเวอร์ชันใหม่บน GitHub ไหม (ระบบตรวจเองทุก 30 นาทีด้วย)">🔄 ตรวจอัปเดต</button>
         <button class="ghost" id="openLibrary">🎬 คลังวิดีโอ</button>
         <button class="ghost" id="openProjects">📂 เปิด project เก่า</button>
       </div>
@@ -285,7 +295,7 @@
       <button class="primary" id="startAuto">▶ ทำคลิปอัตโนมัติ</button>
       <button class="stop" id="stopAuto" disabled>หยุด</button>
     </div>
-    <button type="button" class="ghost newClip" id="newAuto" title="ไม่ทำต่อเรื่องเดิม — ระบบเลือกหัวข้อใหม่ที่ยังไม่เคยทำ แล้วสร้างคลิปใหม่ทั้งหมดใน project ใหม่ของ Flow">✨ สร้างคลิปใหม่ (หัวข้อใหม่)</button>
+    <button type="button" class="ghost newClip" id="newAuto" title="ไม่ทำต่อเรื่องเดิม — ใช้ค่าที่ตั้งไว้ทั้งหมด (ภาษา ความยาว แนว เสียง ภาพ) แต่ระบบเลือกหัวข้อใหม่ที่ยังไม่เคยทำ แล้วสร้างคลิปใหม่ทั้งหมดใน project ใหม่ของ Flow"><b>✨ เริ่มวิดีโอใหม่</b><small>หัวข้อใหม่ · ใช้ค่าที่ตั้งไว้เดิมทั้งหมด</small></button>
     <div class="restartRow" id="restartRow" hidden>
       <label for="restartFrom">ไม่เอางานเดิม เริ่มใหม่ตั้งแต่</label>
       <select id="restartFrom">
@@ -449,6 +459,21 @@
       <div class="pickRow" style="margin-bottom:10px">
         <input type="password" id="geminiKey" placeholder="วาง Gemini API key" autocomplete="off" />
         <button class="ghost" id="saveGeminiKey" type="button">บันทึก</button>
+      </div>
+    </div>
+    <div id="elevenRow" hidden>
+      <p class="hint">ใช้เสียงที่โคลนไว้ในบัญชี ElevenLabs ของคุณ — คัดลอก Voice ID จากหน้า Voices (ปุ่ม ID ข้างชื่อเสียง) · API key สร้างที่ Settings → API Keys (เก็บในไฟล์ .env ในเครื่องเท่านั้น) · ใช้เครดิตตามจำนวนตัวอักษรของบท</p>
+      <label class="pick">API key
+        <input type="password" id="elevenKey" placeholder="วาง ElevenLabs API key" autocomplete="off" />
+      </label>
+      <label class="pick">Voice ID
+        <input type="text" id="elevenVoiceId" placeholder="เช่น 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false" maxlength="40" />
+      </label>
+      <label class="pick">รุ่น
+        <select id="elevenModel" aria-label="รุ่นของ ElevenLabs"></select>
+      </label>
+      <div class="pickRow" style="margin-bottom:10px">
+        <button class="ghost" id="saveEleven" type="button">ตรวจและใช้เสียงนี้</button>
       </div>
     </div>
 
