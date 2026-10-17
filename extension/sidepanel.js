@@ -1922,7 +1922,7 @@ const studioHero = (() => {
   const tips = new Map() // ป้ายหน้าที่ของแต่ละตัว ขึ้นทันทีตอนชี้/โฟกัส (title ของเบราว์เซอร์ขึ้นช้าและไม่บอกหน้าที่)
   // กดสัตว์ในแถบด้านบน → ไปเฉพาะขั้นใน "หรือทำทีละขั้นเอง" (ไม่ไปการ์ดอัตโนมัติ) แม้ขั้นนั้นยังล็อกอยู่
   // เต่ามี 3 ขั้น (1 หัวข้อ · 2 บท · 4 prompt ภาพ) → กดซ้ำเลื่อนไปขั้นถัดไปของเต่า
-  const settingTargets = { chatgpt: ['topicSection', 'scriptSection', 'imageSection'], voice: ['voiceSection'], flow: ['flowSection'], meta: ['clipsSection'], edit: ['renderSection'] }
+  const settingTargets = { chatgpt: ['topicSection', 'scriptSection', 'imageSection'], voice: ['voiceSettingsBox', 'voiceSection'], flow: ['flowSection'], meta: ['clipsSection'], edit: ['renderSection'] }
   const stepCursor = {}
   let focusTimer = null
   const focusSetting = (ids) => {
@@ -2650,16 +2650,16 @@ $('voicePick').addEventListener('change', async (e) => {
   // ElevenLabs ที่ยังไม่มี Voice ID → แค่เปิดช่องให้กรอก ยังไม่เปลี่ยนเสียงที่ใช้จริง
   if (engine === 'elevenlabs' && !id) {
     V.pendingChoice = e.target.value
-    setStatus('voiceStatus', 'ใส่ API key และ Voice ID ด้านล่าง แล้วกด "ตรวจและใช้เสียงนี้"')
+    setStatus('voicePickStatus', 'ใส่ API key และ Voice ID ด้านล่าง แล้วกด "ตรวจและใช้เสียงนี้"')
     render()
     return $('elevenVoiceId').focus()
   }
   try {
     const { choice } = await api(await localApp(), '/api/voices/select', { engine, id })
     V.choice = choice
-    setStatus('voiceStatus', `ใช้เสียง: ${label}`, 'ok')
+    setStatus('voicePickStatus', `ใช้เสียง: ${label}`, 'ok')
   } catch (err) {
-    setStatus('voiceStatus', err.message, 'error')
+    setStatus('voicePickStatus', err.message, 'error')
   }
   render()
 })
@@ -2667,7 +2667,7 @@ $('voicePick').addEventListener('change', async (e) => {
 $('previewVoice').addEventListener('click', async () => {
   const [engine, id] = $('voicePick').value.split(/:(.*)/)
   $('previewVoice').disabled = true
-  setStatus('voiceStatus', 'กำลังสร้างเสียงตัวอย่าง…', 'busy')
+  setStatus('voicePickStatus', 'กำลังสร้างเสียงตัวอย่าง…', 'busy')
   try {
     const app = await localApp()
     // ใช้ประโยคแรกของบทจริงถ้ามี จะได้ฟังคำที่จะใช้ในคลิป
@@ -2679,9 +2679,9 @@ $('previewVoice').addEventListener('click', async () => {
     $('previewAudio').src = `${app.url}${url.slice(1)}&k=${app.token}`
     $('previewAudio').hidden = false
     $('previewAudio').play().catch(() => {})
-    setStatus('voiceStatus', '')
+    setStatus('voicePickStatus', '')
   } catch (err) {
-    setStatus('voiceStatus', err.message, 'error')
+    setStatus('voicePickStatus', err.message, 'error')
   } finally {
     $('previewVoice').disabled = false
   }
@@ -2705,10 +2705,10 @@ function renderEleven(engine) {
 async function saveEleven() {
   const key = $('elevenKey').value.trim()
   const voiceId = $('elevenVoiceId').value.trim()
-  if (!voiceId) return setStatus('voiceStatus', 'ใส่ Voice ID ก่อน', 'error'), $('elevenVoiceId').focus()
-  if (!key && !V.elevenlabs?.hasKey) return setStatus('voiceStatus', 'ใส่ ElevenLabs API key ก่อน', 'error'), $('elevenKey').focus()
+  if (!voiceId) return setStatus('voicePickStatus', 'ใส่ Voice ID ก่อน', 'error'), $('elevenVoiceId').focus()
+  if (!key && !V.elevenlabs?.hasKey) return setStatus('voicePickStatus', 'ใส่ ElevenLabs API key ก่อน', 'error'), $('elevenKey').focus()
   $('saveEleven').disabled = true
-  setStatus('voiceStatus', 'กำลังตรวจ Voice ID กับ ElevenLabs…', 'busy')
+  setStatus('voicePickStatus', 'กำลังตรวจ Voice ID กับ ElevenLabs…', 'busy')
   try {
     const r = await api(await localApp(), '/api/elevenlabs', { key, voiceId, model: $('elevenModel').value })
     Object.assign(V.elevenlabs, { hasKey: true, voiceId: r.voiceId, voiceName: r.voiceName, model: r.model })
@@ -2716,12 +2716,18 @@ async function saveEleven() {
     V.pendingChoice = null
     $('elevenKey').value = ''
     $('elevenVoiceId').value = r.voiceId
-    setStatus('voiceStatus', `ใช้เสียง ElevenLabs: ${r.voiceName}${r.category ? ` (${r.category})` : ''}`, 'ok')
+    setStatus('voicePickStatus', `ใช้เสียง ElevenLabs: ${r.voiceName}${r.category ? ` (${r.category})` : ''}`, 'ok')
   } catch (err) {
-    setStatus('voiceStatus', err.message, 'error')
+    setStatus('voicePickStatus', err.message, 'error')
   }
   render()
 }
+
+// ขั้นที่ 3 ไม่มีช่องเลือกเสียงแล้ว — ลิงก์พากลับไปกล่องปรับแต่งเสียงในส่วนทำคลิปอัตโนมัติ
+$('gotoVoiceSettings').addEventListener('click', () => {
+  $('voiceSettingsBox').open = true
+  $('voiceSettingsBox').scrollIntoView({ behavior: 'smooth', block: 'start' })
+})
 
 $('saveEleven').addEventListener('click', saveEleven)
 $('elevenVoiceId').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEleven() })
@@ -2735,9 +2741,9 @@ $('saveGeminiKey').addEventListener('click', async () => {
     await api(await localApp(), '/api/gemini-key', { key })
     $('geminiKey').value = ''
     V.gemini.hasKey = true
-    setStatus('voiceStatus', 'บันทึก Gemini API key แล้ว', 'ok')
+    setStatus('voicePickStatus', 'บันทึก Gemini API key แล้ว', 'ok')
   } catch (err) {
-    setStatus('voiceStatus', err.message, 'error')
+    setStatus('voicePickStatus', err.message, 'error')
   }
   render()
 })
@@ -2842,7 +2848,7 @@ $('saveVoxRef').addEventListener('click', async () => {
 async function resumeVoice() {
   const app = await localApp().catch(() => null)
   if (!app) return
-  await loadVoices(app).catch((err) => setStatus('voiceStatus', err.message, 'error'))
+  await loadVoices(app).catch((err) => setStatus('voicePickStatus', err.message, 'error'))
   if (!S.script) return
   loadShots(app)
   loadTranscript(app)
@@ -3007,7 +3013,9 @@ function render() {
     b.disabled = busy || localBusy()
   }
   const voiceName = V.choice?.startsWith('edge:') ? `Edge · ${V.choice.slice(5)}` : V.choice?.startsWith('gemini:') ? `Gemini · ${V.choice.slice(7)}` : V.choice?.startsWith('elevenlabs:') ? `ElevenLabs · ${V.elevenlabs?.voiceName || V.choice.slice(11)}` : V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
-  $('autoVoice').textContent = voiceName ? `เสียงพากย์: ${voiceName} (เปลี่ยนได้ที่ขั้นที่ 3)` : ''
+  // หัวกล่องปรับแต่งเสียงบอกเสียงที่ใช้อยู่ — เก็บกล่องแล้วยังเห็น · ขั้นที่ 3 แสดงชื่อเดียวกันพร้อมลิงก์กลับมาที่กล่องนี้
+  $('autoVoice').textContent = voiceName ? `เสียงพากย์: ${voiceName}` : 'เสียงพากย์'
+  $('voiceCurrent').textContent = voiceName ? `เสียงที่ใช้: ${voiceName}` : 'ยังไม่ได้เลือกเสียง'
 
   $('nextSection').hidden = !sc
   $('currentProject').textContent = S.selected ? S.selected.title : 'ยังไม่มี — เริ่มจากหาหัวข้อ'

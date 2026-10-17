@@ -333,18 +333,62 @@
       <input id="autoTitle" maxlength="200" placeholder="เช่น ถ้าคุณตกลงไปในหลุมดำ จะเกิดอะไรขึ้น" autocomplete="off" />
     </label>
     </div>
-    <div class="agentBlock agentSetting" id="autoVoiceBlock" data-agent="voice" data-agent-label="เสียงพากย์">
-    <div class="blockHead" data-agent-label="โลมา · เสียงพากย์"><span class="blockTitle">ภาษาและความยาว</span></div>
-    <div class="controls">
-      <div class="seg" id="autoLang" role="group" aria-label="ภาษาพากย์">
-        <button type="button" data-value="th">พากย์ไทย</button>
-        <button type="button" data-value="en">พากย์อังกฤษ</button>
+    <!-- กล่องโลมากล่องเดียว: ภาษา ความยาว เสียง อารมณ์ ความเร็ว (เดิมแยก "ภาษาและความยาว" ไว้อีกกล่อง ผู้ใช้เห็นว่าซ้ำ) -->
+    <details class="clipSettings agentSetting agentBlock voiceSettings" id="voiceSettingsBox" data-agent="voice" data-agent-label="เสียงพากย์" open>
+      <summary data-agent-label="โลมา · เสียงพากย์"><span class="blockTitle" id="autoVoice">เสียงพากย์</span><svg class="blockCaret" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
+      <div class="pick" style="margin-top:10px">ภาษาและความยาว
+        <div class="controls" style="margin:0">
+          <div class="seg" id="autoLang" role="group" aria-label="ภาษาพากย์">
+            <button type="button" data-value="th">พากย์ไทย</button>
+            <button type="button" data-value="en">พากย์อังกฤษ</button>
+          </div>
+          <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="5" /> นาที</label>
+        </div>
       </div>
-      <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="5" /> นาที</label>
-    </div>
-    <p class="hint" id="autoVoice"></p>
-    </div>
-    <details class="clipSettings agentSetting agentBlock" id="clipSettingsBox" data-agent="flow" data-agent-label="Google Flow">
+      <label class="pick">เสียงที่ใช้
+        <span class="pickRow">
+          <select id="voicePick" aria-label="เสียงที่ใช้"><option>กำลังโหลดรายการเสียง…</option></select>
+          <button class="ghost" id="previewVoice" type="button" title="ฟังตัวอย่างเสียงนี้">🔊 ฟัง</button>
+        </span>
+      </label>
+      <p class="hint" id="voiceNote"></p>
+      <audio controls id="previewAudio" preload="none" hidden style="width:100%;margin-bottom:8px"></audio>
+      <div id="geminiKeyRow" hidden>
+        <p class="hint">Gemini ต้องใช้ API key ของคุณเอง — สร้างฟรีที่ aistudio.google.com/apikey (key จะถูกเก็บในไฟล์ .env ในเครื่องเท่านั้น)</p>
+        <div class="pickRow" style="margin-bottom:10px">
+          <input type="password" id="geminiKey" placeholder="วาง Gemini API key" autocomplete="off" />
+          <button class="ghost" id="saveGeminiKey" type="button">บันทึก</button>
+        </div>
+      </div>
+      <div id="elevenRow" hidden>
+        <p class="hint">ใช้เสียงที่โคลนไว้ในบัญชี ElevenLabs ของคุณ — คัดลอก Voice ID จากหน้า Voices (ปุ่ม ID ข้างชื่อเสียง) · API key สร้างที่ Settings → API Keys (เก็บในไฟล์ .env ในเครื่องเท่านั้น) · ใช้เครดิตตามจำนวนตัวอักษรของบท</p>
+        <label class="pick">API key
+          <input type="password" id="elevenKey" placeholder="วาง ElevenLabs API key" autocomplete="off" />
+        </label>
+        <label class="pick">Voice ID
+          <input type="text" id="elevenVoiceId" placeholder="เช่น 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false" maxlength="40" />
+        </label>
+        <label class="pick">รุ่น
+          <select id="elevenModel" aria-label="รุ่นของ ElevenLabs"></select>
+        </label>
+        <div class="pickRow" style="margin-bottom:10px">
+          <button class="ghost" id="saveEleven" type="button">ตรวจและใช้เสียงนี้</button>
+        </div>
+      </div>
+      <div class="pick">อารมณ์และความเร็ว
+        <div class="controls" style="margin:0">
+          <div class="seg" id="emotion" role="group" aria-label="อารมณ์เสียง">
+            <button type="button" data-value="calm">ปกติ</button>
+            <button type="button" data-value="excited">ตื่นเต้น</button>
+            <button type="button" data-value="serious">จริงจัง</button>
+            <button type="button" data-value="soft">นุ่ม</button>
+          </div>
+          <label class="field">ความเร็ว <input type="number" id="speed" min="0.7" max="1.5" step="0.05" value="1" /></label>
+        </div>
+      </div>
+      <div class="status" id="voicePickStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+    </details>
+    <details class="clipSettings agentSetting agentBlock" id="clipSettingsBox" data-agent="flow" data-agent-label="Google Flow" open>
       <summary data-agent-label="ปลาหมึก · Google Flow"><span class="blockTitle" id="clipSettingsSummary">ตั้งค่าคลิป</span><svg class="blockCaret" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
       <div class="pick" style="margin-top:10px">รูปแบบภาพและวิดีโอ
         <div class="seg" id="clipOrientation" role="group" aria-label="แนวภาพ">
@@ -446,36 +490,8 @@
   <section class="step agentSetting" id="voiceSection" data-agent="voice" data-agent-label="เสียงพากย์" aria-label="ขั้นที่ 3 เสียงพากย์">
     <h2 data-agent-label="โลมา · เสียงพากย์"><span class="stepNo" aria-hidden="true">3</span>เสียงพากย์ (เสียงของเรา)</h2>
     <p class="lede">สร้างเสียงด้วยโมเดลที่เทรนจากเสียงเราเอง — ทำในเครื่องด้วยการ์ดจอ ไม่ใช้ API</p>
-    <label class="pick">เสียงที่ใช้
-      <span class="pickRow">
-        <select id="voicePick" aria-label="เสียงที่ใช้"><option>กำลังโหลดรายการเสียง…</option></select>
-        <button class="ghost" id="previewVoice" type="button" title="ฟังตัวอย่างเสียงนี้">🔊 ฟัง</button>
-      </span>
-    </label>
-    <p class="hint" id="voiceNote"></p>
-    <audio controls id="previewAudio" preload="none" hidden style="width:100%;margin-bottom:8px"></audio>
-    <div id="geminiKeyRow" hidden>
-      <p class="hint">Gemini ต้องใช้ API key ของคุณเอง — สร้างฟรีที่ aistudio.google.com/apikey (key จะถูกเก็บในไฟล์ .env ในเครื่องเท่านั้น)</p>
-      <div class="pickRow" style="margin-bottom:10px">
-        <input type="password" id="geminiKey" placeholder="วาง Gemini API key" autocomplete="off" />
-        <button class="ghost" id="saveGeminiKey" type="button">บันทึก</button>
-      </div>
-    </div>
-    <div id="elevenRow" hidden>
-      <p class="hint">ใช้เสียงที่โคลนไว้ในบัญชี ElevenLabs ของคุณ — คัดลอก Voice ID จากหน้า Voices (ปุ่ม ID ข้างชื่อเสียง) · API key สร้างที่ Settings → API Keys (เก็บในไฟล์ .env ในเครื่องเท่านั้น) · ใช้เครดิตตามจำนวนตัวอักษรของบท</p>
-      <label class="pick">API key
-        <input type="password" id="elevenKey" placeholder="วาง ElevenLabs API key" autocomplete="off" />
-      </label>
-      <label class="pick">Voice ID
-        <input type="text" id="elevenVoiceId" placeholder="เช่น 21m00Tcm4TlvDq8ikWAM" autocomplete="off" spellcheck="false" maxlength="40" />
-      </label>
-      <label class="pick">รุ่น
-        <select id="elevenModel" aria-label="รุ่นของ ElevenLabs"></select>
-      </label>
-      <div class="pickRow" style="margin-bottom:10px">
-        <button class="ghost" id="saveEleven" type="button">ตรวจและใช้เสียงนี้</button>
-      </div>
-    </div>
+    <!-- เลือกเสียง/อารมณ์/ความเร็ว ย้ายไปกล่อง "ปรับแต่งเสียงพากย์" ในส่วนทำคลิปอัตโนมัติ (ผู้ใช้ขอให้อยู่ใกล้ตั้งค่าคลิป) -->
+    <p class="hint voiceMovedHint"><span id="voiceCurrent"></span> · <button type="button" class="linkBtn" id="gotoVoiceSettings">ปรับเสียง อารมณ์ ความเร็ว ↑</button></p>
 
     <details id="trainBox">
       <summary>＋ เพิ่มเสียงใหม่</summary>
@@ -498,16 +514,7 @@
       </div>
     </details>
 
-    <div class="controls" style="margin-top:12px">
-      <div class="seg" id="emotion" role="group" aria-label="อารมณ์เสียง">
-        <button type="button" data-value="calm">ปกติ</button>
-        <button type="button" data-value="excited">ตื่นเต้น</button>
-        <button type="button" data-value="serious">จริงจัง</button>
-        <button type="button" data-value="soft">นุ่ม</button>
-      </div>
-      <label class="field">ความเร็ว <input type="number" id="speed" min="0.7" max="1.5" step="0.05" value="1" /></label>
-    </div>
-    <div class="run">
+    <div class="run" style="margin-top:12px">
       <button class="primary" id="startVoice">▶ เริ่มสร้างเสียง</button>
       <button class="stop" id="stopVoice" disabled>■ หยุด</button>
     </div>

@@ -403,8 +403,9 @@ details.agentBlock:not([open]) > summary { margin-bottom: 0; border-bottom: 0; b
   content: attr(data-agent-label); order: 2; flex: none; margin-left: auto; padding: 2px 9px; border: 0; border-radius: 99px;
   background: var(--setting-color); color: var(--setting-ink); font-size: 12px; font-weight: 700;
 }
-.agentBlock .blockCaret { order: 3; flex: none; color: var(--setting-color); transition: transform .2s ease; }
-details.agentBlock[open] > summary .blockCaret { transform: rotate(180deg); }
+/* ลูกศรตามที่ผู้ใช้ขอ: เก็บอยู่ = ชี้ขึ้น ^ · กางอยู่ = ชี้ลง ⌄ (ไอคอนต้นฉบับชี้ลง) */
+.agentBlock .blockCaret { order: 3; flex: none; color: var(--setting-color); transition: transform .2s ease; transform: rotate(180deg); }
+details.agentBlock[open] > summary .blockCaret { transform: none; }
 .seahorseSettings.agentBlock { padding: 0 12px 12px; background: color-mix(in srgb, var(--setting-color) 8%, var(--panel)); }
 .seahorseSettings.agentBlock > summary .kieBadge { margin-left: 0; order: 1; color: var(--ink); background: var(--panel); border-color: color-mix(in srgb, var(--setting-color) 70%, transparent); }
 .agentBlock .pick:first-of-type { margin-top: 0; }
@@ -621,3 +622,10 @@ main > section.step.agentSetting > h2 { min-height: 0; padding-top: 11px; paddin
 .updateCommits li { margin: 3px 0; }
 .updateCommits small { opacity: .7; }
 .updateBanner.done { border-color: var(--line); }
+
+/* กล่องปรับแต่งเสียงพากย์ (ย้ายมาจากขั้นที่ 3) + ลิงก์กลับจากขั้นที่ 3 */
+#voiceSettingsBox > summary .blockTitle { font-size: 13px; font-weight: 600; line-height: 1.45; }
+#voiceSettingsBox .pick { margin: 12px 0 0; }
+#voiceSettingsBox .pickRow select { min-width: 0; flex: 1; }
+.voiceMovedHint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.linkBtn { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
