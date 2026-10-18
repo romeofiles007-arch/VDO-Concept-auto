@@ -90,6 +90,20 @@ async function openTab(match, key) {
   return tab
 }
 
+/**
+ * Flow ซ่อนปุ่ม Agent เมื่อหน้าแคบ (แบบมือถือ) — แผงข้างของ Chrome กว้างๆ บีบแท็บเหลือ ~350px ได้ (เจอจริง ต.ค. 2026)
+ * → หน้าแคบกว่านี้ ย้ายแท็บ Flow ไปหน้าต่างของตัวเอง (ไม่มีแผงข้าง) ขนาด 1400px
+ */
+const FLOW_MIN_WIDTH = 1100
+async function ensureWideFlow(tab) {
+  const [probe] = await chrome.scripting
+    .executeScript({ target: { tabId: tab.id }, func: () => window.innerWidth })
+    .catch(() => [])
+  const width = probe?.result
+  if (!width || width >= FLOW_MIN_WIDTH) return
+  await chrome.windows.create({ tabId: tab.id, width: 1400, height: 900, focused: false })
+}
+
 /** เปิด Flow เป็นภาษาอังกฤษ — ตัวขับอ่านข้อความบนปุ่มภาษาอังกฤษ */
 function withEnglish(url) {
   const u = new URL(url)
@@ -104,6 +118,7 @@ async function handleJob(job) {
 
   // Flow: เริ่มจากหน้าแรกทุกครั้ง → content script กด New project ได้ project ใหม่ต่อคลิป
   if (agent === 'flow' && job.kind === 'generate-images') {
+    await ensureWideFlow(tab) // ก่อนโหลดหน้าใหม่ — หน้าที่โหลดในหน้าต่างกว้างได้ช่องพิมพ์ที่มีปุ่ม Agent
     // คลิปนี้เคยมี project ใน Flow แล้ว → กลับไป project เดิม (ตัวละครเดิม ไม่เปิด project ใหม่ทุกครั้งที่ลองซ้ำ)
     const url = /^https:\/\/flow\.google\.com\/project\//.test(job.payload.projectUrl ?? '') ? withEnglish(job.payload.projectUrl) : AGENTS.flow.match
     await chrome.tabs.update(tab.id, { url, active: true })

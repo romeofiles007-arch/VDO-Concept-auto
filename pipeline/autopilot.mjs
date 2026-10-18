@@ -29,6 +29,7 @@ import { hasCover } from './lib/cover.mjs'
 import { clipSettings, clipTarget, clipsDir, collectClips, scenes } from './lib/clips.mjs'
 import { kieKey, kieTier } from './lib/kie.mjs'
 import { clipSource, postPrompt, parsePost, savePost, readPost } from './lib/post.mjs'
+import { exportForAutoPost } from './lib/autopost.mjs'
 
 // ── อาร์กิวเมนต์ ──
 const raw = process.argv.slice(2)
@@ -227,7 +228,11 @@ function step(script, args, { onText } = {}) {
 }
 
 // ข้ามบรรทัดท้ายของ stack trace ("Node.js v24…", "    at …") ที่ไม่บอกอะไรผู้ใช้
-const lastLine = (text) => String(text).trim().split(/\r?\n/).filter((l) => l.trim() && !/^Node\.js v\d/.test(l.trim()) && !/^\s+at /.test(l)).pop() ?? ''
+// และ "Assertion failed: …UV_HANDLE_CLOSING…" = Node บน Windows พังตอนปิดโปรแกรมหลัง error จริง (บังสาเหตุจริงไว้)
+const lastLine = (text) =>
+  String(text).trim().split(/\r?\n/)
+    .filter((l) => l.trim() && !/^Node\.js v\d/.test(l.trim()) && !/^\s+at /.test(l) && !/^Assertion failed:.*\bsrc[\\/]win[\\/]/.test(l.trim()))
+    .pop() ?? ''
 
 /** ถาม ChatGPT ผ่านคิวของ bridge — ลองใหม่เมื่อหน้าเว็บค้างหรือ ChatGPT ตอบไม่ได้ */
 async function askChatGPT(prompt, label, { tries = 3, attachments, timeoutMs = 40 * 60_000 } = {}) {
@@ -518,6 +523,14 @@ startPostJob()
 if (postJob) {
   console.log('\n▶ รอชื่อคลิป + คำบรรยายสำหรับโพสต์')
   await postJob
+}
+
+// ส่งเข้าโฟลเดอร์โพสต์อัตโนมัติของ PagePilot (ถ้าตั้ง autoPost.dir ไว้) · พลาดไม่ถือว่าคลิปพัง
+try {
+  const sent = exportForAutoPost(slug, config)
+  if (sent) console.log(`\n📤 ส่งคลิปเข้าโฟลเดอร์โพสต์อัตโนมัติแล้ว: ${sent}`)
+} catch (err) {
+  console.warn(`\n   ส่งคลิปเข้าโฟลเดอร์โพสต์อัตโนมัติไม่สำเร็จ: ${err.message} — ส่งเองได้ด้วย node pipeline/export_autopost.mjs "${slug}"`)
 }
 
 state.current = null

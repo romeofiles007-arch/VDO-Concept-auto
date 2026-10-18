@@ -1237,10 +1237,18 @@ $('startAuto').addEventListener('click', () => {
   startAutopilot({ title, autoTopic })
 })
 
-// ✨ สร้างคลิปใหม่: ช่องหัวข้อจำเรื่องเดิมไว้ กด ▶ ทีไรก็ทำต่อเรื่องเดิม — ปุ่มนี้ล้างเรื่องเดิมแล้วให้ระบบเลือกหัวข้อใหม่ที่ยังไม่เคยทำ
-$('newAuto').addEventListener('click', () => {
+// ✨ เริ่มวิดีโอใหม่: ช่องหัวข้อจำเรื่องเดิมไว้ กด ▶ ทีไรก็ทำต่อเรื่องเดิม — ปุ่มนี้ล้างเรื่องเดิม แล้วพาไปตั้งค่าคลิปใหม่
+// ยังไม่เริ่มทำ (ผู้ใช้เคยกดแล้วระบบเริ่มทันทีทั้งที่ยังไม่ได้ตั้งค่า) — ตั้งเสร็จค่อยกด ▶ ทำคลิปอัตโนมัติ
+$('newAuto').addEventListener('click', async () => {
   $('autoTitle').value = ''
-  startAutopilot({ title: '', autoTopic: true })
+  S.autoTitle = ''
+  autoResume = null // ปุ่ม ▶ จะได้ไม่ทำต่อเรื่องเดิม
+  await save()
+  render()
+  renderTopicMode()
+  setStatus('autoStatus', 'เริ่มวิดีโอใหม่ — เลือกหัวข้อและตั้งค่าด้านล่าง เสร็จแล้วกด ▶ ทำคลิปอัตโนมัติ', 'ok')
+  $('autoTopicBlock').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  if ((S.autoTopicMode ?? 'manual') === 'manual') $('autoTitle').focus({ preventScroll: true })
 })
 
 async function startAutopilot({ title, autoTopic }) {
@@ -2890,7 +2898,7 @@ for (const [id, key] of [['titleLang', 'titleLanguage'], ['voLang', 'language'],
   })
 }
 
-// ── วาดหน้า ──
+// ── วาดหน้า ──
 
 /**
  * ขั้นที่ยังทำไม่ได้: ไม่ซ่อนทั้งขั้น — แสดงหัวขั้น (รูปสัตว์ · ป้ายแผนก) แบบพับไว้ พร้อมบอกว่าต้องทำอะไรก่อน

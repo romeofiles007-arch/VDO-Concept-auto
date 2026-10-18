@@ -121,7 +121,13 @@ const agentOn = () => SEL.agentChip()?.getAttribute('aria-pressed') === 'true'
  */
 async function setAgent(on) {
   for (let attempt = 0; attempt < 6 && agentOn() !== on; attempt++) {
-    const chip = await waitFor(() => (visible(SEL.agentChip()) ? SEL.agentChip() : null), { label: 'ปุ่ม Agent' })
+    const chip = await waitFor(() => (visible(SEL.agentChip()) ? SEL.agentChip() : null), { label: 'ปุ่ม Agent' }).catch((err) => {
+      // Flow ซ่อนปุ่ม Agent เมื่อหน้าแคบแบบมือถือ (เช่นแผงข้างของ Chrome กว้างจนบีบแท็บ)
+      if (window.innerWidth < 1000) {
+        throw new Error(`หน้า Google Flow แคบเกินไป (${window.innerWidth}px) Flow จึงซ่อนปุ่ม Agent — ย่อแผงข้างของ Chrome หรือลากแท็บ Flow ออกเป็นหน้าต่างแยกให้กว้างกว่า 1000px แล้วกดทำต่อ`)
+      }
+      throw err
+    })
     if (attempt % 2 === 0) chip.click()
     else realClick(chip)
     await waitFor(() => agentOn() === on, { timeout: 2500, label: 'สลับโหมด Agent' }).catch(() => null)

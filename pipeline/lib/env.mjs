@@ -1,15 +1,22 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseEnv } from 'node:util'
 import { ROOT } from './config.mjs'
 
 let loaded = false
 
-/** โหลด .env เข้า process.env — ค่าที่ตั้งไว้ใน shell อยู่แล้วชนะเสมอ */
+/**
+ * โหลด .env เข้า process.env — ค่าใน .env ชนะตัวแปรของ Windows/shell
+ * (แผงข้างบันทึก key ลง .env · เคยเจอ key เก่าที่ตั้งเป็นตัวแปร Windows ไว้ทับ key ใหม่ จนขึ้น "ไม่มีสิทธิ์" ทั้งที่ key ใหม่ใช้ได้)
+ */
 export function loadEnv() {
   if (loaded) return
   loaded = true
   const file = join(ROOT, '.env')
-  if (existsSync(file)) process.loadEnvFile(file) // Node 20.12+ / 24
+  if (!existsSync(file)) return
+  for (const [name, value] of Object.entries(parseEnv(readFileSync(file, 'utf8')))) {
+    if (value.trim()) process.env[name] = value
+  }
 }
 
 const PROVIDER_KEYS = {

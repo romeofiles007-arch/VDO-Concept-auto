@@ -16,7 +16,7 @@
     "_genre": "แนวของหัวข้อที่ให้ AI เสนอ — mix (สุ่มคนละแนวทุกหัวข้อ) หรือชื่อแนวจาก GENRES ใน extension/prompts.js"
   },
   "tts": {
-    "engine": "edge",
+    "engine": "elevenlabs",
     "_options": [
       "voxcpm",
       "my-voice",
@@ -63,8 +63,8 @@
     },
     "elevenlabs": {
       "_note": "ElevenLabs — เสียงที่โคลนไว้ในบัญชี อ้างด้วย Voice ID · ต้องมี ELEVENLABS_API_KEY ใน .env · ใช้เครดิตตามจำนวนตัวอักษรของบท",
-      "voiceId": "",
-      "voiceName": "",
+      "voiceId": "7pvyWmzdRPOd6aNRqaHi",
+      "voiceName": "Khathawuth V1",
       "model": "eleven_v4",
       "_model": "eleven_v4 (รองรับไทย ล่าสุด) | eleven_v3 (รองรับไทย) | eleven_multilingual_v2 | eleven_flash_v2_5 (สองรุ่นหลังไม่รองรับไทย)"
     },
@@ -89,9 +89,9 @@
     "characterLockRefs": true
   },
   "clips": {
-    "provider": "off",
+    "provider": "kie",
     "_provider": "off (ภาพนิ่งซูม/เลื่อนกล้องด้วย ffmpeg) | kie (ม้าน้ำส่งภาพบางฉากไป Kie API แบบมีค่าใช้จ่าย)",
-    "coveragePercent": 60,
+    "coveragePercent": 80,
     "_coveragePercent": "สัดส่วนฉากทั้งเรื่องที่จะให้ Kie ทำเป็นแอนิเมชัน: 20 | 60 | 80 | 100 (ChatGPT เลือกฉากสำคัญและกระจายทั่วเรื่อง)",
     "tier": "cheap",
     "_tier": "ระดับโมเดล Kie: cheap = ถูก Seedance 1.5 Pro 480p (≈8.75 เครดิต/ฉาก) | mid = พอใช้ Hailuo 2.3 768p (30) | pro = เก่ง Kling 2.6 (55)"
@@ -103,7 +103,7 @@
     "bgmDb": -21,
     "bgmFile": "",
     "crossfadeOnChapter": true,
-    "motion": "lively",
+    "motion": "gentle",
     "_motion": "off (ภาพนิ่ง) | gentle (ซูม/เลื่อนกล้องเบาๆ ทุกช็อต) | lively (ขยับมาก) — ไม่ใช้ AI ทำในเครื่องด้วย ffmpeg",
     "orientation": "portrait",
     "_orientation": "landscape (16:9, 1920x1080) | portrait (9:16, 1080x1920) — ภาพใน Flow ใช้ตามนี้ ตอนตัดต่ออ่านจากภาพจริง",
@@ -111,5 +111,9 @@
       "style": "active-yellow"
     },
     "_subtitles": "style: off | black | white | yellow (มีกล่องพื้นทึบ) | active-yellow | active-red | active-cyan | active-pop | active-purple | active-green (คาราโอเกะ ไฮไลต์คำที่พูด)"
+  },
+  "autoPost": {
+    "dir": "",
+    "_dir": "โฟลเดอร์ใน Google Drive for desktop ที่ PagePilot ตรวจ เช่น G:\\My Drive\\PagePilot Auto Post — คลิปที่ทำเสร็จจะถูกคัดลอกไปเอง (เว้นว่าง = ไม่ส่ง)"
   }
 }
