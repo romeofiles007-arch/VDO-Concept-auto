@@ -1867,7 +1867,7 @@ async function loadChecklist() {
       ? { id: 'native', group: 'พื้นฐาน', label: 'โปรแกรมในเครื่อง (bridge)', need: 'required', status: 'ok', detail: app.url }
       : {
           id: 'native', group: 'พื้นฐาน', label: 'โปรแกรมในเครื่อง (bridge)', need: 'required', status: 'missing', detail: app?.error ?? 'เปิดไม่ได้',
-          fix: { text: 'ลง Node.js ก่อน (ถ้ายังไม่มี) แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรเจกต์ จากนั้นปิดเปิด Chrome', url: 'https://nodejs.org/' },
+          fix: { text: 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรแกรม Cartoon Auto — ลง Node.js, ffmpeg และเชื่อม Chrome ให้เองทั้งหมด รอจนขึ้นหน้าต่างสรุป แล้วกด ↻ ตรวจใหม่ (ไม่ต้องปิด Chrome)' },
         },
   )
   const [chat, flow, machine] = await Promise.all([

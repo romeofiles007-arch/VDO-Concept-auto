@@ -1,0 +1,4 @@
+# ไฟล์ Windows ต้องเป็น CRLF เสมอ — cmd.exe อ่าน .bat ที่ขึ้นบรรทัดแบบ LF ผิด (goto/label พัง) รวมถึงตอนลูกค้าดาวน์โหลด ZIP จาก GitHub
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

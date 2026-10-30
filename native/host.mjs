@@ -11,12 +11,14 @@
  * (ลงทะเบียนด้วย ติดตั้งครั้งแรก.bat)
  */
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, appendFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// realpath: โฟลเดอร์ที่ชื่อมี & ^ % ! ลงทะเบียนผ่าน junction (ดู native/install.mjs) — bridge ต้องรันจาก path จริงของโฟลเดอร์
+const ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'))
+const NODE = realpathSync(process.execPath)
 const ENV_FILE = join(ROOT, '.env')
 const START_TIMEOUT_MS = 20_000
 
@@ -78,7 +80,7 @@ async function healthy(port) {
  * process ที่ WMI สร้างไม่ได้เป็นลูกของ host จึงรันค้างต่อได้ และซ่อนหน้าต่างได้ (ShowWindow = 0)
  */
 function startBridge() {
-  const cmd = `"${process.execPath}" "${join(ROOT, 'bridge', 'server.js')}"`.replace(/'/g, "''")
+  const cmd = `"${NODE}" "${join(ROOT, 'bridge', 'server.js')}"`.replace(/'/g, "''")
   const ps = [
     `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }`,
     `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${cmd}'; CurrentDirectory = '${ROOT.replace(/'/g, "''")}'; ProcessStartupInformation = $si }`,
@@ -105,6 +107,19 @@ async function ensure() {
     }
   }
   return { ok: true, port, token, url: `http://127.0.0.1:${port}/` }
+}
+
+// เปิดโปรแกรม.bat / shortcut "Cartoon Auto" เรียก `node host.mjs --open` — เปิด bridge แบบซ่อน (ถ้ายังไม่เปิด) แล้วเปิดหน้าเว็บ
+// Chrome ไม่เคยส่ง --open มา (ส่งแค่ origin ของ extension กับ --parent-window)
+if (process.argv.includes('--open')) {
+  const r = await ensure()
+  if (!r.ok) {
+    console.error(`เปิดโปรแกรมไม่สำเร็จ: ${r.error}`)
+    process.exit(1)
+  }
+  spawn('explorer.exe', [r.url], { detached: true, stdio: 'ignore' }).unref()
+  console.log(`เปิดแล้ว: ${r.url}`)
+  process.exit(0)
 }
 
 try {

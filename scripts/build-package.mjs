@@ -37,6 +37,7 @@ const EXCLUDE = [
   /^DESIGN\.md$/,
   /^PRODUCT\.md$/,
   /^extension\/agents\/.*PROMPT.*\.md$/,
+  /(^|\/)desktop\.ini$/i, // ไฟล์ตกแต่งโฟลเดอร์ของ Windows
 ]
 
 /** ไฟล์ข้อมูลที่ git ติดตาม แต่เป็นของเรา — ลูกค้าได้ค่าว่างแทน */
@@ -158,21 +159,47 @@ writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   'Cartoon Auto — ระบบทำคลิปการ์ตูนอัตโนมัติ',
   '',
   'สิ่งที่ต้องมี: Windows 10/11 · Google Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้',
-  '(ไม่ต้องติดตั้ง Node.js / ffmpeg / Python — แถมมาในโฟลเดอร์ runtime แล้ว)',
+  '(ไม่ต้องติดตั้ง Node.js / ffmpeg / Python เอง — แถมมาในโฟลเดอร์ runtime แล้ว)',
   '',
   'วิธีติดตั้ง (ครั้งเดียว)',
-  '  1. วางโฟลเดอร์นี้ไว้ที่ไหนก็ได้ เช่น D:\\CartoonAuto (อย่าวางใน Downloads ที่อาจถูกลบ)',
-  '  2. ดับเบิลคลิก ติดตั้งครั้งแรก.bat — Chrome จะเปิดหน้า extensions ให้เอง',
-  '  3. ทำตามขั้นที่ขึ้นในหน้าต่างดำ (เปิด Developer mode → Load unpacked → วางที่อยู่ที่คัดลอกไว้ให้)',
-  '  4. กดไอคอน Cartoon Auto บนแถบ Chrome — โปรแกรมเปิดเอง',
+  '  1. แตกไฟล์ zip ก่อน (คลิกขวา → แตกไฟล์ทั้งหมด / Extract All) วางไว้ที่ไหนก็ได้ เช่น D:\\CartoonAuto',
+  '     อย่าเปิดจากในไฟล์ zip โดยตรง และอย่าวางใน Downloads ที่อาจถูกลบ',
+  '  2. ดับเบิลคลิก ติดตั้งครั้งแรก.bat — ทุกอย่างลงเอง ไม่ต้องกด next รอจนขึ้นหน้าต่างสรุป',
+  '     (ถ้า Windows ขึ้น "Windows protected your PC" ให้กด More info → Run anyway)',
+  '  3. ขั้นเดียวที่ต้องทำเองใน Chrome (Chrome ไม่ยอมให้โปรแกรมทำแทน) — ตัวติดตั้งเปิดหน้าให้และบอกทีละขั้น:',
+  '     เปิด Developer mode → Load unpacked → กด Ctrl+V (คัดลอกที่อยู่ไว้ให้แล้ว) → Select Folder',
+  '     ถ้าเคยโหลด Cartoon Auto จากโฟลเดอร์นี้ไว้แล้ว ขั้นนี้ข้ามไปเอง',
+  '  4. กดไอคอน Cartoon Auto บนแถบ Chrome — โปรแกรมเปิดเอง → ในแผงข้างกด "ตรวจความพร้อม"',
   '',
-  'ย้ายโฟลเดอร์ทีหลัง → ดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง',
+  'ย้ายโฟลเดอร์ทีหลัง / มีอะไรพัง → ดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง (รันซ้ำได้ งานไม่หาย)',
   'อัปเดตเป็นรุ่นใหม่ → ดับเบิลคลิก ปิดโปรแกรม.bat ก่อน แล้วแตกไฟล์รุ่นใหม่วางทับโฟลเดอร์เดิม (เลือก "แทนที่ไฟล์")',
-  '                    การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย',
+  '                    แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง — การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย',
   '',
   `รุ่น ${commit}${dirty ? ' (+ งานที่ยังไม่ commit)' : ''} · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`,
   '',
 ].join('\r\n'))
+
+// ── ตัวติดตั้งต้องอยู่ครบและอ่านได้บนเครื่องลูกค้า ──
+step('ตรวจไฟล์ตัวติดตั้ง')
+{
+  const bad = []
+  for (const bat of ['ติดตั้งครั้งแรก.bat', 'เปิดโปรแกรม.bat', 'ปิดโปรแกรม.bat']) {
+    // cmd.exe อ่าน .bat ที่ขึ้นบรรทัดแบบ LF ผิด (.gitattributes บังคับ CRLF ไว้แล้ว — กันไว้อีกชั้น)
+    if (/(^|[^\r])\n/.test(readFileSync(join(OUT, bat), 'latin1'))) bad.push(`${bat} ไม่ได้ขึ้นบรรทัดแบบ CRLF`)
+  }
+  // ตัวติดตั้งหลักต้องเป็น ASCII ล้วน — ภาษาไทยใน .bat ทำให้ cmd บางรุ่นรันคำสั่งเพี้ยน (ข้อความไทยอยู่ใน bootstrap.ps1 / install.mjs)
+  if (readFileSync(join(OUT, 'ติดตั้งครั้งแรก.bat')).some((b) => b > 0x7f)) bad.push('ติดตั้งครั้งแรก.bat มีอักษรที่ไม่ใช่ ASCII')
+  const ps = readFileSync(join(OUT, 'native', 'bootstrap.ps1'))
+  if (!(ps[0] === 0xef && ps[1] === 0xbb && ps[2] === 0xbf)) bad.push('native/bootstrap.ps1 ต้องเป็น UTF-8 แบบมี BOM (PowerShell 5 อ่านภาษาไทยเพี้ยน)')
+  for (const f of ['native/install.mjs', 'native/host.mjs', 'native/extension-id.txt']) if (!existsSync(join(OUT, f))) bad.push(`ไม่มี ${f}`)
+  if (existsSync(join(OUT, 'native', 'host.bat')) || readdirSync(join(OUT, 'native')).some((f) => f.endsWith('.json'))) bad.push('native/ มีไฟล์ลงทะเบียนของเครื่องนี้ติดไป')
+  if (bad.length) {
+    rmSync(OUT, { recursive: true, force: true })
+    console.error(`\n❌ หยุด — ตัวติดตั้งในแพ็กเกจไม่พร้อม (ลบแพ็กเกจทิ้งแล้ว):\n  ${bad.join('\n  ')}`)
+    process.exit(1)
+  }
+  console.log('  ตัวติดตั้งครบ')
+}
 
 // ── 3. สแกนหาความลับของเครื่องนี้ในแพ็กเกจ ──
 step('ตรวจว่าไม่มี API key / token ของเราติดไป')

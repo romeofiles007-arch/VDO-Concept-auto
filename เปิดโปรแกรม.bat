@@ -1,21 +1,14 @@
 @echo off
-chcp 65001 >nul
+rem Cartoon Auto - open the program: starts the local bridge (hidden) if it is not running, then opens its page.
+rem Same start-up path the Chrome extension uses (native\host.mjs). Close it with the "close program" .bat.
+rem Keep this file ASCII-only: cmd.exe misreads UTF-8 Thai text in .bat files on some Windows builds.
 cd /d "%~dp0"
-
-rem ถ้า bridge เปิดอยู่แล้ว แค่เปิดหน้าเว็บ
-curl -s -m 2 http://127.0.0.1:8765/health >nul 2>&1
-if %errorlevel%==0 goto open
-
-echo กำลังเปิดโปรแกรม... (หน้าต่าง "Cartoon Bridge" ต้องเปิดค้างไว้ระหว่างทำงาน)
-start "Cartoon Bridge" /min cmd /k node bridge\server.js
-
-for /l %%i in (1,1,30) do (
-  timeout /t 1 /nobreak >nul
-  curl -s -m 2 http://127.0.0.1:8765/health >nul 2>&1 && goto open
-)
-echo เปิดโปรแกรมไม่สำเร็จ ดูข้อความในหน้าต่าง Cartoon Bridge
-pause
-exit /b 1
-
-:open
-start "" http://127.0.0.1:8765/
+set "NODE="
+if exist "%~dp0runtime\node\node.exe" set "NODE=%~dp0runtime\node\node.exe"
+if not defined NODE for %%N in (node.exe) do if not "%%~$PATH:N"=="" set "NODE=%%~$PATH:N"
+rem No Node.js at all = never installed here: run the one-click installer first.
+if not defined NODE powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0native\bootstrap.ps1"
+if not defined NODE if exist "%~dp0runtime\node\node.exe" set "NODE=%~dp0runtime\node\node.exe"
+if not defined NODE exit /b 1
+"%NODE%" "%~dp0native\host.mjs" --open
+if errorlevel 1 pause

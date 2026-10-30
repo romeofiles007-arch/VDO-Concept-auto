@@ -12,7 +12,8 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 export const RUNTIME = join(ROOT, 'runtime')
 for (const dir of ['ffmpeg', 'node']) {
   const p = join(RUNTIME, dir)
-  if (existsSync(p) && !(process.env.PATH ?? '').split(';').includes(p)) process.env.PATH = `${p};${process.env.PATH ?? ''}`
+  // ใส่แม้ยังไม่มีโฟลเดอร์ — ตัวติดตั้งอาจดาวน์โหลดมาวางทีหลังขณะ bridge เปิดอยู่ (เครื่องพัฒนาไม่มี runtime/ ก็ไม่มีผล)
+  if (!(process.env.PATH ?? '').split(';').includes(p)) process.env.PATH = `${p};${process.env.PATH ?? ''}`
 }
 
 /**

@@ -50,13 +50,13 @@ export async function checklist({ connected } = {}) {
     id: 'node', group: 'พื้นฐาน', label: 'Node.js 20 ขึ้นไป', need: 'required',
     status: nodeMajor >= 20 ? 'ok' : 'missing',
     detail: `ตอนนี้ ${process.version}`,
-    fix: nodeMajor >= 20 ? null : { text: 'ลงเวอร์ชัน LTS ใหม่ แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง', url: 'https://nodejs.org/' },
+    fix: nodeMajor >= 20 ? null : { text: 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด Node.js รุ่นใหม่ให้เอง' },
   })
   add({
     id: 'ffmpeg', group: 'พื้นฐาน', label: 'ffmpeg (ตัดต่อวิดีโอ แปลงเสียง)', need: 'required',
     status: ffmpeg && ffprobe ? 'ok' : 'missing',
     detail: ffmpeg ? ffmpeg.replace(/ Copyright.*/, '') : 'ไม่พบคำสั่ง ffmpeg / ffprobe ในเครื่อง',
-    fix: ffmpeg && ffprobe ? null : { text: 'เปิด PowerShell แล้วรันคำสั่งนี้ จากนั้นปิดเปิด Chrome', command: 'winget install Gyan.FFmpeg', url: 'https://www.gyan.dev/ffmpeg/builds/' },
+    fix: ffmpeg && ffprobe ? null : { text: 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด ffmpeg ให้เอง แล้วกดตรวจใหม่' },
   })
   const blueprint = join(ROOT, config.blueprint)
   add({
@@ -96,17 +96,19 @@ export async function checklist({ connected } = {}) {
 
   // ── เสียงพากย์ ──
   const venv = existsSync(ttsPython(config))
+  // ระบบเสียงในเครื่อง (~5 GB + การ์ดจอ) จำเป็นเฉพาะเสียงของเราเอง — Edge มี Python + edge-tts แถมใน runtime/ ส่วน ElevenLabs/Gemini ใช้ key
+  const localVoice = !['edge', 'gemini', 'elevenlabs'].includes(config.tts.engine)
   const packages = [['f5_tts_th', 'F5-TTS-THAI'], ['faster_whisper', 'Whisper'], ['edge_tts', 'Edge TTS'], ['torch', 'PyTorch']]
   const lacking = packages.filter(([dir]) => !sitePackage(dir)).map(([, name]) => name)
   add({
-    id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (tts\\.venv)', need: ['gemini', 'elevenlabs'].includes(config.tts.engine) ? 'optional' : 'required',
+    id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (tts\\.venv)', need: localVoice ? 'required' : 'optional',
     status: venv && !lacking.length ? 'ok' : 'missing',
     detail: !venv ? 'ยังไม่ได้ติดตั้ง — ใช้สร้างเสียงไทย เทรนเสียง ถอดเสียง และเสียง Edge' : lacking.length ? `ยังขาด ${lacking.join(', ')}` : 'F5-TTS-THAI · Whisper · Edge TTS พร้อม',
     fix: venv && !lacking.length ? null : { text: 'กดปุ่มนี้เพื่อติดตั้ง (ดาวน์โหลด ~5 GB ใช้เวลา 10–30 นาที) หรือรันคำสั่งในโฟลเดอร์โปรเจกต์', command: SETUP_CMD, action: 'setupTts' },
   })
   if (!venv || lacking.includes('F5-TTS-THAI')) {
     add({
-      id: 'python', group: 'เสียงพากย์', label: 'Python 3.10 (ใช้ตอนติดตั้งระบบเสียง)', need: 'required',
+      id: 'python', group: 'เสียงพากย์', label: 'Python 3.10 (ใช้ตอนติดตั้งระบบเสียง)', need: localVoice ? 'required' : 'optional',
       status: py310 ? 'ok' : 'missing',
       detail: py310 ?? 'ไม่พบ py -3.10',
       fix: py310 ? null : { text: 'ดาวน์โหลด Windows installer (64-bit) ติ๊ก "py launcher" แล้วติดตั้ง', url: 'https://www.python.org/downloads/release/python-31011/' },
