@@ -8,7 +8,7 @@
  *   3. ตอบ { ok, port, token } ให้ extension เอาไปตั้งค่าเอง ผู้ใช้ไม่ต้องคัดลอกรหัส
  *
  * มีแค่ extension ที่ ID ตรงกับ allowed_origins ใน manifest ของ host เท่านั้นที่เรียกได้
- * (ลงทะเบียนด้วย ติดตั้งครั้งแรก.bat)
+ * (ลงทะเบียนด้วย setup.exe)
  */
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, appendFileSync, writeFileSync, realpathSync } from 'node:fs'

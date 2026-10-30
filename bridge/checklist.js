@@ -50,13 +50,13 @@ export async function checklist({ connected } = {}) {
     id: 'node', group: 'พื้นฐาน', label: 'Node.js 20 ขึ้นไป', need: 'required',
     status: nodeMajor >= 20 ? 'ok' : 'missing',
     detail: `ตอนนี้ ${process.version}`,
-    fix: nodeMajor >= 20 ? null : { text: 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด Node.js รุ่นใหม่ให้เอง' },
+    fix: nodeMajor >= 20 ? null : { text: 'ดับเบิลคลิก setup.exe ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด Node.js รุ่นใหม่ให้เอง' },
   })
   add({
     id: 'ffmpeg', group: 'พื้นฐาน', label: 'ffmpeg (ตัดต่อวิดีโอ แปลงเสียง)', need: 'required',
     status: ffmpeg && ffprobe ? 'ok' : 'missing',
     detail: ffmpeg ? ffmpeg.replace(/ Copyright.*/, '') : 'ไม่พบคำสั่ง ffmpeg / ffprobe ในเครื่อง',
-    fix: ffmpeg && ffprobe ? null : { text: 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด ffmpeg ให้เอง แล้วกดตรวจใหม่' },
+    fix: ffmpeg && ffprobe ? null : { text: 'ดับเบิลคลิก setup.exe ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด ffmpeg ให้เอง แล้วกดตรวจใหม่' },
   })
   const blueprint = join(ROOT, config.blueprint)
   add({

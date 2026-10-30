@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ตัวติดตั้ง Cartoon Auto — ติดตั้งครั้งแรก.bat → native/bootstrap.ps1 (หา/ลง Node.js) → ไฟล์นี้
+ * ตัวติดตั้ง Cartoon Auto — setup.exe (native/setup.cs) หรือ ติดตั้งครั้งแรก.bat → native/bootstrap.ps1 หา/ลง Node.js → ไฟล์นี้
  * ลูกค้าดับเบิลคลิกครั้งเดียว ไม่ต้องกด next — ทุกขั้นเงียบ รันซ้ำได้ทุกเมื่อ (ย้ายโฟลเดอร์ / อัปเดต / ซ่อม)
  *
  *   1. ของที่โปรแกรมต้องใช้: ffmpeg + ffprobe, Python + edge-tts (เสียง Edge)
@@ -188,7 +188,7 @@ async function ensureFfmpeg() {
     const ok = probe(join(local, 'ffmpeg.exe'), ['-version'])
     report('ffmpeg', !!ok, ok ? 'ดาวน์โหลดมาไว้ใน runtime\\ffmpeg' : 'ดาวน์โหลดแล้วแต่รันไม่ได้', 'โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\ffmpeg\\ffmpeg.exe')
   } catch (err) {
-    report('ffmpeg', false, err.message, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง')
+    report('ffmpeg', false, err.message, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง')
   }
 }
 
@@ -244,10 +244,10 @@ async function ensureEdgeTts() {
     }
     run(['-m', 'pip', 'install', '-q', '--no-warn-script-location', 'edge-tts'])
     const ok = hasEdgeTts(python)
-    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', ok, ok ? 'ลง Python + edge-tts ไว้ใน runtime\\python' : 'ลงแล้วแต่ import edge_tts ไม่ได้', 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง')
+    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', ok, ok ? 'ลง Python + edge-tts ไว้ใน runtime\\python' : 'ลงแล้วแต่ import edge_tts ไม่ได้', 'ดับเบิลคลิก setup.exe อีกครั้ง')
   } catch (err) {
     const why = String(err.stderr ?? '').trim().split(/\r?\n/).pop() || err.message
-    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', false, why, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง (หรือเลือกเสียง ElevenLabs/Gemini ในแผงข้างแทน)')
+    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', false, why, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง (หรือเลือกเสียง ElevenLabs/Gemini ในแผงข้างแทน)')
   }
 }
 
@@ -448,7 +448,7 @@ function copyToClipboard(text) {
 async function ensureExtension() {
   const label = 'Extension Cartoon Auto ใน Chrome'
   const chrome = chromeExe()
-  if (!chrome) return report(label, false, 'ไม่พบ Google Chrome ในเครื่องนี้', 'ติดตั้ง Chrome จาก https://www.google.com/chrome แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง')
+  if (!chrome) return report(label, false, 'ไม่พบ Google Chrome ในเครื่องนี้', 'ติดตั้ง Chrome จาก https://www.google.com/chrome แล้วดับเบิลคลิก setup.exe อีกครั้ง')
 
   let ext = loadedExtension()
   if (ext?.here && !ext.disabled) return report(label, true, 'โหลดไว้แล้ว')
@@ -526,7 +526,7 @@ try {
   register()
   report('ลงทะเบียนตัวเชื่อม Chrome', true, hostPath === join(DIR, 'host.bat') ? '' : `ผ่าน ${dirname(dirname(hostPath))} (ชื่อโฟลเดอร์มีอักษรพิเศษ)`)
 } catch (err) {
-  report('ลงทะเบียนตัวเชื่อม Chrome', false, err.message, 'ดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง (ไม่ต้อง Run as administrator)')
+  report('ลงทะเบียนตัวเชื่อม Chrome', false, err.message, 'ดับเบิลคลิก setup.exe อีกครั้ง (ไม่ต้อง Run as administrator)')
 }
 
 step('ทดสอบเปิดโปรแกรมแบบเดียวกับที่ Chrome เปิด')
@@ -582,7 +582,7 @@ if (!failed.length) {
     '',
     ...failed.map((r) => `✗ ${r.label}${r.detail ? `: ${r.detail}` : ''}${r.fix ? `\n   → ${r.fix}` : ''}`),
     '',
-    'แก้แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้งได้เลย (รันซ้ำได้ ไม่มีอะไรเสีย)',
+    'แก้แล้วดับเบิลคลิก setup.exe อีกครั้งได้เลย (รันซ้ำได้ ไม่มีอะไรเสีย)',
   ].join('\n')
 }
 console.log(summary)

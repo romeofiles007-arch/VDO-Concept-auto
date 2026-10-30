@@ -46,7 +46,7 @@ function explain(stderr) {
 function followUps(files) {
   const notes = []
   if (files.some((f) => /^tts\/requirements\.txt$|^scripts\/setup-tts\.ps1$/.test(f))) notes.push('ระบบเสียงในเครื่องมีของใหม่ — หลังอัปเดตกด "ตรวจความพร้อม" แล้วติดตั้งเพิ่ม')
-  if (files.some((f) => /^native\//.test(f))) notes.push('ตัวเชื่อม Chrome เปลี่ยน — หลังอัปเดตดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง')
+  if (files.some((f) => /^native\//.test(f))) notes.push('ตัวเชื่อม Chrome เปลี่ยน — หลังอัปเดตดับเบิลคลิก setup.exe อีกครั้ง')
   if (files.some((f) => /^extension\/manifest\.json$/.test(f))) notes.push('สิทธิ์ของ extension เปลี่ยน — Chrome อาจถามยืนยันสิทธิ์ใหม่')
   return notes
 }

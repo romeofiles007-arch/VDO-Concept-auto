@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * สร้างแพ็กเกจส่งลูกค้า — ลูกค้าคัดลอกโฟลเดอร์ไปวาง ดับเบิลคลิก ติดตั้งครั้งแรก.bat แล้วใช้ได้เลย
+ * สร้างแพ็กเกจส่งลูกค้า — ลูกค้าแตก zip ดับเบิลคลิก setup.exe แล้วใช้ได้เลย
  *
  *   node scripts/build-package.mjs            → dist/CartoonAuto/
  *   node scripts/build-package.mjs --zip      → dist/CartoonAuto/ + dist/CartoonAuto.zip
@@ -31,7 +31,7 @@ const zip = process.argv.includes('--zip')
 const EXCLUDE = [
   /^\.impeccable\//,
   /^docs\/design\//,
-  /^scripts\/(test-|preview-|selftest|build-icons|build-package)/,
+  /^scripts\/(test-|preview-|selftest|build-icons|build-package|build-setup)/,
   /^\.claude\//,
   /^Ex sample audio/,
   /^DESIGN\.md$/,
@@ -65,6 +65,10 @@ function which(bin) {
     return null
   }
 }
+
+// ── setup.exe ต้องตรงกับ native/setup.cs เสมอ — คอมไพล์ใหม่ก่อนคัดลอก ──
+step('คอมไพล์ setup.exe')
+execFileSync(process.execPath, [join(ROOT, 'scripts', 'build-setup.mjs')], { stdio: 'inherit' })
 
 // ── เริ่มจากโฟลเดอร์ว่าง ──
 rmSync(OUT, { recursive: true, force: true })
@@ -164,16 +168,17 @@ writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   'วิธีติดตั้ง (ครั้งเดียว)',
   '  1. แตกไฟล์ zip ก่อน (คลิกขวา → แตกไฟล์ทั้งหมด / Extract All) วางไว้ที่ไหนก็ได้ เช่น D:\\CartoonAuto',
   '     อย่าเปิดจากในไฟล์ zip โดยตรง และอย่าวางใน Downloads ที่อาจถูกลบ',
-  '  2. ดับเบิลคลิก ติดตั้งครั้งแรก.bat — ทุกอย่างลงเอง ไม่ต้องกด next รอจนขึ้นหน้าต่างสรุป',
+  '  2. ดับเบิลคลิก setup.exe — ทุกอย่างลงเอง ไม่ต้องกด next รอจนขึ้นหน้าต่างสรุป',
   '     (ถ้า Windows ขึ้น "Windows protected your PC" ให้กด More info → Run anyway)',
   '  3. ขั้นเดียวที่ต้องทำเองใน Chrome (Chrome ไม่ยอมให้โปรแกรมทำแทน) — ตัวติดตั้งเปิดหน้าให้และบอกทีละขั้น:',
   '     เปิด Developer mode → Load unpacked → กด Ctrl+V (คัดลอกที่อยู่ไว้ให้แล้ว) → Select Folder',
   '     ถ้าเคยโหลด Cartoon Auto จากโฟลเดอร์นี้ไว้แล้ว ขั้นนี้ข้ามไปเอง',
   '  4. กดไอคอน Cartoon Auto บนแถบ Chrome — โปรแกรมเปิดเอง → ในแผงข้างกด "ตรวจความพร้อม"',
   '',
-  'ย้ายโฟลเดอร์ทีหลัง / มีอะไรพัง → ดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง (รันซ้ำได้ งานไม่หาย)',
+  'ย้ายโฟลเดอร์ทีหลัง / มีอะไรพัง → ดับเบิลคลิก setup.exe อีกครั้ง (รันซ้ำได้ งานไม่หาย)',
+  'ถ้าโปรแกรมป้องกันไวรัสบล็อก setup.exe → ดับเบิลคลิก ติดตั้งครั้งแรก.bat แทน (ทำงานเหมือนกัน)',
   'อัปเดตเป็นรุ่นใหม่ → ดับเบิลคลิก ปิดโปรแกรม.bat ก่อน แล้วแตกไฟล์รุ่นใหม่วางทับโฟลเดอร์เดิม (เลือก "แทนที่ไฟล์")',
-  '                    แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat อีกครั้ง — การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย',
+  '                    แล้วดับเบิลคลิก setup.exe อีกครั้ง — การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย',
   '',
   `รุ่น ${commit}${dirty ? ' (+ งานที่ยังไม่ commit)' : ''} · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`,
   '',
@@ -191,7 +196,9 @@ step('ตรวจไฟล์ตัวติดตั้ง')
   if (readFileSync(join(OUT, 'ติดตั้งครั้งแรก.bat')).some((b) => b > 0x7f)) bad.push('ติดตั้งครั้งแรก.bat มีอักษรที่ไม่ใช่ ASCII')
   const ps = readFileSync(join(OUT, 'native', 'bootstrap.ps1'))
   if (!(ps[0] === 0xef && ps[1] === 0xbb && ps[2] === 0xbf)) bad.push('native/bootstrap.ps1 ต้องเป็น UTF-8 แบบมี BOM (PowerShell 5 อ่านภาษาไทยเพี้ยน)')
-  for (const f of ['native/install.mjs', 'native/host.mjs', 'native/extension-id.txt']) if (!existsSync(join(OUT, f))) bad.push(`ไม่มี ${f}`)
+  for (const f of ['native/install.mjs', 'native/host.mjs', 'native/extension-id.txt', 'setup.exe']) if (!existsSync(join(OUT, f))) bad.push(`ไม่มี ${f}`)
+  // ชื่อ "setup" ทำให้ Windows ขอสิทธิ์ admin เองถ้าไม่มี manifest asInvoker — ลงทะเบียนจะไปผิดบัญชีผู้ใช้
+  if (existsSync(join(OUT, 'setup.exe')) && !readFileSync(join(OUT, 'setup.exe'), 'latin1').includes('asInvoker')) bad.push('setup.exe ไม่มี manifest asInvoker')
   if (existsSync(join(OUT, 'native', 'host.bat')) || readdirSync(join(OUT, 'native')).some((f) => f.endsWith('.json'))) bad.push('native/ มีไฟล์ลงทะเบียนของเครื่องนี้ติดไป')
   if (bad.length) {
     rmSync(OUT, { recursive: true, force: true })
@@ -247,4 +254,4 @@ if (zip) {
   execFileSync('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -Path '${OUT.replace(/'/g, "''")}' -DestinationPath '${zipFile.replace(/'/g, "''")}' -CompressionLevel Optimal`], { stdio: 'inherit' })
   console.log(`✅ ${zipFile} (${mb(statSync(zipFile).size)})`)
 }
-console.log(`\nส่งให้ลูกค้า: ${zip ? `${OUT_NAME}.zip` : `โฟลเดอร์ ${basename(OUT)}`} — ลูกค้าแตกไฟล์/วาง แล้วดับเบิลคลิก ติดตั้งครั้งแรก.bat`)
+console.log(`\nส่งให้ลูกค้า: ${zip ? `${OUT_NAME}.zip` : `โฟลเดอร์ ${basename(OUT)}`} — ลูกค้าแตกไฟล์/วาง แล้วดับเบิลคลิก setup.exe`)
