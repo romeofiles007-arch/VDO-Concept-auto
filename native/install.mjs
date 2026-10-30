@@ -17,6 +17,7 @@
  *   node native/install.mjs --uninstall      ถอนการลงทะเบียน + ลบ shortcut
  *   node native/install.mjs --no-register    เขียนไฟล์ host อย่างเดียว ไม่แตะ registry / Chrome (ใช้ทดสอบ)
  *   --quiet            ไม่มีป๊อปอัป ไม่รอ extension (ใช้ทดสอบ / สคริปต์)
+ *   --no-wait          เปิดหน้า chrome://extensions + คัดลอกที่อยู่ให้ แต่ไม่รอและไม่มีป๊อปอัป (ให้ตัวติดตั้ง Inno Setup เรียกแบบซ่อนหน้าต่าง)
  *   --no-download      ไม่ดาวน์โหลดอะไร (ขาดก็รายงานว่าขาด)
  *   --no-shortcut      ไม่สร้าง shortcut
  *   --shortcut-dir=X   สร้าง shortcut ไว้ที่โฟลเดอร์ X แทนเดสก์ท็อป/Start menu (ใช้ทดสอบ)
@@ -49,6 +50,7 @@ const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const option = (name) => args.find((a) => a.startsWith(`${name}=`))?.slice(name.length + 1)
 const quiet = flag('--quiet')
+const noWait = flag('--no-wait')
 const noDownload = flag('--no-download')
 
 const id = readFileSync(join(DIR, 'extension-id.txt'), 'utf8').trim()
@@ -146,50 +148,62 @@ function probe(cmd, cmdArgs) {
 
 // ════════════════════════ 1. ffmpeg ════════════════════════
 /**
- * แหล่ง ffmpeg + SHA256 ที่ผู้สร้างประกาศไว้
+ * แหล่ง ffmpeg + SHA256 ที่ผู้สร้างประกาศไว้ เรียงตามที่ควรลองก่อน
  * GitHub (BtbN — build แบบ static รุ่น release ล่าสุด) เร็ว · gyan.dev ช้ามาก (~40 KB/s) ใช้เป็นทางสำรอง
+ * ชื่อไฟล์ของ BtbN เคยเปลี่ยนแบบ (ffmpeg-n8.0-latest-win64-gpl-8.0.zip → ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-9.0.zip)
+ * จึงรับทั้งสองแบบ และไม่เอารุ่น -shared (ต้องพก DLL)
  */
-async function ffmpegSource() {
+async function* ffmpegSources() {
   try {
     const base = 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/'
     const sums = (await fetchText(`${base}checksums.sha256`)).split(/\r?\n/).map((l) => l.trim().split(/\s+/)).filter(([h, n]) => /^[0-9a-f]{64}$/i.test(h) && n)
-    const version = (n) => (/^ffmpeg-n([\d.]+)-latest-win64-gpl-[\d.]+\.zip$/.exec(n)?.[1] ?? '').split('.').map(Number)
+    const version = (n) => (/^ffmpeg-n([\d.]+)(?:-latest|-\d+-g[0-9a-f]+)?-win64-gpl-[\d.]+\.zip$/.exec(n)?.[1] ?? '').split('.').filter(Boolean).map(Number)
     const newer = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0); return false }
     const pick = sums.filter(([, n]) => version(n).length).sort(([, a], [, b]) => (newer(version(a), version(b)) ? -1 : 1))[0]
-    if (pick) return { url: base + pick[1], sha256: pick[0].toLowerCase() }
+    if (pick) yield { url: base + pick[1], sha256: pick[0].toLowerCase() }
   } catch {}
   const url = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
   const sha256 = (await fetchText(`${url}.sha256`)).trim().split(/\s+/)[0].toLowerCase()
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('หาไฟล์ ffmpeg สำหรับดาวน์โหลดไม่เจอ')
-  return { url, sha256 }
+  yield { url, sha256 }
 }
 
 async function ensureFfmpeg() {
   const local = join(RUNTIME, 'ffmpeg')
-  const bundled = probe(join(local, 'ffmpeg.exe'), ['-version']) && probe(join(local, 'ffprobe.exe'), ['-version'])
-  if (bundled) return report('ffmpeg', true, 'แถมมากับแพ็กเกจ')
+  const works = () => probe(join(local, 'ffmpeg.exe'), ['-version']) && probe(join(local, 'ffprobe.exe'), ['-version'])
+  if (works()) return report('ffmpeg', true, 'แถมมากับแพ็กเกจ')
   if (probe('ffmpeg', ['-version']) && probe('ffprobe', ['-version'])) return report('ffmpeg', true, 'ใช้ตัวที่ลงไว้ในเครื่อง')
   if (noDownload) return report('ffmpeg', false, 'ไม่พบในเครื่อง', 'รันตัวติดตั้งอีกครั้งโดยต่ออินเทอร์เน็ต')
+  let lastError = null
   try {
     console.log('    ดาวน์โหลด ffmpeg (~190 MB) — ครั้งแรกครั้งเดียว')
-    await withTemp(async (tmp) => {
-      const { url, sha256 } = await ffmpegSource()
-      const zip = join(tmp, 'ffmpeg.zip')
-      const got = await download(url, zip, 'ffmpeg')
-      if (got !== sha256) throw new Error('ไฟล์ ffmpeg ที่ดาวน์โหลดเสีย (SHA256 ไม่ตรง) — ลองใหม่อีกครั้ง')
-      unzip(zip, join(tmp, 'x'))
-      mkdirSync(local, { recursive: true })
-      for (const exe of ['ffmpeg.exe', 'ffprobe.exe']) {
-        const src = findFile(join(tmp, 'x'), exe)
-        if (!src) throw new Error(`แตกไฟล์แล้วไม่พบ ${exe}`)
-        copyFileSync(src, join(local, exe))
+    for await (const { url, sha256 } of ffmpegSources()) {
+      try {
+        await withTemp(async (tmp) => {
+          const zip = join(tmp, 'ffmpeg.zip')
+          const got = await download(url, zip, 'ffmpeg')
+          if (got !== sha256) throw new Error('ไฟล์ ffmpeg ที่ดาวน์โหลดเสีย (SHA256 ไม่ตรง) — ลองใหม่อีกครั้ง')
+          unzip(zip, join(tmp, 'x'))
+          const exe = findFile(join(tmp, 'x'), 'ffmpeg.exe')
+          if (!exe || !existsSync(join(dirname(exe), 'ffprobe.exe'))) throw new Error('แตกไฟล์แล้วไม่พบ ffmpeg.exe / ffprobe.exe')
+          rmSync(local, { recursive: true, force: true })
+          mkdirSync(local, { recursive: true })
+          // ffmpeg + ffprobe และ DLL ข้าง ๆ (ถ้าเป็นรุ่นที่ต้องใช้ DLL) — ไม่เอา ffplay (ไม่ได้ใช้ ใหญ่)
+          for (const f of readdirSync(dirname(exe))) {
+            if (/^(ffmpeg|ffprobe)\.exe$|\.dll$/i.test(f)) copyFileSync(join(dirname(exe), f), join(local, f))
+          }
+        })
+        if (works()) return report('ffmpeg', true, 'ดาวน์โหลดมาไว้ใน runtime\\ffmpeg')
+        lastError = new Error('ดาวน์โหลดแล้วแต่รันไม่ได้')
+      } catch (err) {
+        lastError = err
       }
-    })
-    const ok = probe(join(local, 'ffmpeg.exe'), ['-version'])
-    report('ffmpeg', !!ok, ok ? 'ดาวน์โหลดมาไว้ใน runtime\\ffmpeg' : 'ดาวน์โหลดแล้วแต่รันไม่ได้', 'โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\ffmpeg\\ffmpeg.exe')
+      console.log(`    ${lastError.message} — ลองอีกแหล่ง`)
+    }
   } catch (err) {
-    report('ffmpeg', false, err.message, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง')
+    lastError = err
   }
+  report('ffmpeg', false, lastError?.message ?? 'ดาวน์โหลดไม่สำเร็จ', /รันไม่ได้/.test(lastError?.message ?? '') ? 'โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\ffmpeg\\ffmpeg.exe' : 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง')
 }
 
 // ════════════════════════ 2. Python + edge-tts (เสียง Edge) ════════════════════════
@@ -467,6 +481,7 @@ async function ensureExtension() {
   console.log('  ขั้นเดียวที่ต้องทำเอง (Chrome ไม่อนุญาตให้โปรแกรมทำแทน) — เปิดหน้า chrome://extensions ให้แล้ว')
   console.log(`  ${steps}`)
   console.log(copied ? '  (คัดลอกที่อยู่โฟลเดอร์ extension ไว้ให้แล้ว แค่กด Ctrl+V)' : `  โฟลเดอร์: ${EXTENSION_DIR}`)
+  if (noWait) return report(label, false, 'เปิดหน้า chrome://extensions ให้แล้ว รอโหลดใน Chrome', steps)
   console.log('  รอให้โหลดเสร็จ… (ไม่ต้องปิดหน้าต่างนี้ — ตรวจให้เองทุก 3 วินาที นานสุด 10 นาที)')
   const deadline = Date.now() + 10 * 60_000
   while (Date.now() < deadline) {
@@ -479,7 +494,7 @@ async function ensureExtension() {
 
 // ════════════════════════ 6. สรุป ════════════════════════
 function popup(text, icon) {
-  if (quiet) return
+  if (quiet || noWait) return
   try {
     powershell([
       `Add-Type -AssemblyName System.Windows.Forms`,
@@ -509,6 +524,21 @@ if (flag('--uninstall')) {
   process.exit(0)
 }
 console.log(`โฟลเดอร์โปรแกรม: ${ROOT}`)
+
+// กดจากในไฟล์ zip (Explorer / WinRAR / 7-Zip) → ไฟล์ถูกแตกชั่วคราวไว้ใน Temp และจะหายเมื่อปิดโปรแกรมแตกไฟล์
+// ถ้าติดตั้งจากตรงนั้น Chrome จะชี้ไปโฟลเดอร์ที่หายไป → "ยังไม่ได้เชื่อมกับ Chrome" ภายหลัง จึงไม่ยอมติดตั้ง
+{
+  const inside = (dir, parent) => !!parent && (dir.toLowerCase() + '\\').startsWith(resolve(parent).toLowerCase().replace(/\\?$/, '\\'))
+  const temps = [tmpdir(), process.env.TEMP, process.env.TMP, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Temp')]
+  if (temps.some((t) => inside(ROOT, t))) {
+    const text = 'ยังไม่ได้แตกไฟล์ zip — ตอนนี้โปรแกรมรันจากโฟลเดอร์ชั่วคราว ซึ่งจะถูกลบทิ้ง\n\n' +
+      'คลิกขวาที่ไฟล์ zip แล้วเลือก "แตกไฟล์ทั้งหมด (Extract All)" (ถ้าเปิดด้วย WinRAR / 7-Zip ให้กด Extract ไปไว้ที่ D:\\ หรือ Documents)\n' +
+      'จากนั้นเปิดโฟลเดอร์ที่แตกแล้ว และดับเบิลคลิก setup.exe ในนั้น'
+    console.log(`\n✗ ${text}`)
+    popup(text, 'Warning')
+    process.exit(1)
+  }
+}
 
 step('เตรียมโปรแกรมที่ต้องใช้')
 report('Node.js', true, process.version)

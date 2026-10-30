@@ -59,6 +59,17 @@ static class Setup
             return 1;
         }
 
+        // กดจากในไฟล์ zip ด้วย WinRAR / 7-Zip / Explorer → แตกชั่วคราวไว้ใน Temp และจะถูกลบเมื่อปิดโปรแกรมแตกไฟล์
+        // ติดตั้งจากตรงนั้นแล้ว Chrome จะชี้ไปโฟลเดอร์ที่หายไป จึงไม่ยอมติดตั้ง
+        if (InTemp(Root))
+        {
+            Popup("ยังไม่ได้แตกไฟล์ zip — ตอนนี้โปรแกรมรันจากโฟลเดอร์ชั่วคราว ซึ่งจะถูกลบทิ้ง\n\n" +
+                  "คลิกขวาที่ไฟล์ zip → Extract All (แตกไฟล์ทั้งหมด)\n" +
+                  "ถ้าเปิดด้วย WinRAR / 7-Zip ให้กด Extract ไปไว้ที่ D:\\ หรือ Documents\n" +
+                  "แล้วเปิดโฟลเดอร์ที่ได้ ดับเบิลคลิก setup.exe อีกครั้ง", MessageBoxIcon.Warning);
+            return 1;
+        }
+
         try
         {
             Directory.SetCurrentDirectory(Root);
@@ -111,6 +122,30 @@ static class Setup
             }
             catch { }
         }
+    }
+
+    static bool InTemp(string dir)
+    {
+        var temps = new List<string>();
+        try { temps.Add(Path.GetTempPath()); } catch { }
+        foreach (string v in new[] { "TEMP", "TMP" })
+        {
+            string t = Environment.GetEnvironmentVariable(v);
+            if (!string.IsNullOrEmpty(t)) temps.Add(t);
+        }
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrEmpty(local)) temps.Add(Path.Combine(local, "Temp"));
+        string d = Path.GetFullPath(dir).TrimEnd('\\') + "\\";
+        foreach (string t in temps)
+        {
+            try
+            {
+                string p = Path.GetFullPath(t).TrimEnd('\\') + "\\";
+                if (d.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch { }
+        }
+        return false;
     }
 
     static bool HasZone(string file)
