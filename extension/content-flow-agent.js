@@ -19,6 +19,10 @@ globalThis.__cartoon_flow_agent = true
  *   FLOW_AGENT_IMAGE  { id }                             → { ok, base64 (PNG), width, height }
  */
 const VERSION = chrome.runtime.getManifest().version
+// flow-text.js โหลดก่อนไฟล์นี้ (manifest + CONTENT_FILES ใน background.js) — เทียบชื่อรุ่นไม่สนภาษา · ปิดเมนู · ตรวจหน้าที่ถูกแปล
+const { sameModel, labelText, pageTranslated, TRANSLATED_HINT, escapeMenus, strayMenu } = globalThis.CartoonFlowText
+/** ข้อความ error ที่ส่งกลับ — หน้าถูก Chrome แปลอยู่ให้บอกสาเหตุนี้ก่อน เพราะเป็นต้นเหตุที่ทำให้หาปุ่มไม่เจอ */
+const errorText = (err) => `[extension ${VERSION}] ${pageTranslated() ? `${TRANSLATED_HINT} · ` : ''}${err.message}`
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const FLOW_PROMPT_GAP_MS = 2 * 60_000 // เว้นอย่างน้อย 2 นาทีระหว่างคำสั่งที่ส่งให้ Flow
 const FLOW_LAST_PROMPT_KEY = 'flowLastPromptAt'
@@ -149,15 +153,34 @@ async function choose(root, label) {
   }
 }
 
-async function chooseModel(trigger, model) {
-  if (text(trigger).includes(model) && !text(trigger).includes(`${model} `)) return
-  realClick(trigger)
-  const item = await waitFor(
-    () => $$('[role="menuitem"]').find((m) => text(m).replace(/^\S+\s/, '') === model || text(m).endsWith(` ${model}`)),
-    { label: `โมเดล ${model}` },
-  )
-  realClick(item)
-  await waitFor(() => text(trigger).includes(model), { label: `เลือกโมเดล ${model}` })
+const menuItems = () => $$('[role="menuitem"]').filter(visible)
+
+/**
+ * ก่อนเปิดเมนูโมเดล: มีเมนูอื่นค้างอยู่ (เมนูของภาพ · ตัวเลือกสื่อ ไม่ใช่รายการรุ่น) → ปิดด้วย Escape แล้วทำต่อ
+ * ไม่กดรายการใดในเมนูนั้น และไม่หยุดทั้งงาน (เจอจริงที่ Ebook Plus 0.2.5: หยุดทั้งงานเพราะเมนูค้าง)
+ * ส่ง Escape ให้ตัวเมนูก่อน ไม่กด backdrop — กันไปปิดแผงตั้งค่าที่กำลังใช้อยู่
+ */
+async function closeStrayMenus() {
+  if (!strayMenu(menuItems().map(labelText))) return
+  escapeMenus(document, { documentToo: false, backdrop: false })
+  const closed = await waitFor(() => !menuItems().length, { timeout: 1500, label: 'ปิดเมนูที่ค้าง' }).catch(() => false)
+  if (!closed) {
+    escapeMenus(document, { backdrop: false })
+    await waitFor(() => !menuItems().length, { timeout: 1500, label: 'ปิดเมนูที่ค้าง' }).catch(() => null)
+  }
+}
+
+/** เปิดเมนูรุ่นแล้วกดรุ่นที่ต้องการ — เทียบชื่อแบบไม่สนภาษาแต่ทั้งคำ ไม่เจอ → ปิดเมนู ไม่กดอะไร (ลองรอบถัดไป) */
+async function pickModelFromMenu(modelBtn, model) {
+  await closeStrayMenus()
+  realClick(modelBtn)
+  const item = await waitFor(() => menuItems().find((m) => sameModel(labelText(m), model)), {
+    timeout: 5000,
+    label: `เมนูโมเดล ${model}`,
+  }).catch(() => null)
+  if (item) realClick(item)
+  else escapeMenus(document, { backdrop: false }) // เมนูไม่เปิด/ถูกวาดทับ/ไม่มีรุ่นนี้ → ปิดแล้วลองรอบใหม่
+  await sleep(700)
 }
 
 async function openProject() {
@@ -196,12 +219,14 @@ async function verifyFreeSettings(model, ratio = "16:9") {
         image: on(L.image),
         ratio: on(ratio),
         x1: on('x1'),
-        model: text(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
+        model: labelText(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
+        sameModel: sameModel(labelText(modelBtn), model),
       },
       credits: Number((L.credits.exec(text(p)) ?? [])[1]),
     }
   }
-  const ready = (st) => st.image && st.ratio && st.x1 && st.model === model
+  // ชื่อรุ่นเทียบไม่สนภาษา (หน้าแปลแล้วเป็น "นาโน บานานา 2 Lite") — ตัวตรวจ 0 credits ด้านล่างยังเป็นด่านสุดท้ายเสมอ
+  const ready = (st) => st.image && st.ratio && st.x1 && st.sameModel
 
   let cur = null
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -220,16 +245,7 @@ async function verifyFreeSettings(model, ratio = "16:9") {
       }
     }
     cur = readPane()
-    if (cur?.modelBtn && cur.state.model !== model) {
-      realClick(cur.modelBtn)
-      const item = await waitFor(() => $$('[role="menuitem"]').find((m) => visible(m) && text(m).replace(/^\S+\s/, '') === model), {
-        timeout: 5000,
-        label: `เมนูโมเดล ${model}`,
-      }).catch(() => null)
-      if (item) realClick(item)
-      else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-      await sleep(700)
-    }
+    if (cur?.modelBtn && !cur.state.sameModel) await pickModelFromMenu(cur.modelBtn, model)
     const x1 = $$('button[role="radio"]', pane() ?? document).find((b) => text(b).split(' ').pop() === 'x1')
     if (x1 && x1.getAttribute('aria-checked') !== 'true') {
       realClick(x1)
@@ -244,8 +260,11 @@ async function verifyFreeSettings(model, ratio = "16:9") {
   }
   await sleep(500)
   const credits = readPane()?.credits
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  document.querySelector('.cdk-overlay-backdrop')?.click()
+  // ปิดแผงตั้งค่า: Escape ถึงตัวเมนู + document + backdrop · ยังไม่ปิดลองอีกครั้ง ไม่หยุดงานเพราะเรื่องนี้
+  for (let i = 0; i < 2 && pane(); i++) {
+    escapeMenus()
+    await waitFor(() => !pane(), { timeout: 1500, label: 'ปิดแผงตั้งค่า' }).catch(() => null)
+  }
   await sleep(400)
   return credits
 }
@@ -297,11 +316,12 @@ async function configureAgent(model, { dryRun, ratio = "16:9" }) {
         confirm: never?.querySelector('input')?.checked ? 'Never' : 'Always',
         ratio: checked(/:/),
         count: checked(/(^|\s)x\d$/),
-        model: text(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
+        model: labelText(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
+        sameModel: sameModel(labelText(modelBtn), model),
       },
     }
   }
-  const ok = (st) => st.confirm === 'Never' && st.ratio === ratio && st.count === 'x1' && st.model === model
+  const ok = (st) => st.confirm === 'Never' && st.ratio === ratio && st.count === 'x1' && st.sameModel
 
   for (let attempt = 1; attempt <= 4; attempt++) {
     let cur = read()
@@ -323,16 +343,7 @@ async function configureAgent(model, { dryRun, ratio = "16:9" }) {
       }
     }
     cur = read()
-    if (cur && cur.state.model !== model) {
-      realClick(cur.modelBtn)
-      const item = await waitFor(() => $$('[role="menuitem"]').find((m) => visible(m) && text(m).replace(/^\S+\s/, '') === model), {
-        timeout: 5000,
-        label: `เมนูโมเดล ${model}`,
-      }).catch(() => null)
-      if (item) realClick(item)
-      else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) // เมนูไม่เปิด/ถูกวาดทับ → ปิดแล้วลองรอบใหม่
-      await sleep(700)
-    }
+    if (cur?.modelBtn && !cur.state.sameModel) await pickModelFromMenu(cur.modelBtn, model)
     await waitSettled(openPanel, { quietMs: 600, timeout: 5000 })
     if (attempt === 4 && !ok(read()?.state ?? {})) {
       const st = read()?.state ?? {}
@@ -756,7 +767,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'PING') {
     const signIn = $$('a, button').some((el) => visible(el) && /^\s*sign in\s*$|เข้าสู่ระบบ/i.test(text(el)))
     const inside = /\/project\//.test(location.pathname) || !!SEL.newProject()
-    sendResponse({ ok: true, loggedIn: signIn ? false : inside ? true : null, url: location.href, running })
+    sendResponse({ ok: true, loggedIn: signIn ? false : inside ? true : null, url: location.href, running, translated: pageTranslated() })
     return
   }
   if (msg.type === 'RUN_JOB' && msg.job?.kind === 'generate-images') {
@@ -771,7 +782,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       })
       .then(() => sendResponse({ ok: true }))
       .catch(async (err) => {
-        const message = `[extension ${VERSION}] ${err.message}`
+        const message = errorText(err)
         await toBridge('ERROR', { id: msg.job.id, message }).catch(() => {})
         sendResponse({ ok: true, reported: true })
       })
@@ -783,7 +794,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       try {
         sendResponse({ ok: true, ...(await fn()) })
       } catch (err) {
-        sendResponse({ ok: false, error: `[extension ${VERSION}] ${err.message}` })
+        sendResponse({ ok: false, error: errorText(err) })
       }
     })()
     return true
@@ -846,7 +857,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!msg.dryRun) await sendPrompt(msg.prompt, msg.attachments)
       sendResponse({ ok: true, credits, agent, imagesBefore, projectUrl: location.href })
     } catch (err) {
-      sendResponse({ ok: false, error: `[extension ${VERSION}] ${err.message}` })
+      sendResponse({ ok: false, error: errorText(err) })
     } finally {
       running = false
     }

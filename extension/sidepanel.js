@@ -540,7 +540,7 @@ async function flowMessage(tabId, msg) {
   const send = () => chrome.tabs.sendMessage(tabId, msg)
   let res = await send().catch(() => null)
   if (!res) {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['content-flow-agent.js'] })
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['flow-text.js', 'content-flow-agent.js'] })
     res = await send().catch((err) => ({ ok: false, error: String(err.message) }))
   }
   return res

@@ -331,7 +331,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       await toBridge('RESULT', { id: job.id, text })
       sendResponse({ ok: true })
     } catch (err) {
-      await toBridge('ERROR', { id: job.id, message: String(err.message) }).catch(() => {})
+      // หน้าถูก Chrome แปลอยู่ (คลาส translated-ltr/rtl) → บอกสาเหตุนี้ก่อน เพราะชื่อปุ่มเปลี่ยนจนหาไม่เจอ
+      const translated = /\btranslated-(ltr|rtl)\b/.test(document.documentElement.className || '')
+      const hint = translated ? 'หน้า ChatGPT ถูก Chrome แปลเป็นภาษาไทยอยู่ — กดไอคอนแปลภาษาที่ช่องที่อยู่ เลือก "แสดงต้นฉบับ" แล้วสั่งใหม่ · ' : ''
+      await toBridge('ERROR', { id: job.id, message: hint + String(err.message) }).catch(() => {})
       sendResponse({ ok: true, reported: true })
     } finally {
       stopBeat()

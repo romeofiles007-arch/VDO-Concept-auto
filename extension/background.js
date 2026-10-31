@@ -16,7 +16,7 @@ const AGENTS = {
 }
 const CONTENT_FILES = {
   chatgpt: ['selectors.js', 'content-common.js', 'content-chatgpt.js'],
-  flow: ['content-flow-agent.js'],
+  flow: ['flow-text.js', 'content-flow-agent.js'],
 }
 
 async function settings() {
@@ -155,6 +155,19 @@ async function loadInTab(tabId, url, settleMs) {
   await new Promise((r) => setTimeout(r, settleMs))
 }
 
+/**
+ * Chrome แปลหน้าไปแล้ว (คลาส translated-ltr/rtl ที่ <html>) — ชื่อปุ่ม/รุ่น/ไอคอนเปลี่ยนทั้งหน้า ตัวขับหาปุ่มไม่เจอ
+ * no-translate.js กันไว้ตั้งแต่เริ่มโหลดแล้ว ถ้ายังหลุด → โหลดใหม่หนึ่งครั้งก่อนส่งงาน (ยังแปลอยู่ ตัวขับบอกสาเหตุใน error เอง)
+ */
+async function reloadIfTranslated(tabId, url, settleMs) {
+  const [probe] = await chrome.scripting
+    .executeScript({ target: { tabId }, func: () => /\btranslated-(ltr|rtl)\b/.test(document.documentElement.className || '') })
+    .catch(() => [])
+  if (!probe?.result) return
+  console.warn('หน้าเว็บถูก Chrome แปลอยู่ — โหลดใหม่หนึ่งครั้ง', url)
+  await loadInTab(tabId, url, settleMs)
+}
+
 /** เปิด Flow เป็นภาษาอังกฤษ — ตัวขับอ่านข้อความบนปุ่มภาษาอังกฤษ */
 function withEnglish(url) {
   const u = new URL(url)
@@ -174,6 +187,7 @@ async function handleJob(job) {
     await loadInTab(tab.id, url, 3000)
     // วัดหลังแท็บขึ้นหน้าสุดแล้ว (ความกว้างจริงหลังแผงข้างบีบ) — แคบเกิน → ย้ายหน้าต่างแล้วโหลดใหม่ในหน้าต่างกว้าง
     if (await ensureWideFlow(tab)) await loadInTab(tab.id, url, 3000)
+    await reloadIfTranslated(tab.id, url, 3000)
   }
 
   // ChatGPT: แชตใหม่ = โหลดหน้าแรกใหม่ (แบบเดียวกับแผงข้าง) — กดปุ่ม New chat จาก content script ไม่ได้ผลกับหน้ารุ่นใหม่ (ต.ค. 2026)
@@ -191,6 +205,7 @@ async function handleJob(job) {
       setTimeout(resolve, 30_000)
     })
     await new Promise((r) => setTimeout(r, 2500)) // หน้า SPA render ช่องพิมพ์ต่ออีกนิด
+    await reloadIfTranslated(tab.id, AGENTS.chatgpt.match, 2500)
   }
 
   const response = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_JOB', job }).catch(async (err) => {
