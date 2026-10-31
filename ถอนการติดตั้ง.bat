@@ -11,7 +11,7 @@ if not defined NODE for %%N in (node.exe) do if not "%%~$PATH:N"=="" set "NODE=%
 if not defined NODE echo Node.js not found - nothing to uninstall from here.
 if not defined NODE pause
 if not defined NODE exit /b 1
-title Cartoon Auto - Uninstall
+title Uninstall
 rem Many Windows 10 consoles show Thai as boxes: ask install.mjs for English here (Thai details go to the popup window).
 set "CARTOON_CONSOLE=en"
 rem Work from TEMP so this window does not hold the folder open while it is being deleted.

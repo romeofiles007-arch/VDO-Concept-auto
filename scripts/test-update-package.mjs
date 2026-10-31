@@ -17,7 +17,10 @@ import { createUpdater } from '../bridge/update.js'
 import { shipsToCustomer } from '../bridge/package-rules.js'
 
 const live = process.argv.includes('--live')
-const REPO = 'https://github.com/romeofiles007-arch/VDO-Concept-auto'
+// repo ของโปรเจกต์นี้ (package.json) — โปรเจกต์ที่แยกออกไปใช้ไฟล์ทดสอบนี้ได้เลย
+const REPO = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).repository?.url?.replace(/\.git$/, '')
+if (!REPO) throw new Error('package.json ไม่มี repository.url — ทดสอบอัปเดตไม่ได้')
+const REPO_NAME = REPO.split('/').pop()
 let failures = 0
 const ok = (cond, msg) => {
   console.log(`  ${cond ? '✓' : '✗'} ${msg}`)
@@ -29,7 +32,7 @@ const tar = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
 /** zip ของ commit แบบที่ GitHub ให้ (โฟลเดอร์บนสุด <repo>-<sha>/) */
 function archive(ref, file) {
   const sha = git('rev-parse', ref)
-  execFileSync('git', ['archive', '--format=zip', `--prefix=VDO-Concept-auto-${sha}/`, '-o', file, sha], { cwd: ROOT })
+  execFileSync('git', ['archive', '--format=zip', `--prefix=${REPO_NAME}-${sha}/`, '-o', file, sha], { cwd: ROOT })
   return sha
 }
 
@@ -44,8 +47,9 @@ function fakeInstall(dir, oldRef) {
   const all = execFileSync('git', ['ls-tree', '-r', '--name-only', sha], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean)
   for (const f of all) if (!shipsToCustomer(f)) rmSync(join(dir, f), { force: true }) // แพ็กเกจจริงไม่มีไฟล์ของนักพัฒนา
   const files = all.filter((f) => shipsToCustomer(f) && f !== 'config/project.config.json' && !f.startsWith('projects/'))
-  rmSync(join(dir, 'config', 'project.config.json'))
-  // ของลูกค้า — ห้ามถูกแตะ
+  rmSync(join(dir, 'config', 'project.config.json'), { force: true })
+  // ของลูกค้า — ห้ามถูกแตะ (commit เก่ามากอาจยังไม่มีโฟลเดอร์เหล่านี้)
+  for (const d of ['config', 'projects', 'bridge', 'extension']) mkdirSync(join(dir, d), { recursive: true })
   writeFileSync(join(dir, 'config', 'project.config.json'), JSON.stringify({ script: { language: 'zh' } }))
   writeFileSync(join(dir, '.env'), 'ELEVENLABS_API_KEY=customer-secret\n')
   writeFileSync(join(dir, 'projects', 'topics.json'), '[{"title":"งานของลูกค้า"}]')
@@ -78,7 +82,8 @@ function verifyInstalled(dir, newSha) {
 
 const base = join(tmpdir(), 'cartoon-update-test')
 mkdirSync(base, { recursive: true })
-const OLD = '36d23f6' // ก่อนมี keepawake.js
+// รุ่นเก่า = commit แรกของ repo (ก่อนมี keepawake.js) · ระบุเองได้ด้วย OLD_REF
+const OLD = process.env.OLD_REF || git('rev-list', '--max-parents=0', 'HEAD').split(/\s+/)[0]
 
 if (!live) {
   console.log('▸ จำลอง GitHub')
@@ -97,7 +102,7 @@ if (!live) {
       const entry = (sha, title) => `<entry><id>tag:github.com,2008:Grit::Commit/${sha}</id><title>\n  ${title}\n</title><updated>2026-10-31T04:13:18Z</updated><author><name>dev</name></author></entry>`
       return new Response(`<feed>${entry(newSha, 'กันเครื่องหลับ &amp; ทดสอบ')}${entry(oldSha, 'รุ่นเก่า')}</feed>`)
     }
-    if (url === `https://codeload.github.com/romeofiles007-arch/VDO-Concept-auto/zip/${newSha}`) return new Response(readFileSync(zip))
+    if (url === `${REPO.replace('https://github.com/', 'https://codeload.github.com/')}/zip/${newSha}`) return new Response(readFileSync(zip))
     return new Response('not found', { status: 404 })
   }
   const { createPackageUpdater } = await import('../bridge/update-package.js')

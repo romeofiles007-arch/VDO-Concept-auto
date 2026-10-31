@@ -623,6 +623,20 @@ function uninstall() {
   console.log('ถอนการลงทะเบียนและลบ shortcut แล้ว (ไฟล์โปรแกรมและงานของคุณยังอยู่ครบ)')
 }
 
+// ชื่อโปรแกรม/ส่วนเสริมของโปรเจกต์นี้ — โปรเจกต์ที่แยกออกไป (Cartoon Kids, ธรรมะ Auto) ใช้ตัวถอนชุดเดียวกันได้โดยไม่ต้องแก้ข้อความ
+// หน้าต่าง cmd แสดงเฉพาะอักษรอังกฤษได้แน่นอน — ชื่อที่เป็นภาษาไทยใช้คำกลางแทนในข้อความภาษาอังกฤษ
+const PRODUCT = SHORTCUT_NAME.replace(/.lnk$/i, '')
+const EXT_NAME = (() => {
+  try {
+    return JSON.parse(readFileSync(join(EXTENSION_DIR, 'manifest.json'), 'utf8')).name
+  } catch {
+    return `${PRODUCT} Bridge`
+  }
+})()
+const ascii = (t) => /^[ -~]+$/.test(t)
+const PRODUCT_EN = ascii(PRODUCT) ? PRODUCT : 'the program'
+const EXT_NAME_EN = ascii(EXT_NAME) ? `"${EXT_NAME}"` : 'the extension of this program'
+
 /**
  * ถอนทั้งหมดให้เครื่องกลับเป็นเหมือนไม่เคยติดตั้ง (ถอนการติดตั้ง.bat) — ใช้ทดสอบการติดตั้งใหม่ตั้งแต่ต้น
  *   ปิดโปรแกรม → ตัดการเชื่อมกับ Chrome/Edge → ลบ shortcut → ให้กด Remove extension ใน Chrome → ลบโฟลเดอร์นี้ทั้งโฟลเดอร์
@@ -636,7 +650,7 @@ function confirmBox(text) {
     return powershell([
       `Add-Type -AssemblyName System.Windows.Forms`,
       `$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }`,
-      `[string][System.Windows.Forms.MessageBox]::Show($owner, ${psText(text)}, 'Cartoon Auto — ถอนการติดตั้ง', 'YesNo', 'Warning')`,
+      `[string][System.Windows.Forms.MessageBox]::Show($owner, ${psText(text)}, ${psText(`${PRODUCT} — ถอนการติดตั้ง`)}, 'YesNo', 'Warning')`,
     ].join('; '), { timeout: 24 * 3600_000 }) === 'Yes'
   } catch {
     return false
@@ -662,15 +676,15 @@ async function uninstallFull() {
   const say = (text) => en && process.stdout.write(`${text}\n`)
   if (en) console.log = () => {}
   console.log(`ถอนการติดตั้งจาก: ${ROOT}${isDev ? ' (โฟลเดอร์พัฒนา — ไม่ลบไฟล์)' : ''}`)
-  say(`Cartoon Auto - uninstall from: ${ROOT}`)
+  say(`Uninstall ${PRODUCT_EN} from: ${ROOT}`)
   if (!yes && !quiet) {
-    say('Answer the "Cartoon Auto" popup window (Yes / No)...')
+    say('Answer the popup window (Yes / No)...')
     const ok = confirmBox([
-      'ถอน Cartoon Auto ออกจากเครื่องนี้ ให้เหมือนไม่เคยติดตั้ง',
+      `ถอน ${PRODUCT} ออกจากเครื่องนี้ ให้เหมือนไม่เคยติดตั้ง`,
       '',
       '• ปิดโปรแกรมที่เปิดอยู่',
-      '• ตัดการเชื่อมกับ Chrome และลบ shortcut "Cartoon Auto"',
-      '• เปิดหน้า chrome://extensions ให้กด Remove ที่ Cartoon Auto',
+      `• ตัดการเชื่อมกับ Chrome และลบ shortcut "${PRODUCT}"`,
+      `• เปิดหน้า chrome://extensions ให้กด Remove ที่ ${EXT_NAME}`,
       keepFolder ? '• ไฟล์ในโฟลเดอร์นี้ยังอยู่ครบ' : `• ลบโฟลเดอร์นี้ทั้งหมด รวมงานคลิป ${clips} เรื่อง การตั้งค่า และ key ที่ใส่ไว้ — กู้คืนไม่ได้`,
       '',
       ROOT,
@@ -725,7 +739,7 @@ async function uninstallFull() {
   } catch {}
 
   step('ลบ shortcut')
-  say('- Removing "Cartoon Auto" shortcuts...')
+  say('- Removing shortcuts...')
   try {
     const removed = powershell([
       `$root = ${psText(ROOT)}`,
@@ -737,26 +751,26 @@ async function uninstallFull() {
       `}`,
       `$n`,
     ].join('\n'))
-    report('Shortcut "Cartoon Auto"', true, Number(removed) ? `ลบ ${removed} อัน` : 'ไม่มีที่ชี้มาที่โฟลเดอร์นี้')
+    report(`Shortcut "${PRODUCT}"`, true, Number(removed) ? `ลบ ${removed} อัน` : 'ไม่มีที่ชี้มาที่โฟลเดอร์นี้')
   } catch (err) {
-    report('Shortcut "Cartoon Auto"', false, err.message.split(/\r?\n/)[0])
+    report(`Shortcut "${PRODUCT}"`, false, err.message.split(/\r?\n/)[0])
   }
 
   step('Extension ใน Chrome')
   let ext = loadedExtension()
-  if (!ext?.here) report('Extension Cartoon Auto', true, ext ? `ตัวที่โหลดไว้มาจากโฟลเดอร์อื่น (${ext.path}) — ไม่แตะ` : 'ไม่ได้โหลดไว้')
+  if (!ext?.here) report(`Extension ${EXT_NAME}`, true, ext ? `ตัวที่โหลดไว้มาจากโฟลเดอร์อื่น (${ext.path}) — ไม่แตะ` : 'ไม่ได้โหลดไว้')
   else {
     // Chrome ไม่ยอมให้โปรแกรมลบ extension แทน — เปิดหน้าให้ แล้วรอผู้ใช้กด Remove
     const chrome = chromeExe()
     if (chrome && !quiet) spawn(chrome, ['chrome://extensions'], { detached: true, stdio: 'ignore' }).unref()
     if (!quiet) {
-      console.log('  กด "Remove" ที่ Cartoon Auto Bridge ในหน้า chrome://extensions ที่เปิดให้ (รอให้ทำ นานสุด 5 นาที)')
-      say('- In Chrome (chrome://extensions page just opened): click "Remove" on "Cartoon Auto Bridge". Waiting up to 5 minutes...')
+      console.log(`  กด "Remove" ที่ ${EXT_NAME} ในหน้า chrome://extensions ที่เปิดให้ (รอให้ทำ นานสุด 5 นาที)`)
+      say(`- In Chrome (chrome://extensions page just opened): click "Remove" on ${EXT_NAME_EN}. Waiting up to 5 minutes...`)
       const deadline = Date.now() + 5 * 60_000
       while (Date.now() < deadline && loadedExtension()?.here) await new Promise((r) => setTimeout(r, 2000))
       ext = loadedExtension()
     }
-    report('Extension Cartoon Auto', !ext?.here, ext?.here ? 'ยังอยู่ใน Chrome' : 'เอาออกแล้ว', 'เปิด chrome://extensions แล้วกด Remove ที่ Cartoon Auto Bridge เอง')
+    report(`Extension ${EXT_NAME}`, !ext?.here, ext?.here ? 'ยังอยู่ใน Chrome' : 'เอาออกแล้ว', `เปิด chrome://extensions แล้วกด Remove ที่ ${EXT_NAME} เอง`)
   }
 
   let deleting = false
@@ -778,10 +792,10 @@ async function uninstallFull() {
   console.log('\n' + '─'.repeat(60))
   const summary = failed.length
     ? ['ถอนการติดตั้งแล้ว แต่ยังเหลือบางอย่าง:', '', ...failed.map((r) => `✗ ${r.label}${r.detail ? ` — ${r.detail}` : ''}${r.fix ? `\n   → ${r.fix}` : ''}`)].join('\n')
-    : ['ถอน Cartoon Auto ออกจากเครื่องแล้ว — เหมือนเครื่องที่ยังไม่เคยติดตั้ง', deleting ? '\nโฟลเดอร์โปรแกรมจะถูกลบเมื่อกด OK' : keepFolder ? `\nไฟล์ในโฟลเดอร์ยังอยู่: ${ROOT}` : ''].join('')
+    : [`ถอน ${PRODUCT} ออกจากเครื่องแล้ว — เหมือนเครื่องที่ยังไม่เคยติดตั้ง`, deleting ? '\nโฟลเดอร์โปรแกรมจะถูกลบเมื่อกด OK' : keepFolder ? `\nไฟล์ในโฟลเดอร์ยังอยู่: ${ROOT}` : ''].join('')
   console.log(summary)
   say('')
-  say(failed.length ? `Finished, ${failed.length} item(s) need attention - details (Thai) in the popup window. Click OK.` : 'Finished - Cartoon Auto is removed. Click OK in the popup window.')
+  say(failed.length ? `Finished, ${failed.length} item(s) need attention - details (Thai) in the popup window. Click OK.` : 'Finished - uninstalled. Click OK in the popup window.')
   popup(summary, failed.length ? 'Warning' : 'Information')
   return deleting ? 10 : 0
 }
