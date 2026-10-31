@@ -597,7 +597,9 @@ async function ensureExtension() {
 
 // ════════════════════════ 6. สรุป ════════════════════════
 function popup(text, icon) {
-  if (quiet || noWait) return
+  // รันผ่าน setup.exe (stdout เป็น pipe ไม่ใช่หน้าต่าง cmd) → หน้าต่าง setup แสดงสรุปเองอยู่แล้ว
+  // ป๊อปอัปซ้ำมักถูก Chrome บัง setup จึงค้างที่ "กำลังติดตั้ง..." รอคนกด OK ที่มองไม่เห็น (เจอจริง ต.ค. 2026)
+  if (quiet || noWait || !process.stdout.isTTY) return
   try {
     powershell([
       `Add-Type -AssemblyName System.Windows.Forms`,
