@@ -10,14 +10,16 @@
 var SELECTORS = {
   chatgpt: {
     url: 'https://chatgpt.com/',
-    newChat: ['a[data-testid="create-new-chat-button"]', 'button[aria-label*="New chat" i]', 'a[href="/"]'],
+    // หน้า ChatGPT รุ่น ต.ค. 2026 ไม่มี data-testid บนปุ่มแล้ว เหลือแต่ aria-label ซึ่งเปลี่ยนตามภาษาของบัญชี
+    // → ใส่ทั้งป้ายอังกฤษและไทยไว้ (บัญชีที่ตั้ง ChatGPT เป็นภาษาไทย ป้ายเป็น "คัดลอก" "หยุด" ฯลฯ)
+    newChat: ['a[data-testid="create-new-chat-button"]', 'button[aria-label*="New chat" i]', 'button[aria-label*="แชทใหม่"]', 'button[aria-label*="แชตใหม่"]', 'a[href="/"]'],
     input: ['#prompt-textarea', 'div[contenteditable="true"]', 'textarea[data-id]'],
-    send: ['button[data-testid="send-button"]', 'button[aria-label*="Send" i]'],
-    stop: ['button[data-testid="stop-button"]', 'button[aria-label*="Stop" i]'],
+    send: ['button[data-testid="send-button"]', 'button[aria-label*="Send" i]', 'button[aria-label*="ส่ง"]'],
+    stop: ['button[data-testid="stop-button"]', 'button[aria-label*="Stop" i]', 'button[aria-label^="หยุด"]'],
     // ข้อความตอบล่าสุด — ใช้ตอนดึงผลลัพธ์
     assistantTurns: ['[data-message-author-role="assistant"]', 'div[data-testid^="conversation-turn"]'],
     // ปุ่ม copy ของข้อความ ใช้เป็นสัญญาณว่า gen เสร็จแล้ว
-    copyButton: ['button[data-testid="copy-turn-action-button"]', 'button[aria-label*="Copy" i]'],
+    copyButton: ['button[data-testid="copy-turn-action-button"]', 'button[aria-label*="Copy" i]', 'button[aria-label*="คัดลอก"]'],
   },
 
   flow: {

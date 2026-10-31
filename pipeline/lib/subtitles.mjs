@@ -24,7 +24,11 @@ export const SUBTITLE_STYLES = {
 
 // สระบน/ล่าง วรรณยุกต์ ไม่กินความกว้าง
 const COMBINING = /[ัิ-ฺ็-๎]/g
-const width = (s) => s.replace(COMBINING, '').length
+// อักษรจีนกว้างเกือบ 2 เท่าของตัวไทย/อังกฤษ
+const HAN = /[\u3000-\u9fff\uff00-\uffef]/g
+const width = (s) => s.replace(COMBINING, '').length + 0.8 * (s.match(HAN)?.length ?? 0)
+/** Leelawadee UI ไม่มีอักษรจีน — คลิปพากย์จีนใช้ Microsoft YaHei */
+const fontFor = (entries) => (entries.some((e) => /[\u3400-\u9fff]/.test(e.text ?? '')) ? 'Microsoft YaHei' : 'Leelawadee UI')
 
 const segmenter = new Intl.Segmenter('th', { granularity: 'word' })
 
@@ -88,7 +92,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Leelawadee UI,${fontSize},${assColor(st.text)},${assColor(st.text)},${assColor(st.box)},${assColor(st.box)},-1,0,0,0,100,100,0,0,4,${pad},0,2,60,60,${marginV},222
+Style: Default,${fontFor(entries)},${fontSize},${assColor(st.text)},${assColor(st.text)},${assColor(st.box)},${assColor(st.box)},-1,0,0,0,100,100,0,0,4,${pad},0,2,60,60,${marginV},222
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -145,7 +149,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Leelawadee UI,${fontSize},${base},${base},${assColor(st.outline)},&H80000000,-1,0,0,0,100,100,0,0,1,${outline},3,2,50,50,${marginV},222
+Style: Default,${fontFor(entries)},${fontSize},${base},${base},${assColor(st.outline)},&H80000000,-1,0,0,0,100,100,0,0,1,${outline},3,2,50,50,${marginV},222
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

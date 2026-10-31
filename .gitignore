@@ -31,3 +31,7 @@ tts/.venv-voxcpm/
 # แพ็กเกจส่งลูกค้า (scripts/build-package.mjs) — ใหญ่หลายร้อย MB และมีไบนารีแถม
 dist/
 runtime/
+
+# สถานะผลิตต่อเนื่องของเครื่องนี้ · ไฟล์ระบบของ Windows
+projects/_production.json
+desktop.ini

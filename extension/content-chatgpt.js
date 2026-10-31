@@ -32,7 +32,7 @@ async function startNewChat() {
   if (await waitFor(empty, { timeout: 8000, label: 'หน้าแชตใหม่' }).then(() => true, () => false)) return sleep(500)
   for (let attempt = 0; attempt < 2; attempt++) {
     // เจาะจงปุ่มที่มองเห็น — ในแถบข้างมีปุ่ม "New chat in <โปรเจกต์>" ซ่อนอยู่หลายปุ่ม กดผิดจะไปเปิดแชตในโปรเจกต์อื่น
-    const btn = [...document.querySelectorAll('a[data-testid="create-new-chat-button"], button[aria-label="New chat" i]')].find((b) => b.offsetParent) ?? pick(S.newChat)
+    const btn = [...document.querySelectorAll('a[data-testid="create-new-chat-button"], button[aria-label="New chat" i], button[aria-label="แชทใหม่"], button[aria-label="แชตใหม่"]')].find((b) => b.offsetParent) ?? pick(S.newChat)
     if (btn) btn.click()
     else if (location.pathname !== '/') {
       // ไม่เจอปุ่ม → ไปหน้าแรกตรงๆ (SPA จะ reset เป็น chat ใหม่เอง)
@@ -91,14 +91,19 @@ function turnFinished(turn) {
   const old = turn.closest('article, [data-testid^="conversation-turn"]')
   if (old) return !!pick(S.copyButton, old)
   // กล่องกลุ่มอยู่เหนือคำตอบ 2-3 ชั้น (แต่ละบทสนทนาไม่เท่ากัน) — ไล่ขึ้นไปหาชั้นที่มีแถบปุ่มเป็นลูกตรง
+  // ปุ่มไม่มี data-testid · ป้ายเปลี่ยนตามภาษา (Copy / คัดลอก) — ป้ายไม่ตรงก็ยังนับแถบปุ่มแทน:
+  // แถบใต้คำตอบมีปุ่ม Copy · Rate · Read aloud · Share · Regenerate · More (6 ปุ่ม) และโผล่เมื่อตอบจบเท่านั้น
   for (let el = turn.parentElement, i = 0; el && i < 5; el = el.parentElement, i++) {
-    if (el.querySelector(':scope > [class*="turn-action-controls"] button[aria-label^="Copy" i]')) return true
+    const bar = el.querySelector(':scope > [class*="turn-action-controls"]')
+    if (!bar) continue
+    if (bar.querySelector('button[aria-label^="Copy" i], button[aria-label^="คัดลอก"]')) return true
+    if (bar.querySelectorAll('button').length >= 4) return true
   }
   return false
 }
 
 // ป้ายปุ่มลบไฟล์แนบเป็น "Remove <ชื่อไฟล์>" (เช่น Remove Pasted text.txt) — เดิมหา "Remove file" จึงไม่เจอ ไฟล์จากรอบที่ล้มค้างสะสม
-const REMOVE = 'button[aria-label^="Remove" i]'
+const REMOVE = 'button[aria-label^="Remove" i], button[aria-label^="ลบ"], button[aria-label^="นำออก"]'
 /** ของที่อยู่ในช่องพิมพ์ตอนนี้ — prompt ยาว ChatGPT แปลงเป็นไฟล์แนบ ช่องพิมพ์จึงว่างได้ทั้งที่วางสำเร็จ */
 function composerState() {
   const input = pick(S.input)

@@ -8,6 +8,13 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 
+/** เสียงแจ้งเตือนตอนคลิปเสร็จ — เสียง tada ของ Windows (ไม่มีไฟล์/ไม่ใช่ Windows = เงียบ ไม่ขวางงาน) */
+export function playDoneSound() {
+  if (process.platform !== 'win32') return
+  const wav = join(process.env.SystemRoot ?? 'C:\\Windows', 'Media', 'tada.wav')
+  spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object Media.SoundPlayer '${wav.replace(/'/g, "''")}').PlaySync()`], { windowsHide: true, stdio: 'ignore' }).on('error', () => {})
+}
+
 // process.execPath แทน 'node' — แพ็กเกจลูกค้าใช้ node ที่แถมไว้ใน runtime/ ซึ่งอาจไม่อยู่ใน PATH ของเครื่อง
 const MAX_LINES = 400
 
@@ -89,7 +96,8 @@ export function createRunner({ log }) {
     if (!def) throw new Error(`ไม่รู้จักขั้น ${step}`)
     const [bin, args] = def.cmd(slug, opts)
 
-    const proc = spawn(bin, args, { cwd: ROOT, windowsHide: true, env: { ...process.env, FORCE_COLOR: '0' } })
+    // opts.env: ตัวแปรเฉพาะงานนี้ (ผลิตต่อเนื่องใช้สุ่มลายเส้นต่อคลิป)
+    const proc = spawn(bin, args, { cwd: ROOT, windowsHide: true, env: { ...process.env, FORCE_COLOR: '0', ...(opts?.env ?? {}) } })
     current = { step, slug, status: 'running', lines: [], exitCode: null, startedAt: Date.now(), endedAt: null, proc }
     const run = current
     log(`เริ่ม ${def.label} (${slug ?? '-'})`)
@@ -108,6 +116,9 @@ export function createRunner({ log }) {
       run.status = code === 0 ? 'done' : 'error'
       run.endedAt = Date.now()
       log(`${def.label} ${code === 0 ? 'เสร็จ' : `ล้มเหลว (exit ${code})`}`)
+      // ได้วิดีโอแล้ว (ทำคลิปอัตโนมัติ / ตัดต่อ) → เสียงแจ้งเตือน ดังแม้ปิดแผงข้าง
+      // ผลิตต่อเนื่อง (quiet) ดังครั้งเดียวตอนครบทั้งชุด ไม่ดังทุกคลิปกลางดึก
+      if (code === 0 && !opts?.quiet && ['autopilot', 'render'].includes(step)) playDoneSound()
     })
     return snapshot()
   }

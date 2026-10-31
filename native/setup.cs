@@ -7,6 +7,7 @@
 //   3. หา Node.js 20+: runtime\node\node.exe → node ในเครื่อง → ดาวน์โหลด zip จาก nodejs.org (ตรวจ SHA256)
 //   4. ส่งต่อให้ node native\install.mjs ทำที่เหลือ (ffmpeg, เสียงพากย์, เชื่อม Chrome, shortcut, สรุป)
 // ไม่ต้องใช้สิทธิ์ admin (setup.manifest บังคับ asInvoker) · รันซ้ำได้
+// แสดงความคืบหน้าในหน้าต่างของตัวเองด้วยฟอนต์ไทย (ไม่ใช่ console — เครื่องที่ภาษาระบบไม่ใช่ไทยแสดงอักษรไทยเป็นกล่อง)
 //
 // คอมไพล์: node scripts/build-setup.mjs (ใช้ csc.exe ที่มากับ Windows — C# 5 เท่านั้น ห้ามใช้ $"" หรือ ?.)
 // ไฟล์นี้ต้องเป็น UTF-8 แบบมี BOM ไม่งั้น csc อ่านภาษาไทยเพี้ยน
@@ -14,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
@@ -43,11 +45,159 @@ static class Setup
     static extern uint GetFileAttributesW(string path);
     const uint INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF;
 
+    // ── หน้าต่างแสดงความคืบหน้า ──
+    // เดิมใช้หน้าต่าง console ของ Windows: เครื่องที่ภาษาระบบไม่ใช่ไทยแสดงอักษรไทยเป็นกล่อง ☐
+    // และถ้าเผลอคลิกในหน้าต่าง (Quick Edit "Select") การติดตั้งหยุดค้าง — จึงแสดงในหน้าต่างของเราเองด้วยฟอนต์ไทย
+    static Form Win;
+    static TextBox Box;
+    static Label Status;
+    static Button CloseBtn;
+    static Process Child;
+    static volatile bool Running;
+    static readonly object Gate = new object();
+    static readonly List<string> Lines = new List<string>();
+    static string Cur = "";
+    static bool CrPending, Dirty;
+    static readonly Regex Ansi = new Regex(@"\x1b\[[0-9;?]*[A-Za-z]");
+
+    /** ข้อความจากเราและจาก install.mjs — \r = เขียนทับบรรทัดเดิม (ตัวเลข % ดาวน์โหลด) */
+    static void Write(string text)
+    {
+        text = Ansi.Replace(text, "");
+        lock (Gate)
+        {
+            foreach (char c in text)
+            {
+                if (c == '\r') { CrPending = true; continue; }
+                if (c == '\n') { Lines.Add(Cur); Cur = ""; CrPending = false; continue; }
+                if (CrPending) { Cur = ""; CrPending = false; }
+                Cur += c;
+            }
+            if (Lines.Count > 3000) Lines.RemoveRange(0, Lines.Count - 3000);
+            Dirty = true;
+        }
+    }
+    static void Log(string line) { Write(line + "\n"); }
+    static void Progress(string text) { Write("\r" + text); }
+
+    static Font ThaiFont(float size)
+    {
+        foreach (string name in new[] { "Leelawadee UI", "Leelawadee", "Tahoma" })
+        {
+            try
+            {
+                var f = new Font(name, size);
+                if (f.Name == name) return f;
+                f.Dispose();
+            }
+            catch { }
+        }
+        return new Font(FontFamily.GenericSansSerif, size);
+    }
+
+    static void BuildWindow()
+    {
+        Win = new Form();
+        Win.Text = "Cartoon Auto — ติดตั้ง";
+        Win.StartPosition = FormStartPosition.CenterScreen;
+        Win.ClientSize = new Size(820, 540);
+        Win.MinimumSize = new Size(560, 360);
+        Win.BackColor = Color.FromArgb(36, 29, 23);
+        try { Win.Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); } catch { }
+
+        Box = new TextBox();
+        Box.Multiline = true;
+        Box.ReadOnly = true;
+        Box.ScrollBars = ScrollBars.Vertical;
+        Box.WordWrap = true;
+        Box.BorderStyle = BorderStyle.None;
+        Box.BackColor = Color.FromArgb(36, 29, 23);
+        Box.ForeColor = Color.FromArgb(241, 230, 207);
+        Box.Font = ThaiFont(11f);
+        Box.Dock = DockStyle.Fill;
+
+        var pad = new Panel();
+        pad.Dock = DockStyle.Fill;
+        pad.Padding = new Padding(14, 12, 6, 6);
+        pad.Controls.Add(Box);
+
+        var bottom = new Panel();
+        bottom.Dock = DockStyle.Bottom;
+        bottom.Height = 56;
+        bottom.Padding = new Padding(14, 10, 14, 10);
+        bottom.BackColor = Color.FromArgb(54, 42, 29);
+
+        CloseBtn = new Button();
+        CloseBtn.Text = "ปิด";
+        CloseBtn.Dock = DockStyle.Right;
+        CloseBtn.Width = 120;
+        CloseBtn.Font = ThaiFont(10.5f);
+        CloseBtn.Enabled = false;
+        CloseBtn.BackColor = Color.FromArgb(241, 230, 207);
+        CloseBtn.FlatStyle = FlatStyle.Flat;
+        CloseBtn.Click += delegate { Win.Close(); };
+
+        Status = new Label();
+        Status.Dock = DockStyle.Fill;
+        Status.TextAlign = ContentAlignment.MiddleLeft;
+        Status.ForeColor = Color.FromArgb(241, 230, 207);
+        Status.Font = ThaiFont(11f);
+        Status.Text = "กำลังติดตั้ง… ไม่ต้องกดอะไร รอจนขึ้นหน้าต่างสรุป";
+
+        bottom.Controls.Add(Status);
+        bottom.Controls.Add(CloseBtn);
+        Win.Controls.Add(pad);
+        Win.Controls.Add(bottom);
+
+        // วาดข้อความใหม่เป็นรอบ ๆ (ไม่วาดทุกตัวอักษร — เร็วและไม่กระพริบ)
+        var timer = new Timer();
+        timer.Interval = 150;
+        timer.Tick += delegate
+        {
+            string text;
+            lock (Gate)
+            {
+                if (!Dirty) return;
+                Dirty = false;
+                text = string.Join("\r\n", Lines) + (Lines.Count > 0 ? "\r\n" : "") + Cur;
+            }
+            Box.Text = text;
+            Box.SelectionStart = Box.TextLength;
+            Box.ScrollToCaret();
+        };
+        timer.Start();
+
+        Win.FormClosing += delegate (object s, FormClosingEventArgs e)
+        {
+            if (!Running) return;
+            var ok = MessageBox.Show(Win, "ยังติดตั้งไม่เสร็จ — ปิดตอนนี้เลยไหม?\n(ดับเบิลคลิก setup.exe ใหม่ได้ภายหลัง ระบบทำต่อให้)", "Cartoon Auto", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (ok != DialogResult.Yes) { e.Cancel = true; return; }
+            try { if (Child != null && !Child.HasExited) Child.Kill(); } catch { }
+        };
+    }
+
+    static void Finished(int code)
+    {
+        if (Win == null) return;
+        try
+        {
+            Win.BeginInvoke((MethodInvoker)delegate
+            {
+                Status.Text = code == 0
+                    ? "✓ ติดตั้งเสร็จแล้ว — ปิดหน้าต่างนี้ได้เลย"
+                    : "✗ ติดตั้งไม่สำเร็จ — อ่านรายละเอียดด้านบน แล้วดับเบิลคลิก setup.exe อีกครั้ง";
+                Status.ForeColor = code == 0 ? Color.FromArgb(150, 220, 140) : Color.FromArgb(255, 150, 130);
+                CloseBtn.Enabled = true;
+                CloseBtn.Focus();
+                Win.Activate();
+            });
+        }
+        catch { }
+    }
+
     [STAThread]
     static int Main(string[] args)
     {
-        try { Console.OutputEncoding = new UTF8Encoding(false); } catch { }
-        try { Console.Title = "Cartoon Auto — ติดตั้ง"; } catch { }
         Quiet = Array.IndexOf(args, "--quiet") >= 0;
         Root = Path.GetDirectoryName(Path.GetFullPath(Assembly.GetExecutingAssembly().Location));
 
@@ -70,11 +220,32 @@ static class Setup
             return 1;
         }
 
+        // --quiet (ตัวติดตั้งอื่นเรียก): ทำเงียบ ๆ ไม่มีหน้าต่าง
+        if (Quiet) return Install(args);
+
+        Application.EnableVisualStyles();
+        BuildWindow();
+        int code = 1;
+        var worker = new System.Threading.Thread(delegate ()
+        {
+            Running = true;
+            code = Install(args);
+            Running = false;
+            Finished(code);
+        });
+        worker.IsBackground = true;
+        Win.Shown += delegate { worker.Start(); };
+        Application.Run(Win);
+        return code;
+    }
+
+    static int Install(string[] args)
+    {
         try
         {
             Directory.SetCurrentDirectory(Root);
-            Console.WriteLine("Cartoon Auto — กำลังติดตั้ง ไม่ต้องกดอะไร รอจนขึ้นหน้าต่างสรุป");
-            Console.WriteLine();
+            Log("Cartoon Auto — กำลังติดตั้ง ไม่ต้องกดอะไร รอจนขึ้นหน้าต่างสรุป");
+            Log("");
 
             Unblock();
             string node = FindOrDownloadNode();
@@ -82,22 +253,46 @@ static class Setup
             var psi = new ProcessStartInfo(node, Quote(Path.Combine(Root, "native", "install.mjs")) + JoinArgs(args));
             psi.UseShellExecute = false;
             psi.WorkingDirectory = Root;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.StandardOutputEncoding = new UTF8Encoding(false);
+            psi.StandardErrorEncoding = new UTF8Encoding(false);
+            psi.EnvironmentVariables["NO_COLOR"] = "1";
+            psi.EnvironmentVariables["FORCE_COLOR"] = "0";
             using (var p = Process.Start(psi))
             {
+                Child = p;
+                var a = Pump(p.StandardOutput);
+                var b = Pump(p.StandardError);
                 p.WaitForExit();
-                if (p.ExitCode != 0) Pause();
+                a.Join(5000);
+                b.Join(5000);
                 return p.ExitCode;
             }
         }
         catch (Exception e)
         {
             string msg = e.Message;
-            Console.WriteLine();
-            Console.WriteLine("✗ ติดตั้งไม่สำเร็จ: " + msg);
+            Log("");
+            Log("✗ ติดตั้งไม่สำเร็จ: " + msg);
             Popup("ติดตั้งไม่สำเร็จ\n\n" + msg + "\n\nตรวจว่าต่ออินเทอร์เน็ตอยู่ แล้วดับเบิลคลิก setup.exe อีกครั้ง", MessageBoxIcon.Error);
-            Pause();
             return 1;
         }
+    }
+
+    /** อ่านผลของ install.mjs ทีละก้อน (ไม่รอขึ้นบรรทัด — ตัวเลข % ที่เขียนทับด้วย \r จะขึ้นทันที) */
+    static System.Threading.Thread Pump(StreamReader reader)
+    {
+        var t = new System.Threading.Thread(delegate ()
+        {
+            var buf = new char[4096];
+            int n;
+            try { while ((n = reader.Read(buf, 0, buf.Length)) > 0) Write(new string(buf, 0, n)); } catch { }
+        });
+        t.IsBackground = true;
+        t.Start();
+        return t;
     }
 
     // ไฟล์ที่แตกจาก zip ที่ดาวน์โหลดมามีป้าย "มาจากอินเทอร์เน็ต" — Windows จะถามยืนยันทุกครั้งที่เปิดโปรแกรมในแพ็กเกจ
@@ -105,7 +300,7 @@ static class Setup
     {
         string self = Assembly.GetExecutingAssembly().Location;
         if (!HasZone(self)) return;
-        Console.WriteLine("▸ ปลดป้าย \"ไฟล์จากอินเทอร์เน็ต\" ของไฟล์ในโฟลเดอร์นี้");
+        Log("▸ ปลดป้าย \"ไฟล์จากอินเทอร์เน็ต\" ของไฟล์ในโฟลเดอร์นี้");
         var stack = new Stack<string>();
         stack.Push(Root);
         while (stack.Count > 0)
@@ -157,7 +352,7 @@ static class Setup
     static string FindOrDownloadNode()
     {
         string node = Path.Combine(Root, "runtime", "node", "node.exe");
-        if (NodeOk(node)) { Console.WriteLine("✓ Node.js (ในโฟลเดอร์ runtime)"); return node; }
+        if (NodeOk(node)) { Log("✓ Node.js (ในโฟลเดอร์ runtime)"); return node; }
 
         string path = Environment.GetEnvironmentVariable("PATH") ?? "";
         foreach (string dir in path.Split(';'))
@@ -165,10 +360,10 @@ static class Setup
             if (dir.Trim().Length == 0) continue;
             string candidate;
             try { candidate = Path.Combine(dir.Trim().Trim('"'), "node.exe"); } catch { continue; }
-            if (NodeOk(candidate)) { Console.WriteLine("✓ Node.js ในเครื่อง (" + candidate + ")"); return candidate; }
+            if (NodeOk(candidate)) { Log("✓ Node.js ในเครื่อง (" + candidate + ")"); return candidate; }
         }
 
-        Console.WriteLine("▸ ดาวน์โหลด Node.js (~35 MB) — ครั้งแรกครั้งเดียว");
+        Log("▸ ดาวน์โหลด Node.js (~35 MB) — ครั้งแรกครั้งเดียว");
         ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072; // TLS 1.2
         string sums;
         using (var wc = new WebClient()) { wc.Encoding = Encoding.UTF8; sums = wc.DownloadString(NODE_BASE + "SHASUMS256.txt"); }
@@ -211,7 +406,7 @@ static class Setup
             try { Directory.Delete(tmp, true); } catch { }
         }
         if (!NodeOk(node)) throw new Exception("ลง Node.js แล้วแต่รันไม่ได้ (โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\node\\node.exe)");
-        Console.WriteLine("✓ Node.js " + file);
+        Log("✓ Node.js " + file);
         return node;
     }
 
@@ -255,10 +450,10 @@ static class Setup
                 if (total > 0)
                 {
                     int pct = (int)(done * 100 / total);
-                    if (pct != lastPct) { Console.Write("\r    " + pct + "%  "); lastPct = pct; }
+                    if (pct != lastPct) { Progress("    " + pct + "%"); lastPct = pct; }
                 }
             }
-            if (total > 0) Console.WriteLine();
+            if (total > 0) Write("\n");
         }
     }
 
@@ -309,15 +504,4 @@ static class Setup
         catch { }
     }
 
-    static void Pause()
-    {
-        if (Quiet) return;
-        try
-        {
-            Console.WriteLine();
-            Console.Write("กด Enter เพื่อปิดหน้าต่างนี้");
-            Console.ReadLine();
-        }
-        catch { }
-    }
 }

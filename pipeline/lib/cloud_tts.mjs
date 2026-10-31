@@ -63,12 +63,21 @@ function edgeUpgrade() {
 
 // รายชื่อเสียงทั้งหมดที่พากย์ได้จริง — สร้างใหม่ด้วย node scripts/update-edge-voices.mjs
 const EDGE_CATALOG = JSON.parse(readFileSync(join(ROOT, 'pipeline', 'lib', 'edge_voices.json'), 'utf8'))
+// เสียงจีนกลาง (พากย์จีน) — Yunyang เรียบ มั่นคง เหมาะเสียงธรรมะ (วัดจริง ต.ค. 2026)
+const EDGE_CHINESE = [
+  { id: 'zh-CN-YunyangNeural', gender: 'Male', locale: 'zh-CN', localeName: 'Chinese (Mainland)', personalities: ['Reliable', 'Clear'] },
+  { id: 'zh-CN-YunxiNeural', gender: 'Male', locale: 'zh-CN', localeName: 'Chinese (Mainland)', personalities: ['Warm'] },
+  { id: 'zh-CN-YunjianNeural', gender: 'Male', locale: 'zh-CN', localeName: 'Chinese (Mainland)', personalities: ['Passion'] },
+  { id: 'zh-CN-XiaoxiaoNeural', gender: 'Female', locale: 'zh-CN', localeName: 'Chinese (Mainland)', personalities: ['Warm'] },
+  { id: 'zh-CN-XiaoyiNeural', gender: 'Female', locale: 'zh-CN', localeName: 'Chinese (Mainland)', personalities: ['Lively'] },
+]
+for (const v of EDGE_CHINESE) if (!EDGE_CATALOG.some((x) => x.id === v.id)) EDGE_CATALOG.push(v)
 
 const ACCENT = {
   'en-US': 'อเมริกัน', 'en-GB': 'บริติช', 'en-AU': 'ออสเตรเลีย', 'en-CA': 'แคนาดา', 'en-IN': 'อินเดีย', 'en-IE': 'ไอริช',
   'en-NZ': 'นิวซีแลนด์', 'en-ZA': 'แอฟริกาใต้', 'en-SG': 'สิงคโปร์', 'en-PH': 'ฟิลิปปินส์', 'en-HK': 'ฮ่องกง', 'en-KE': 'เคนยา',
   'en-NG': 'ไนจีเรีย', 'en-TZ': 'แทนซาเนีย', 'th-TH': 'ไทย', 'fr-FR': 'ฝรั่งเศส', 'de-DE': 'เยอรมัน', 'it-IT': 'อิตาลี',
-  'ko-KR': 'เกาหลี', 'pt-BR': 'บราซิล',
+  'ko-KR': 'เกาหลี', 'zh-CN': 'จีนกลาง', 'pt-BR': 'บราซิล',
 }
 const TONE = {
   Friendly: 'เป็นมิตร', Positive: 'สดใส', Expressive: 'มีอารมณ์', Caring: 'ใส่ใจ', Pleasant: 'น่าฟัง', Warm: 'อบอุ่น',
@@ -78,8 +87,8 @@ const TONE = {
 }
 
 /** กลุ่มของเสียง: thai = เสียงไทย · multi = หลายภาษา (อ่านไทยได้) · english = อังกฤษล้วน (อ่านไทยไม่ได้) */
-const groupOf = (v) => (/^th-/.test(v.locale) ? 'thai' : /Multilingual/.test(v.id) ? 'multi' : 'english')
-const GROUP_ORDER = { thai: 0, multi: 1, english: 2 }
+const groupOf = (v) => (/^th-/.test(v.locale) ? 'thai' : /^zh-/.test(v.locale) ? 'chinese' : /Multilingual/.test(v.id) ? 'multi' : 'english')
+const GROUP_ORDER = { thai: 0, chinese: 1, multi: 2, english: 3 }
 
 export const EDGE_VOICES = EDGE_CATALOG.map((v) => {
   const name = v.id.split('-').slice(2).join('-').replace(/(Multilingual)?Neural$/, '')
@@ -88,7 +97,7 @@ export const EDGE_VOICES = EDGE_CATALOG.map((v) => {
   return {
     id: v.id,
     group,
-    readsThai: group !== 'english',
+    readsThai: group === 'thai' || group === 'multi',
     label: `${name} — ${v.gender === 'Male' ? 'ชาย' : 'หญิง'} ${ACCENT[v.locale] ?? v.localeName}${tones ? ` · ${tones}` : ''}`,
   }
 }).sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || (b.id.startsWith('en-US') - a.id.startsWith('en-US')) || a.label.localeCompare(b.label))
@@ -98,10 +107,12 @@ export const EDGE_VOICES = EDGE_CATALOG.map((v) => {
  * เสียงไทยอ่านอังกฤษได้ · เสียง Multilingual อ่านได้ทุกภาษา
  */
 export function edgeVoiceFits(voice, language) {
-  if (/Multilingual/i.test(voice) || language !== 'th') return true
-  return /^th-/i.test(voice)
+  if (/Multilingual/i.test(voice)) return true
+  if (language === 'th') return /^th-/i.test(voice)
+  if (language === 'zh') return /^zh-/i.test(voice)
+  return true
 }
-export const defaultEdgeVoice = (language) => (language === 'th' ? 'th-TH-NiwatNeural' : 'en-US-AndrewMultilingualNeural')
+export const defaultEdgeVoice = (language) => ({ th: 'th-TH-NiwatNeural', zh: 'zh-CN-YunyangNeural' })[language] ?? 'en-US-AndrewMultilingualNeural'
 
 export const GEMINI_MODELS = ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts']
 

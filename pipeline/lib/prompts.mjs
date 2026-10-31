@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT, loadConfig } from './config.mjs'
 import { characterFlowNote, bodyStyleRule, bodyStyleFlowNote } from './character.mjs'
+import { artStyleOf, artBodyRule, artImageRule, artFlowNote } from './art_style.mjs'
 
 import * as shared from '../../extension/prompts.js'
 
@@ -56,7 +57,7 @@ ${table}
 - ช็อตที่กำกับว่า "ภาพต่อเนื่อง" ให้เป็น mini-sequence ของช็อตก่อนหน้า ไม่ใช่ฉากใหม่
 - ใส่ pattern interrupt ทุก 15-30 วิ ตามกฎ 6
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
-${bodyStyleRule()}
+${artBodyRule(artStyleOf(slug, config), bodyStyleRule())}${artImageRule(artStyleOf(slug, config))}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
 ${imageLanguageRule(clipLanguage(config, slug))}`
 }
@@ -88,6 +89,10 @@ export function clipLanguage(config, slug) {
 
 /** ภาษาของคำอธิบายช็อตและตัวอักษรในภาพ — ตามภาษาเสียงพากย์ของคลิป */
 export function imageLanguageRule(language) {
+  if (language === 'zh') {
+    return `- ภาษาในภาพ: จีน — เขียนคำอธิบายใน field (Env/Action/Frame) เป็นภาษาไทย แต่คงชื่อ field (SHOT, Chars, Env, Action, Frame) และ @TAG เป็นภาษาอังกฤษตามเดิม
+- ตัวอักษรในภาพ (on-screen text, label, thought bubble) เป็นภาษาจีนอักษรตัวย่อ 1–4 ตัว ตัวหนา เขียนถูกต้อง — ใส่ข้อความที่จะให้อยู่ในภาพในเครื่องหมายคำพูด เช่น ข้อความบนภาพ "放下" · ห้ามใช้ภาษาไทยหรืออังกฤษในภาพ`
+  }
   if (language === 'en') {
     return `- ภาษาในภาพ: English — เขียนคำอธิบายใน field (Env/Action/Frame) เป็นภาษาอังกฤษ · ตัวอักษรในภาพ (on-screen text, label, thought bubble) เป็นภาษาอังกฤษ ALL CAPS คำสั้น`
   }
@@ -110,12 +115,12 @@ export function orientationRule(config = loadConfig()) {
 }
 
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
-export function flowPrompt(agentBrief, config = loadConfig()) {
+export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   const portrait = orientationOf(config) === 'portrait'
   const charNote = characterFlowNote()
   return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
 เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
-${bodyStyleFlowNote()}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
+${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
 ทุกภาพต้องเต็มเฟรม ฉากหลังยาวถึงขอบทุกด้าน ห้ามมีแถบว่าง ขอบขาว หรือพื้นที่เปล่าด้านบน/ล่าง
 ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"

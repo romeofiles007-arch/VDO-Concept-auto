@@ -93,7 +93,7 @@ const result = await runJob({
   agent: 'flow',
   kind: 'generate-images',
   payload: {
-    prompt: flowPrompt(brief),
+    prompt: flowPrompt(brief, undefined, slug),
     shots: shots.map(untag).map((s) => ({ filename: s.filename, shot: s.shot, prompt: s.prompt })), // คำสั่งซ้ำ/ขอช็อตที่ขาดก็ไม่มี @TAG ในคำบรรยาย
     model: 'Nano Banana 2 Lite', // ใช้ 0 credits — extension ตรวจตัวเลข credit ก่อนสั่ง agent ทุกครั้ง
     aspect, // 16:9 แนวนอน | 9:16 แนวตั้ง

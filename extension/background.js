@@ -231,7 +231,10 @@ async function pollLoop() {
         await setStatus('ปิดอยู่')
         return
       }
-      const free = Object.keys(AGENTS).filter((a) => !busy.has(a))
+      // แผงข้างกำลังถาม ChatGPT ตรงๆ (หัวข้อ/บท/prompt ภาพ) → ยังไม่รับงาน ChatGPT จาก bridge
+      // ไม่งั้นงานจากคิว (เช่น AI ตรวจคลิปของโหมดโพสต์) โหลดแท็บใหม่ทับคำตอบที่กำลังมา
+      const { chatAskUntil = 0 } = await chrome.storage.session.get('chatAskUntil')
+      const free = Object.keys(AGENTS).filter((a) => !busy.has(a) && !(a === 'chatgpt' && chatAskUntil > Date.now()))
       if (!free.length) {
         await new Promise((r) => setTimeout(r, 5000))
         continue

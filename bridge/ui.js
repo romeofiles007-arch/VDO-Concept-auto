@@ -31,6 +31,8 @@ import { autopilotProgress } from '../pipeline/lib/progress.mjs'
 import { readCharacter, updateCharacter, addCharacterImage, removeCharacterImage, clearCharacter, characterAttachments, activeCharacter, CHARACTER_DIR } from '../pipeline/lib/character.mjs'
 import { PAUSE_PRESETS, MOTION_PRESETS } from '../pipeline/lib/ffmpeg.mjs'
 import { SUBTITLE_STYLES } from '../pipeline/lib/subtitles.mjs'
+import { ART_STYLES } from '../extension/prompts.js'
+import { createProduction } from './production.js'
 import { clipSettings, CLIP_COVERAGES } from '../pipeline/lib/clips.mjs'
 import { KIE_TIERS, kieTier } from '../pipeline/lib/kie.mjs'
 import { clipCost } from '../pipeline/lib/usage.mjs'
@@ -71,8 +73,10 @@ function mergeAutopilotLog(run, bridgeEvents) {
   return [...run.entries.map((e) => ({ ...e, src: 'run' })), ...events].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).slice(-300)
 }
 
-export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null }) {
+export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null, scheduler = true }) {
   const runner = createRunner({ log })
+  // 🏭 ผลิตต่อเนื่อง — สั่ง autopilot ทีละคลิปตามเวลา (วนเฉพาะ bridge ตัวจริง)
+  const production = createProduction({ runner, log, json, readBody, scheduler })
 
   function state({ freshSetup = false } = {}) {
     const config = loadConfig()
@@ -252,6 +256,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     if (!localHost || req.headers['x-bridge-token'] !== token) return json(res, 401, { error: 'token ไม่ถูกต้อง' }), true
 
     try {
+      if (await production.handle(req, res, path)) return true
       if (req.method === 'GET' && path === '/api/state') {
         return json(res, 200, state({ freshSetup: url.searchParams.has('fresh') })), true
       }
@@ -261,7 +266,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const { topics, n, script, language, targetMinutes } = await readBody(req)
         const topic = (topics ?? []).find((t) => t.n === Number(n))
         if (!topic || !String(script ?? '').trim()) return json(res, 400, { error: 'ต้องมีหัวข้อที่เลือกและบทพากย์' }), true
-        if (!['th', 'en'].includes(language)) return json(res, 400, { error: 'ภาษาต้องเป็น th หรือ en' }), true
+        if (!['th', 'en', 'zh'].includes(language)) return json(res, 400, { error: 'ภาษาต้องเป็น th, en หรือ zh' }), true
         const cleanTopics = topics.map((t) => ({ n: Number(t.n), title: String(t.title) }))
         mkdirSync(join(ROOT, 'projects'), { recursive: true })
         writeFileSync(TOPICS_FILE, JSON.stringify(cleanTopics, null, 2))
@@ -545,7 +550,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       // ── นำเข้าเสียงพากย์จากที่อื่น → ถอดเสียง → timecode (แทนขั้นทำเสียงด้วย TTS) ──
       if (req.method === 'POST' && path === '/api/audio/import') {
         const name = String(url.searchParams.get('name') ?? '').replace(/[\\/:*?"<>|]+/g, '_').slice(-120)
-        const language = url.searchParams.get('language') === 'en' ? 'en' : 'th'
+        const language = ['en', 'zh'].includes(url.searchParams.get('language')) ? url.searchParams.get('language') : 'th'
         const title = String(url.searchParams.get('title') ?? '').trim()
         const ext = name.split('.').pop().toLowerCase()
         if (!['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'webm', 'mp4'].includes(ext)) {
@@ -738,8 +743,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         if (clipSettings(config).enabled && !hasKey('KIE_API_KEY')) {
           return json(res, 400, { error: 'เปิดแอนิเมชัน Kie อยู่ แต่ยังไม่มี API key — กรอกในตั้งค่าม้าน้ำ หรือเลือกปิดเพื่อใช้ภาพนิ่ง' }), true
         }
-        const language = ['th', 'en'].includes(body.language) ? body.language : config.script.language
-        const titleLanguage = ['th', 'en'].includes(body.titleLanguage) ? body.titleLanguage : (config.script.titleLanguage ?? language)
+        const language = ['th', 'en', 'zh'].includes(body.language) ? body.language : config.script.language
+        const titleLanguage = ['th', 'en', 'zh'].includes(body.titleLanguage) ? body.titleLanguage : (config.script.titleLanguage ?? language)
         const minutes = Number(body.minutes) > 0 ? Number(body.minutes) : config.script.targetMinutes
         const genre = GENRES.includes(body.genre) ? body.genre : 'mix'
         // เริ่มใหม่ตั้งแต่แผนกที่เลือก (ไม่ใส่ = ทำต่อจากที่ค้าง) — ต้องมีหัวข้อ ใช้กับคลิปที่มีอยู่แล้ว
@@ -831,6 +836,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           const body = await readBody(req)
           updateConfig((c) => {
             if (['landscape', 'portrait'].includes(body.orientation)) c.render.orientation = body.orientation
+            // ลายเส้น — ใช้กับคลิปใหม่ (คลิปเดิมจำแบบที่ใช้ไว้ใน projects/<slug>/art_style.json)
+            if (ART_STYLES[body.artStyle]) c.art = { ...(c.art ?? {}), style: body.artStyle }
             if (MOTION_PRESETS[body.motion]) c.render.motion = body.motion
             // ม้าน้ำ/Kie: 'off' หรือเปอร์เซ็นต์ของฉากทั้งเรื่อง
             const aiCoverage = body.aiCoverage ?? body.aiClips // aiClips รองรับ extension รุ่นเก่า
@@ -859,6 +866,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         ]
         return json(res, 200, {
           orientation: c.render.orientation === 'portrait' ? 'portrait' : 'landscape',
+          artStyle: ART_STYLES[c.art?.style] ? c.art.style : 'doodle',
           subtitles: SUBTITLE_STYLES[c.render.subtitles?.style] ? c.render.subtitles.style : 'off',
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
@@ -867,6 +875,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           kieTier: clips.tier,
           kie: { hasKey: hasKey('KIE_API_KEY'), ...kieTier(clips.tier) },
           options: {
+            artStyle: Object.entries(ART_STYLES).map(([id, s]) => ({ id, label: s.label })),
             aiCoverage: aiCoverageOptions,
             aiClips: aiCoverageOptions,
             kieTier: Object.entries(KIE_TIERS).map(([id, t]) => ({ id, label: t.label, name: t.name, credits: t.credits, detail: t.detail })),
@@ -910,7 +919,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const config = loadConfig()
         if (GENRES.includes(genre)) config.script.genre = genre
         if (titleLanguage) {
-          if (!['th', 'en'].includes(titleLanguage)) return json(res, 400, { error: 'ภาษาต้องเป็น th หรือ en' }), true
+          if (!['th', 'en', 'zh'].includes(titleLanguage)) return json(res, 400, { error: 'ภาษาต้องเป็น th, en หรือ zh' }), true
           config.script.titleLanguage = titleLanguage
         }
         const job = enqueue('chatgpt', 'prompt', {
@@ -935,7 +944,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const { language, minutes } = await readBody(req)
         const config = loadConfig()
         if (language) {
-          if (!['th', 'en'].includes(language)) return json(res, 400, { error: 'ภาษาต้องเป็น th หรือ en' }), true
+          if (!['th', 'en', 'zh'].includes(language)) return json(res, 400, { error: 'ภาษาต้องเป็น th, en หรือ zh' }), true
           config.script.language = language
         }
         if (minutes !== undefined) {
@@ -987,5 +996,5 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
 
   // มีขั้นของ pipeline กำลังรันอยู่ไหม — ใช้ตัดสินว่ารีสตาร์ทโปรแกรม/extension ได้หรือยัง
   const busy = () => runner.snapshot()?.status === 'running'
-  return { handle, busy }
+  return { handle, busy, production }
 }

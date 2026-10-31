@@ -6,6 +6,7 @@
 <link rel="icon" href="icons/cartoon-auto.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="icons.css" />
 <link rel="stylesheet" href="agents.css" />
+<link rel="stylesheet" href="posting.css" />
 <style>
   /* ธีมทะเล: สว่าง = ชายหาดกลางวัน (ทราย · น้ำตื้น · เปลือกหอย) · มืด = มหาสมุทรยามค่ำ (น้ำลึก · แสงเรือง)
      ตรวจ contrast แล้ว ข้อความทุกสีบนพื้นกล่อง ≥ 4.5:1 */
@@ -265,6 +266,7 @@
         <button class="ghost" id="openChecklist" title="ดูว่าเครื่องนี้ต้องลงอะไรเพิ่มบ้าง">🧰 ตรวจความพร้อม</button>
         <button class="ghost" id="checkUpdate" title="ตรวจว่ามีเวอร์ชันใหม่บน GitHub ไหม (ระบบตรวจเองทุก 30 นาทีด้วย)">🔄 ตรวจอัปเดต</button>
         <button class="ghost" id="openLibrary">🎬 คลังวิดีโอ</button>
+        <button class="ghost" id="openPosting" title="ตรวจคลิป ตั้งเวลา และโพสต์ลง Facebook Page / YouTube">📣 โพสต์อัตโนมัติ</button>
         <button class="ghost" id="openProjects">📂 เปิด project เก่า</button>
       </div>
     </div>
@@ -308,6 +310,67 @@
       </select>
       <button type="button" class="ghost" id="restartAuto">↺ เริ่มใหม่</button>
     </div>
+    <!-- 🏭 ผลิตต่อเนื่อง: สั่งทำคลิปอัตโนมัติทีละคลิปเองตามเวลา (bridge/production.js) -->
+    <details class="clipSettings prodBox" id="prodBox" style="margin-top:12px">
+      <summary><span class="blockTitle">🏭 ผลิตต่อเนื่อง</span> <span class="hint" id="prodBadge" style="margin:0"></span></summary>
+      <div class="pick" style="margin-top:10px">จำนวนคลิป
+        <div class="controls" style="margin:0">
+          <label class="field"><input type="number" id="prodCount" min="0" max="100" value="5" style="width:64px" /> คลิป</label>
+          <span class="hint" style="margin:0">0 = ไม่จำกัด จนกว่าจะกดหยุด</span>
+        </div>
+      </div>
+      <div class="pick">เริ่มเมื่อไร
+        <div class="seg" id="prodStart" role="group" aria-label="เวลาเริ่มผลิต">
+          <button type="button" data-value="now">เริ่มทันที</button>
+          <button type="button" data-value="at">เริ่มตอน</button>
+          <button type="button" data-value="daily">ทุกวันตอน</button>
+        </div>
+        <label class="field" id="prodTimeRow" style="margin-top:6px">เวลา <input type="time" id="prodTime" value="22:00" /></label>
+      </div>
+      <div class="pick">พักระหว่างคลิป (สุ่มในช่วงนี้)
+        <div class="controls" style="margin:0">
+          <label class="field"><input type="number" id="prodDelayMin" min="0" max="720" value="20" style="width:56px" /></label>–
+          <label class="field"><input type="number" id="prodDelayMax" min="0" max="720" value="40" style="width:56px" /> นาที</label>
+        </div>
+      </div>
+      <style>
+        #prodBox .prodCheck { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 400; }
+        #prodBox .prodCheck input, #prodLangs input { width: auto; height: auto; margin: 0; flex: none; }
+        #prodLangs { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+        #prodLangs label { display: inline-flex; align-items: center; gap: 4px; }
+      </style>
+      <div class="pick">สุ่มอะไรบ้าง <span class="hint" style="margin:0">(ไม่ติ๊ก = ใช้ค่าที่ตั้งไว้)</span>
+        <label class="prodCheck"><input type="checkbox" id="prodRandGenre" /> หมวดและหัวข้อ</label>
+        <label class="prodCheck"><input type="checkbox" id="prodRandArt" /> ลายเส้นของภาพ</label>
+        <label class="prodCheck" style="display:none"><input type="checkbox" id="prodRandNarration" /> วิธีเล่า</label>
+        <div class="prodCheck"><label class="prodCheck" style="margin:0"><input type="checkbox" id="prodRandLang" /> ภาษา:</label>
+          <span id="prodLangs">
+            <label><input type="checkbox" value="th" /> ไทย</label>
+            <label><input type="checkbox" value="zh" /> จีน</label>
+            <label><input type="checkbox" value="en" /> อังกฤษ</label>
+          </span>
+        </div>
+      </div>
+      <div class="pick">ผลิตเสร็จแล้ว → 📣 โพสต์อัตโนมัติ
+        <div class="seg" id="prodAutoPost" role="group" aria-label="ส่งเข้าคิวโพสต์">
+          <button type="button" data-value="off">ไม่โพสต์</button>
+          <button type="button" data-value="ai">AI ตรวจแล้วตั้งเวลา</button>
+          <button type="button" data-value="now">ตั้งเวลาทันที</button>
+        </div>
+        <span class="hint" id="prodPostHint" style="margin:2px 0 0">คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปตามที่ตั้งในหน้า 📣</span>
+      </div>
+      <div class="status" id="prodStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <div class="controls" id="prodReady" style="display:none;margin:8px 0 0;gap:6px;flex-wrap:wrap">
+        <span id="prodReadyText"></span>
+        <button type="button" class="ghost" id="prodReadyPlay" title="เปิดคลิปแรกของชุดเต็มจอด้วยโปรแกรมดูวิดีโอของ Windows">▶ ดูเต็มจอ</button>
+        <button type="button" class="ghost" id="prodReadyFolder" title="เปิดโฟลเดอร์ที่รวมคลิปทั้งชุดไว้ เรียงตามลำดับ">📂 เปิดโฟลเดอร์</button>
+      </div>
+      <ol class="hint" id="prodHistory" style="margin:4px 0 0;padding-left:18px"></ol>
+      <div class="run">
+        <button class="primary" id="prodGo">▶ เริ่มผลิต</button>
+        <button class="stop" id="prodStop" disabled>■ หยุด</button>
+      </div>
+    </details>
     </div>
     <div class="agentBlock agentSetting" id="autoTopicBlock" data-agent="chatgpt" data-agent-label="ChatGPT">
     <div class="blockHead" data-agent-label="เต่า · ChatGPT"><span class="blockTitle">หัวข้อและบท</span></div>
@@ -341,6 +404,7 @@
           <div class="seg" id="autoLang" role="group" aria-label="ภาษาพากย์">
             <button type="button" data-value="th">พากย์ไทย</button>
             <button type="button" data-value="en">พากย์อังกฤษ</button>
+            <button type="button" data-value="zh">พากย์จีน</button>
           </div>
           <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="5" /> นาที</label>
         </div>
@@ -396,6 +460,10 @@
           <button type="button" data-value="portrait">▯ แนวตั้ง 9:16</button>
         </div>
       </div>
+      <div class="pick">ลายเส้นของภาพ
+        <div class="seg" id="clipArtStyle" role="group" aria-label="ลายเส้นของภาพ"></div>
+        <span class="hint" style="margin:2px 0 0">ใช้กับคลิปใหม่ · สุ่ม = เลือกให้ทีละคลิป</span>
+      </div>
       <label class="pick">ซับไตเติลในวิดีโอ (พื้นทึบ)
         <select id="clipSubtitles"></select>
       </label>
@@ -450,6 +518,7 @@
       <div class="seg" id="titleLang" role="group" aria-label="ภาษาชื่อหัวข้อ">
         <button type="button" data-value="en">ชื่ออังกฤษ</button>
         <button type="button" data-value="th">ชื่อไทย</button>
+        <button type="button" data-value="zh">ชื่อจีน</button>
       </div>
       <button class="primary" id="askTopics">▶ เริ่มหาหัวข้อ</button>
       <button class="stop" id="stopTopics" disabled>■ หยุด</button>
@@ -467,6 +536,7 @@
       <div class="seg" id="voLang" role="group" aria-label="ภาษาพากย์">
         <button type="button" data-value="th">พากย์ไทย</button>
         <button type="button" data-value="en">พากย์อังกฤษ</button>
+        <button type="button" data-value="zh">พากย์จีน</button>
       </div>
       <label class="field">ยาว <input type="number" id="minutes" min="1" max="60" value="10" /> นาที</label>
     </div>
@@ -533,6 +603,7 @@
           <div class="seg" id="importLang" role="group" aria-label="ภาษาของเสียง">
             <button type="button" data-value="th" aria-pressed="true">ไทย</button>
             <button type="button" data-value="en" aria-pressed="false">อังกฤษ</button>
+            <button type="button" data-value="zh" aria-pressed="false">จีน</button>
           </div>
           <label class="ghost filebtn" style="margin:0">เลือกไฟล์เสียง…<input type="file" id="importFile" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.mp4,.webm" /></label>
         </div>
@@ -651,6 +722,18 @@
   <!-- กดปกบนชั้น → รายละเอียดและปุ่มจัดการของเรื่องนั้น -->
   <div id="bookSheet" class="modalBack" hidden role="dialog" aria-modal="true" aria-labelledby="bookSheetTitle">
     <div class="modal bookSheet" id="bookSheetBody"></div>
+  </div>
+</div>
+
+<!-- โหมดโพสต์อัตโนมัติ · แผนกนกนางนวล (posting.js) -->
+<div id="posting" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="postingTitle">
+  <div class="bar">
+    <button class="ghost" id="closePosting">← กลับ</button>
+    <strong id="postingTitle">📣 โพสต์อัตโนมัติ</strong>
+    <button class="ghost" id="refreshPosting" style="margin-left:auto" title="โหลดสถานะใหม่">↻</button>
+  </div>
+  <div class="overlayBody" id="postingBody">
+    <div class="status" id="postingStatus" role="status" aria-live="polite"></div>
   </div>
 </div>
 

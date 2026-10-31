@@ -54,6 +54,9 @@ if (myVoice && !voice) {
 }
 
 // engine ไทยกับอังกฤษคนละตัวกัน — เตือนก่อนเสียเวลา gen ทั้งคลิป
+if (language === 'zh' && ['f5-tts-thai', 'my-voice', 'voxcpm', 'chatterbox'].includes(config.tts.engine)) {
+  console.warn(`บทเป็นภาษาจีน แต่เสียง ${config.tts.engine} พูดจีนไม่ได้ — เลือกเสียง Edge จีน / Gemini / ElevenLabs ในแผงข้าง`)
+}
 if (language === 'en' && ['f5-tts-thai', 'my-voice'].includes(config.tts.engine)) {
   console.warn('สคริปต์เป็นภาษาอังกฤษแต่ engine ตั้งไว้เป็น f5-tts-thai')
   console.warn('แนะนำสลับเป็น chatterbox ใน config ก่อน')
@@ -126,7 +129,7 @@ if (cloud && config.tts.engine === 'elevenlabs' && !elevenModelFits(cloud.model,
 }
 if (cloud && config.tts.engine === 'edge' && !edgeVoiceFits(cloud.voice, language)) {
   const fallback = defaultEdgeVoice(language)
-  console.warn(`เสียง ${cloud.voice} อ่านภาษาไทยไม่ได้ (Microsoft จะไม่ส่งเสียงกลับมา) — ใช้ ${fallback} แทนสำหรับคลิปนี้`)
+  console.warn(`เสียง ${cloud.voice} อ่าน${language === 'zh' ? 'ภาษาจีน' : 'ภาษาไทย'}ไม่ได้ (Microsoft จะไม่ส่งเสียงกลับมา) — ใช้ ${fallback} แทนสำหรับคลิปนี้`)
   console.warn('ถ้าอยากได้เสียงอื่น เลือกเสียงไทยหรือเสียง "หลายภาษา" ในแผงข้าง')
   cloud.voice = fallback
 }

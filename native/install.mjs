@@ -398,20 +398,57 @@ function createShortcuts() {
   const target = join(ROOT, 'เปิดโปรแกรม.bat')
   const icon = join(EXTENSION_DIR, 'icons', 'icon-128.ico')
   const dirs = option('--shortcut-dir') ? `@(${psText(resolve(option('--shortcut-dir')))})` : `@([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))`
+  // ใช้ IShellLinkW (Unicode) ตรง ๆ แทน WScript.Shell — WScript.Shell บันทึกชื่อ/ที่อยู่ภาษาไทยไม่ได้
+  // บนเครื่องที่ภาษาระบบ (non-Unicode) ไม่ใช่ไทย ("Command failed" ตอนสร้าง shortcut ในเครื่องลูกค้า ต.ค. 2026)
   powershell([
-    `$shell = New-Object -ComObject WScript.Shell`,
+    `Add-Type -TypeDefinition @'`,
+    SHELL_LINK_CS,
+    `'@`,
     `foreach ($d in ${dirs}) {`,
     `  if (-not $d -or -not (Test-Path -LiteralPath $d)) { continue }`,
-    `  $s = $shell.CreateShortcut((Join-Path $d '${SHORTCUT_NAME}'))`,
-    `  $s.TargetPath = ${psText(target)}`,
-    `  $s.WorkingDirectory = ${psText(ROOT)}`,
-    `  $s.Description = ${psText('Cartoon Auto — เปิดโปรแกรมทำคลิปการ์ตูน')}`,
-    `  $s.WindowStyle = 7`,
-    existsSync(icon) ? `  $s.IconLocation = ${psText(icon)}` : '',
-    `  $s.Save()`,
+    `  [DhammaLnk]::Save((Join-Path $d ${psText(SHORTCUT_NAME)}), ${psText(target)}, ${psText(ROOT)}, ${psText('Cartoon Auto — เปิดโปรแกรมทำคลิปการ์ตูน')}, ${existsSync(icon) ? psText(icon) : "''"}, 7)`,
     `}`,
-  ].join('\n'))
+  ].join('\n'), { timeout: 120_000 })
 }
+
+/** สร้าง .lnk ผ่าน IShellLinkW + IPersistFile (Unicode ทั้งหมด) — WindowStyle 7 = ย่อไว้ ไม่แย่งโฟกัส */
+const SHELL_LINK_CS = `using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+[ComImport, Guid("00021401-0000-0000-C000-000000000046")] class DhammaShellLink {}
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+interface IDhammaShellLinkW {
+  void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder f, int c, IntPtr fd, uint fl);
+  void GetIDList(out IntPtr p);
+  void SetIDList(IntPtr p);
+  void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder s, int c);
+  void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string s);
+  void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder s, int c);
+  void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string s);
+  void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder s, int c);
+  void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string s);
+  void GetHotkey(out short h);
+  void SetHotkey(short h);
+  void GetShowCmd(out int c);
+  void SetShowCmd(int c);
+  void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder s, int c, out int i);
+  void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string s, int i);
+  void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string s, uint r);
+  void Resolve(IntPtr h, uint f);
+  void SetPath([MarshalAs(UnmanagedType.LPWStr)] string s);
+}
+public static class DhammaLnk {
+  public static void Save(string lnk, string target, string dir, string desc, string icon, int show) {
+    var l = (IDhammaShellLinkW)new DhammaShellLink();
+    l.SetPath(target);
+    l.SetWorkingDirectory(dir);
+    l.SetDescription(desc);
+    if (!String.IsNullOrEmpty(icon)) l.SetIconLocation(icon, 0);
+    l.SetShowCmd(show);
+    ((IPersistFile)l).Save(lnk, true);
+  }
+}`
 
 // ════════════════════════ 5. extension ใน Chrome ════════════════════════
 const chromeData = join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'User Data')

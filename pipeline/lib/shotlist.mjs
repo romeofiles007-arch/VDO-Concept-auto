@@ -193,7 +193,7 @@ export function mergeRounds(slug) {
     coverPrompt: readCoverPrompt(slug),
     rounds: raws.length,
     agentBrief,
-    flowPrompt: flowPrompt(briefWithCover),
+    flowPrompt: flowPrompt(briefWithCover, undefined, slug),
     aspect: aspectOf(),
     shots: shots.map((s) => ({ filename: s.filename, start: s.start, narration: s.narration, prompt: s.prompt })),
   }

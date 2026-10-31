@@ -19,6 +19,7 @@ import { loadEnv } from '../pipeline/lib/env.mjs'
 import { createUi } from './ui.js'
 import { watchBridgeCode, extensionVersion } from './selfupdate.js'
 import { createUpdater } from './update.js'
+import { createPosting } from './posting.js'
 
 loadEnv()
 
@@ -182,7 +183,11 @@ function enqueue(agent, kind, payload) {
 
 // อัปเดตจาก GitHub — ห้ามดึงโค้ดใหม่ระหว่างมีงานค้าง (workInProgress ประกาศด้านล่าง เรียกตอนใช้งานจริงเท่านั้น)
 const updater = createUpdater({ log, busy: () => workInProgress() })
-const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater })
+const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater, scheduler: PORT === 8765 })
+// โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — ตัวตั้งเวลาโพสต์วนเฉพาะ bridge ตัวจริง
+const posting = createPosting({ jobs, enqueue, json, readBody, log, port: PORT, token: TOKEN, pipelineBusy: () => ui.busy(), scheduler: PORT === 8765 })
+// 🏭 ผลิตต่อเนื่อง: คลิปเสร็จ → จ่อคิวโพสต์ทันที
+ui.production.onClipReady = (slug, mode) => posting.enqueueAuto(slug, mode)
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
@@ -190,6 +195,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') return json(res, 204, {})
   if (path === '/health') return json(res, 200, { ok: true, jobs: jobs.size, waiting: waiting.length })
+  if (await posting.handle(req, res, url)) return // ก่อน ui — รับเฉพาะ /api/posting* และหน้า callback ของ Google
   if (await ui.handle(req, res, url)) return
 
   // ทุก endpoint ที่เหลือต้องมี token — กันหน้าเว็บอื่นยิงเข้า localhost มาสั่งงาน
@@ -346,7 +352,7 @@ const server = createServer(async (req, res) => {
 /** มีงานค้างอยู่ไหม: งานของ ChatGPT/Flow ในคิว หรือขั้นของ pipeline กำลังรัน */
 // นับเฉพาะงานของแท็บจริง — งานทดสอบ (agent x / cancel-test / flow-selftest) ที่ค้างไว้เคยขวางไม่ให้ bridge รีสตาร์ทรับโค้ดใหม่
 const REAL_AGENTS = new Set(['chatgpt', 'flow', 'meta'])
-const workInProgress = () => ui.busy() || [...jobs.values()].some((j) => REAL_AGENTS.has(j.agent) && (j.status === 'running' || (j.status === 'queued' && Date.now() - j.createdAt < 30 * 60_000)))
+const workInProgress = () => ui.busy() || posting.busy() || [...jobs.values()].some((j) => REAL_AGENTS.has(j.agent) && (j.status === 'running' || (j.status === 'queued' && Date.now() - j.createdAt < 30 * 60_000)))
 
 // โค้ดของโปรแกรมเปลี่ยน → รีสตาร์ทตัวเองเมื่อว่าง (เฉพาะตัวจริงที่ port 8765 — ตัวทดสอบไม่ต้อง)
 if (PORT === 8765) watchBridgeCode({ busy: workInProgress, server, log })

@@ -482,7 +482,7 @@ async function editDepartment() {
 const WORK = { script: scriptDepartment, voice: voiceDepartment, art: artDepartment, images: imagesDepartment, clips: clipsDepartment, edit: editDepartment }
 
 console.log(`🎬 ทำคลิปอัตโนมัติ: ${title}`)
-console.log(`   ${config.script.language === 'en' ? 'อังกฤษ' : 'ไทย'} · ${config.script.targetMinutes} นาที · เสียง ${config.tts.engine}`)
+console.log(`   ${({ en: 'อังกฤษ', zh: 'จีน' })[config.script.language] ?? 'ไทย'} · ${config.script.targetMinutes} นาที · เสียง ${config.tts.engine}`)
 await requireBridge()
 
 // ข้อความโพสต์ (ชื่อคลิป คำบรรยาย แฮชแท็ก) — เริ่มคิดตอน Flow วาดภาพ (ChatGPT ว่างช่วงนั้น) ไม่ต้องรอตอนท้าย

@@ -9,6 +9,7 @@
 import { BLUEPRINT_FILE, topicsPrompt, scriptPrompt, parseTopics, cleanScript, estimateMinutes, slugify, scoredTopicsPrompt, parseScoredTopics, GENRES } from './prompts.js'
 import { initIcons, setIconLabel } from './icons.js'
 import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed, SEA_ASSETS } from './agents.js'
+import { initPosting } from './posting.js'
 
 initIcons()
 
@@ -88,6 +89,16 @@ async function freshChatTab() {
 }
 
 async function askChatGPT(prompt, attachments) {
+  // บอก background ให้พักงาน ChatGPT จาก bridge ระหว่างนี้ (หมดอายุเองใน 20 นาทีกันค้าง)
+  await chrome.storage.session.set({ chatAskUntil: Date.now() + 20 * 60_000 })
+  try {
+    return await askChatGPTNow(prompt, attachments)
+  } finally {
+    await chrome.storage.session.set({ chatAskUntil: 0 }).catch(() => {})
+  }
+}
+
+async function askChatGPTNow(prompt, attachments) {
   const tabId = await freshChatTab()
   stopIfRequested()
   const send = () => chrome.tabs.sendMessage(tabId, { type: 'ASK', prompt, newChat: false, attachments })
@@ -1488,6 +1499,21 @@ let clip = null
 function renderClipSettings() {
   if (!clip) return
   for (const b of $('clipOrientation').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.orientation))
+  // ลายเส้น — โปรแกรมในเครื่องรุ่นเก่าไม่ส่งมา → ซ่อน
+  const artBox = $('clipArtStyle')
+  const artOpts = clip.options.artStyle ?? []
+  artBox.parentElement.hidden = !artOpts.length
+  if (!artBox.childElementCount) {
+    for (const o of artOpts) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      artBox.append(b)
+    }
+  }
+  for (const b of artBox.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.value === clip.artStyle))
+    b.disabled = localBusy()
+  }
   const sel = $('clipSubtitles')
   if (!sel.options.length) for (const o of clip.options.subtitles) sel.append(new Option(o.label, o.id))
   sel.value = clip.subtitles
@@ -1563,7 +1589,8 @@ function renderClipSettings() {
   const motionLabel = motionOptions.find((o) => o.id === clip.motion)?.label
   const subLabel = clip.options.subtitles.find((o) => o.id === clip.subtitles)?.label
   const pauseLabel = clip.options.pause.find((o) => o.id === clip.pause)?.label
-  const summary = `${clip.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'} · ซับไตเติล${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · เงียบ${pauseLabel}`
+  const artLabel = (clip.options.artStyle ?? []).find((o) => o.id === clip.artStyle)?.label
+  const summary = `${clip.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'}${artLabel ? ` · ${artLabel}` : ''} · ซับไตเติล${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · เงียบ${pauseLabel}`
   $('clipSettingsSummary').textContent = `ตั้งค่าคลิป: ${summary}${character?.active ? ' · ตัวละครของฉัน' : ''}`
   $('renderSettingsHint').textContent = `ซับไตเติล: ${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · แนวภาพตามภาพที่สร้างไว้ (เปลี่ยนได้ที่ ⚡ ตั้งค่าคลิป)`
   for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button'), ...ai.querySelectorAll('button')]) el.disabled = localBusy()
@@ -1578,6 +1605,10 @@ async function saveClipSettings(change) {
   renderClipSettings()
 }
 
+$('clipArtStyle').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !localBusy()) saveClipSettings({ artStyle: b.dataset.value })
+})
 $('clipOrientation').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (b && !localBusy()) saveClipSettings({ orientation: b.dataset.value })
@@ -2509,6 +2540,15 @@ function openBookSheet(app, video, opener) {
 }
 
 $('openLibrary').addEventListener('click', openLibrary)
+// โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — หน้าจอแยก ใช้ api()/localApp() ตัวเดียวกับคลังวิดีโอ
+// ห่อ try — หน้าจอโพสต์มีปัญหาเมื่อไรต้องไม่ทำให้ส่วนอื่นของแผงข้างหยุดทำงาน
+try {
+  const postingView = initPosting({ api, localApp })
+  $('openPosting').addEventListener('click', () => postingView.open())
+} catch (err) {
+  console.error('[posting] เปิดหน้าจอโพสต์อัตโนมัติไม่ได้', err)
+  $('openPosting').hidden = true
+}
 $('closeLibrary').addEventListener('click', () => {
   $('library').hidden = true
 })
@@ -2556,12 +2596,15 @@ function renderVoices() {
   }
   if (V.edge) {
     // พากย์ไทย: ซ่อนเสียงอังกฤษล้วน — อ่านไทยไม่ออก (Microsoft ไม่ส่งเสียงกลับมา) · พากย์อังกฤษ: แสดงครบทุกเสียง
-    const thai = (S.language ?? V.language) !== 'en'
-    const EDGE_GROUPS = [
-      ['thai', 'Edge — เสียงไทย'],
-      ['multi', 'Edge — หลายภาษา (พากย์ไทยและอังกฤษได้)'],
-      ...(thai ? [] : [['english', 'Edge — อังกฤษ']]),
-    ]
+    // พากย์จีน: แสดงเสียงจีน + หลายภาษา · พากย์ไทย: ไทย + หลายภาษา · อังกฤษ: ทุกกลุ่มยกเว้นจีน
+    const vlang = S.language ?? V.language
+    const EDGE_GROUPS = vlang === 'zh'
+      ? [['chinese', 'Edge — เสียงจีน'], ['multi', 'Edge — หลายภาษา']]
+      : [
+          ['thai', 'Edge — เสียงไทย'],
+          ['multi', 'Edge — หลายภาษา (พากย์ไทยและอังกฤษได้)'],
+          ...(vlang === 'en' ? [['english', 'Edge — อังกฤษ']] : []),
+        ]
     for (const [key, label] of EDGE_GROUPS) {
       const voices = V.edge.voices.filter((v) => (v.group ?? 'english') === key)
       if (!voices.length) continue
@@ -3118,3 +3161,140 @@ resumeVoice()
 resumeAuto()
 loadUpdate()
 setInterval(() => loadUpdate(), 10 * 60_000)
+
+// ── 🏭 ผลิตต่อเนื่อง — โปรแกรมในเครื่องเป็นคนคุมเวลา (ปิดแผงนี้ได้) แผงนี้แค่ตั้งค่า/ดูสถานะ ──
+let prod = null
+let prodFilled = false
+const PROD_LANG = { th: 'ไทย', zh: 'จีน', en: 'อังกฤษ' }
+const prodTime = (t) => new Date(t).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', day: new Date(t).toDateString() === new Date().toDateString() ? undefined : 'numeric', month: new Date(t).toDateString() === new Date().toDateString() ? undefined : 'short' })
+
+function prodForm() {
+  return {
+    count: Number($('prodCount').value),
+    start: $('prodStart').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'now',
+    time: $('prodTime').value,
+    delayMin: Number($('prodDelayMin').value),
+    delayMax: Number($('prodDelayMax').value),
+    random: { genre: $('prodRandGenre').checked, art: $('prodRandArt').checked, narration: $('prodRandNarration').checked, language: $('prodRandLang').checked },
+    languages: [...$('prodLangs').querySelectorAll('input:checked')].map((i) => i.value),
+    autoPost: $('prodAutoPost').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'ai',
+  }
+}
+
+function renderProd() {
+  if (!prod) return
+  const { settings: s, state: st } = prod
+  if (!prodFilled) {
+    prodFilled = true
+    $('prodCount').value = s.count
+    $('prodTime').value = s.time
+    $('prodDelayMin').value = s.delayMin
+    $('prodDelayMax').value = s.delayMax
+    $('prodRandGenre').checked = s.random.genre
+    $('prodRandArt').checked = s.random.art
+    $('prodRandNarration').checked = s.random.narration
+    $('prodRandLang').checked = s.random.language
+    for (const i of $('prodLangs').querySelectorAll('input')) i.checked = s.languages.includes(i.value)
+    for (const b of $('prodAutoPost').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === s.autoPost))
+    for (const b of $('prodStart').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === s.start))
+  }
+  const postMode = prodForm().autoPost
+  $('prodPostHint').textContent = postMode === 'off'
+    ? 'คลิปที่เสร็จอยู่ในคลังวิดีโอ ไม่เข้าคิวโพสต์'
+    : !prod.postTargets
+      ? '⚠️ ยังไม่ได้เชื่อมเพจ/ช่อง — คลิปจะรอในคิว กด 📣 โพสต์อัตโนมัติ (แถวบนสุด) เพื่อเชื่อม Facebook Page / YouTube'
+      : postMode === 'now'
+        ? 'คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปเลย (ไม่ตรวจ)'
+        : 'คลิปเข้าคิวทันทีที่เสร็จ → AI ตรวจ → ผ่านแล้วลงช่องเวลาโพสต์ถัดไปเอง (ไม่ผ่าน = รอคุณตรวจในหน้า 📣)'
+  $('prodTimeRow').style.display = prodForm().start === 'now' ? 'none' : '' // .field ตั้ง display เอง — hidden ไม่มีผล
+  $('prodLangs').style.opacity = $('prodRandLang').checked ? '1' : '.45'
+  const total = s.count ? `/${s.count}` : ''
+  const waiting = st.active && !st.run && st.nextAt
+  $('prodStatus').textContent = st.active
+    ? `${st.run ? `▶ กำลังทำคลิป ${st.made + 1}${total}` : waiting ? `⏳ คลิปถัดไป ${prodTime(st.nextAt)}` : ''} · ได้แล้ว ${st.made}${total}${st.failed ? ` · ล้ม ${st.failed}` : ''}${st.message ? ` — ${st.message}` : ''}`
+    : st.message || 'ยังไม่ได้เริ่ม'
+  $('prodBadge').textContent = st.active ? (st.run ? `กำลังผลิต ${st.made + 1}${total}` : `รอ ${prodTime(st.nextAt)}`) : ''
+  const list = $('prodHistory')
+  list.textContent = ''
+  for (const h of st.history ?? []) {
+    const li = document.createElement('li')
+    // สถานะในคิวโพสต์: ตั้งเวลา / AI กำลังตรวจ / รอคนตรวจ / โพสต์แล้ว
+    const p = h.post
+    const postText = !p ? '' : p.status === 'scheduled' ? ` · 📣 โพสต์ ${prodTime(p.scheduleAt)}`
+      : p.status === 'posted' ? ' · 📣 โพสต์แล้ว'
+        : p.status === 'failed' ? ' · 📣 โพสต์ไม่สำเร็จ'
+          : p.status === 'review' ? (p.ai === 'running' ? ' · 📣 AI กำลังตรวจ' : p.ai === 'fix' ? ' · 📣 AI ให้แก้ — รอคุณตรวจ' : ' · 📣 รอในคิว') : ''
+    li.append(`${h.ok ? '✓' : '✗'} ${h.title ?? h.slug ?? 'คลิป'}${h.language ? ` (${PROD_LANG[h.language] ?? h.language})` : ''}${h.ok ? postText : ` — ${String(h.error ?? '').slice(0, 80)}`} `)
+    if (h.ok && h.slug) {
+      // ▶ ดูในแผงนี้ทันที (หน้าต่างวิดีโอเดียวกับตอนทำคลิปอัตโนมัติเสร็จ)
+      const play = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost', textContent: '▶ ดู', title: 'เปิดดูคลิปนี้' })
+      play.style.cssText = 'padding:0 8px;min-height:0;font-size:12px'
+      play.addEventListener('click', async () => {
+        const ok = await showFinishedVideo(await localApp(), h.slug).catch(() => false)
+        if (!ok) $('prodStatus').textContent = 'ไม่พบไฟล์วิดีโอของคลิปนี้ (อาจถูกลบหรือย้าย)'
+      })
+      li.append(play)
+    }
+    list.append(li)
+  }
+  $('prodReady').style.display = st.ready ? '' : 'none' // .controls ตั้ง display เอง — hidden ไม่มีผล
+  if (st.ready) $('prodReadyText').textContent = `🎬 ชุดล่าสุด ${st.ready.files.length} คลิป พร้อมดู`
+  $('prodGo').disabled = st.active
+  $('prodStop').disabled = !st.active
+}
+
+async function prodCall(path, body) {
+  try {
+    prod = await api(await localApp(), path, body)
+    renderProd()
+  } catch (err) {
+    $('prodStatus').textContent = err.message
+  }
+}
+
+let prodSaveTimer = null
+function prodSave() {
+  renderProd()
+  clearTimeout(prodSaveTimer)
+  prodSaveTimer = setTimeout(() => prodCall('/api/production/settings', prodForm()), 500)
+}
+
+$('prodBox').addEventListener('toggle', () => {
+  if ($('prodBox').open) prodCall('/api/production')
+})
+$('prodStart').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  for (const x of $('prodStart').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
+  prodSave()
+})
+$('prodAutoPost').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  for (const x of $('prodAutoPost').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
+  prodSave()
+})
+for (const id of ['prodCount', 'prodTime', 'prodDelayMin', 'prodDelayMax', 'prodRandGenre', 'prodRandArt', 'prodRandNarration', 'prodRandLang']) {
+  $(id).addEventListener('change', prodSave)
+}
+$('prodLangs').addEventListener('change', prodSave)
+$('prodGo').addEventListener('click', () => {
+  const f = prodForm()
+  if (f.random.language && !f.languages.length) return ($('prodStatus').textContent = 'เลือกภาษาที่จะสุ่มอย่างน้อย 1 ภาษา')
+  $('prodGo').disabled = true
+  prodCall('/api/production/start', { settings: f })
+})
+$('prodStop').addEventListener('click', () => prodCall('/api/production/stop', {}))
+$('prodReadyPlay').addEventListener('click', () => prodCall('/api/production/open', { what: 'play', index: 0 }))
+$('prodReadyFolder').addEventListener('click', () => prodCall('/api/production/open', { what: 'folder' }))
+
+// ดูสถานะ: ตอนเปิดแผง + ทุก 20 วิ ขณะกำลังผลิตหรือกล่องเปิดอยู่ (ไม่ปลุกโปรแกรมในเครื่องถ้าไม่ได้ใช้)
+chrome.runtime.sendMessage({ type: 'ENSURE_APP' }).then((app) => app?.ok && api(app, '/api/production')).then((p) => {
+  if (!p) return
+  prod = p
+  renderProd()
+  if (p.state.active) $('prodBox').open = true
+}).catch(() => {})
+setInterval(() => {
+  if (prod?.state.active || $('prodBox').open) prodCall('/api/production')
+}, 20_000)

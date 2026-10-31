@@ -5,6 +5,12 @@ rem All work (and all Thai messages) live in native\bootstrap.ps1 (finds/downloa
 rem Safe to run again any time (after moving the folder, after an update).  --quiet = no popup, no pause.
 cd /d "%~dp0"
 if not exist "%~dp0native\bootstrap.ps1" goto notextracted
+rem Prefer setup.exe: it shows progress in its own window with a Thai font (the console shows Thai as boxes
+rem on PCs whose system locale is not Thai, and clicking inside it pauses the install).
+if exist "%~dp0setup.exe" (
+  start "" /wait "%~dp0setup.exe" %*
+  exit /b %errorlevel%
+)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0native\bootstrap.ps1" %*
 if errorlevel 1 if not "%~1"=="--quiet" pause
 exit /b %errorlevel%

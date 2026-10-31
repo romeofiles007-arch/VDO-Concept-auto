@@ -3,16 +3,22 @@ import { basename, extname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { loadEnv } from './env.mjs'
 
-// ถูกสุดบน Kie (ก.ย. 2026): Seedance 1.5 Pro 480p ไม่มีเสียง ≈ 8.75 เครดิต/คลิป 5 วิ
-// (v1-lite ตอบ Internal Error ทุกงาน · v1-pro 14 เครดิต)
-export const KIE_MODEL = 'bytedance/seedance-1.5-pro'
-/** สำรองเมื่อโมเดลหลักล้ม (Kie เคยพังทั้งโมเดลแบบ Internal Error) — แพงกว่า (14 เครดิต) แต่ดีกว่าได้ภาพนิ่ง */
-export const KIE_FALLBACK_MODEL = 'bytedance/v1-pro-image-to-video'
+// ถูกสุดที่ใช้ได้จริงบน Kie (วัดจากงานจริง ต.ค. 2026): v1-pro 480p 5 วิ = 14 เครดิต/คลิป
+// Seedance 2 mini หักจริง 19 เครดิต และปฏิเสธภาพที่คล้ายการ์ตูนดัง ("copyright restrictions") — ใช้เป็นตัวสำรอง
+// Seedance 1.5 Pro ถูก Kie ปลดแล้ว · v1-lite ตอบ Internal Error ทุกงาน · Seedance 2.5 แพงมาก (≈ 17 เครดิต/วินาที)
+export const KIE_MODEL = 'bytedance/v1-pro-image-to-video'
+/** สำรองเมื่อโมเดลหลักล้ม — แพงกว่า (19 เครดิต) แต่ดีกว่าได้ภาพนิ่ง */
+export const KIE_FALLBACK_MODEL = 'bytedance/seedance-2-mini'
 export const KIE_RESOLUTION = '480p'
 export const KIE_DURATION = '5'
 
 // แต่ละโมเดลใช้ชื่อพารามิเตอร์ไม่เหมือนกัน (ตาม docs.kie.ai)
 const INPUTS = {
+  // docs.kie.ai/market/bytedance/seedance-2-mini — ไม่มีตัวล็อกกล้อง (prompt สั่งกล้องนิ่งแทน)
+  'bytedance/seedance-2-mini': ({ imageUrl, prompt, image }) => ({
+    first_frame_url: imageUrl, prompt, aspect_ratio: aspectOf(image),
+    resolution: KIE_RESOLUTION, duration: Number(KIE_DURATION), generate_audio: false,
+  }),
   'bytedance/seedance-1.5-pro': ({ imageUrl, prompt, image }) => ({
     input_urls: [imageUrl], prompt, aspect_ratio: aspectOf(image),
     resolution: KIE_RESOLUTION, duration: Number(KIE_DURATION), fixed_lens: true, generate_audio: false,
@@ -33,12 +39,12 @@ const INPUTS = {
  * ทุกตัวทดสอบยิงจริงกับภาพการ์ตูนแนวตั้งแล้ว
  */
 export const KIE_TIERS = {
-  cheap: { label: 'ถูก', model: 'bytedance/seedance-1.5-pro', name: 'Seedance 1.5 Pro', credits: 8.75, detail: '480p · 5 วิ' },
+  cheap: { label: 'ถูก', model: 'bytedance/v1-pro-image-to-video', name: 'Seedance v1 Pro', credits: 14, detail: '480p · 5 วิ' },
   mid: { label: 'พอใช้', model: 'hailuo/2-3-image-to-video-standard', name: 'Hailuo 2.3', credits: 30, detail: '768p · 6 วิ' },
   pro: { label: 'เก่ง', model: 'kling-2.6/image-to-video', name: 'Kling 2.6', credits: 55, detail: 'คมชัด · 5 วิ' },
 }
 export const kieTier = (tier) => KIE_TIERS[tier] ?? KIE_TIERS.cheap
-/** ตัวหลักล้ม → ลองตัวสำรอง: ระดับถูกสำรองด้วย v1-pro · ระดับอื่นถอยมาใช้ Seedance (ถูกกว่า ดีกว่าได้ภาพนิ่ง) */
+/** ตัวหลักล้ม → ลองตัวสำรอง: ระดับถูก (v1-pro) สำรองด้วย Seedance 2 mini · ระดับอื่นถอยมาใช้ v1-pro (ถูกกว่า ดีกว่าได้ภาพนิ่ง) */
 export const fallbackOf = (model) => (model === KIE_TIERS.cheap.model ? KIE_FALLBACK_MODEL : model === KIE_FALLBACK_MODEL ? null : KIE_TIERS.cheap.model)
 const API = 'https://api.kie.ai/api/v1/jobs'
 const UPLOAD = 'https://kieai.redpandaai.co/api/file-stream-upload'

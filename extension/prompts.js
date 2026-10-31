@@ -18,6 +18,11 @@ const LANG = {
     unit: 'words',
     person: 'second person throughout ("you", "your"), never "we" or "I"',
   },
+  zh: {
+    name: 'ภาษาจีนกลาง อักษรตัวย่อ (简体中文)',
+    unit: '字',
+    person: 'บุรุษที่ 2 ตลอด ใช้ "你" ห้ามใช้ "我们" หรือ "我"',
+  },
 }
 
 /** แนวคลิป — ตรงกับ GENRE CATALOG ใน Blueprint · 'mix' = สุ่มคนละแนวทุกหัวข้อ */
@@ -81,7 +86,7 @@ ${genres.map((g, i) => `${i + 1}. ${g}`).join('\n')}
 
 function lang(code) {
   const l = LANG[code]
-  if (!l) throw new Error(`ไม่รองรับภาษา "${code}" — ใช้ได้แค่ th หรือ en`)
+  if (!l) throw new Error(`ไม่รองรับภาษา "${code}" — ใช้ได้แค่ th, en หรือ zh`)
   return l
 }
 
@@ -150,7 +155,8 @@ export function parseScoredTopics(text) {
       return Number.isFinite(n) ? n : null
     }
     // คอลัมน์ Genre อยู่หลังชื่อ — คำตอบรุ่นเก่าไม่มี (คอลัมน์ที่ 3 เป็นตัวเลข)
-    const genre = cells.length >= 7 && num(cells[2]) == null ? cells.splice(2, 1)[0] : ''
+    // ห้ามใช้ num() ตัดสิน — ชื่อแนวที่มีตัวเลข (เช่น "หมวด 1 · ...") เคยถูกนับเป็นคะแนน Hook ทั้งคอลัมน์เลื่อน
+    const genre = cells.length >= 7 && !/^\s*\d+(?:\.\d+)?\s*(?:\/\s*\d+)?\s*$/.test(cells[2]) ? cells.splice(2, 1)[0] : ''
     const [n, title, hook, search, visual, score, ...why] = cells
     if (!title || /^video title$/i.test(title)) continue
     const h = num(hook)
@@ -176,7 +182,7 @@ export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes 
 **ภาษาของ narration: ${vo.name}** — เขียนทั้งเรื่องเป็นภาษานี้ภาษาเดียว
 (ชื่อเรื่องเป็นคนละภาษากับ narration ได้ ไม่ต้องแปลชื่อเรื่อง)
 
-ความยาวเป้าหมาย ${targetMinutes} นาที ≈ ${words} ${vo.unit}
+ความยาวเป้าหมาย ${targetMinutes} นาที ≈ ${language === 'zh' ? Math.round(words * HAN_CHARS_PER_WORD) : words} ${vo.unit}${language === 'zh' ? `\n\n${ZH_RULES}` : ''}
 
 ข้อกำหนดของ output — สำคัญมาก อ่านให้ครบ:
 - ตอบเป็น narration ล้วนในแชตโดยตรง อย่าสร้างไฟล์ให้ดาวน์โหลด
@@ -187,6 +193,14 @@ export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes 
 - ห้ามใส่ [pause] marker ใดๆ
 - ${vo.person}`
 }
+
+/** พากย์จีน (zh) */
+export const HAN_CHARS_PER_WORD = 1.3
+const HAN = /[\u3400-\u9fff\uf900-\ufaff]/g
+const ZH_RULES = `**พากย์จีน**
+- เขียน narration เป็นภาษาจีนกลางอักษรตัวย่อ (简体中文) ทั้งบท ให้เป็นจีนที่เป็นธรรมชาติ
+- ห้ามมีพินอิน ห้ามมีคำแปลไทยหรือวงเล็บ · ตัวเลขเขียนเป็นอักษรจีน
+- บรรทัดสั้น 6–14 字 หนึ่งบรรทัดหนึ่งความคิด ใช้เครื่องหมายวรรคตอนจีน (，。？！) ได้`
 
 /** ตัดคำนำ/คำปิดท้าย/markdown ที่โมเดลชอบแถมมา ให้เหลือ narration ล้วนตาม OUTPUT 2 */
 export function cleanScript(text) {
@@ -217,10 +231,14 @@ export function parseTopics(text) {
 
 /** ประมาณความยาวคลิปก่อนยิง TTS จริง — ใช้เช็คว่าสคริปต์ยาวพอสำหรับ n นาทีไหม */
 export function estimateMinutes(script, wordsPerMinute = 150) {
-  // ไทยไม่เว้นวรรคระหว่างคำ → นับตัวอักษรไทยแล้วหารด้วยความยาวคำเฉลี่ย (~4.5 ตัว/คำ)
+  // ไทยไม่เว้นวรรคระหว่างคำ → นับตัวอักษรไทยแล้วหารด้วยความยาวคำเฉลี่ย
+  // 5.4 ตัว/คำ ที่ 150 คำ/นาที = ~13.5 ตัว/วินาที — วัดจากเสียงพากย์จริง 8 คลิป (12.5–14.3 ตัว/วิ, ต.ค. 2026)
+  // เดิมใช้ 4.5 ทำให้ประเมินยาวเกินจริง ~20% → บทที่ยาวพอดีถูกตีว่า "ยาวผิดเป้า" แล้วสั่งเขียนใหม่วนหลายรอบ
+  // จีน: 1.3 字 = 1 คำ — วัดจาก Edge zh-CN-YunyangNeural ความเร็วปกติ 3.24 字/วิ รวมช่วงเว้น (ต.ค. 2026)
   const thaiChars = (script.match(/[฀-๿]/g) || []).length
-  const otherWords = (script.replace(/[฀-๿]/g, ' ').match(/\S+/g) || []).length
-  return (thaiChars / 4.5 + otherWords) / wordsPerMinute
+  const hanChars = (script.match(HAN) || []).length
+  const otherWords = (script.replace(/[฀-๿]/g, ' ').replace(HAN, ' ').match(/[\p{L}\p{N}]+/gu) || []).length
+  return (thaiChars / 5.4 + hanChars / HAN_CHARS_PER_WORD + otherWords) / wordsPerMinute
 }
 
 /** `my topic!` → `my_topic` ใช้เป็นชื่อโฟลเดอร์และชื่อไฟล์ script */
@@ -230,4 +248,38 @@ export function slugify(title) {
     .replace(/[^\p{L}\p{N}]+/gu, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 60)
+}
+
+/**
+ * ลายเส้นของภาพ (ตั้งค่าคลิป → "ลายเส้นของภาพ") — random = สุ่มต่อคลิป จำไว้ใน projects/<slug>/art_style.json
+ *   doodle     — การ์ตูน 2D ตาม VISUAL STYLE DNA ของ Blueprint (เดิม)
+ *   watercolor — ภาพวาดสีน้ำ
+ *   chinese    — ภาพวาดหมึกจีน (shuimo + gongbi)
+ *   body / bodyFlow = แบบตัวละครที่ใช้แทน FULL-BODY/STICK MODE
+ */
+export const ART_STYLES = {
+  doodle: { label: 'การ์ตูน doodle' },
+  watercolor: {
+    label: 'ภาพวาดสีน้ำ',
+    rule: `**ลายเส้นของคลิปนี้: ภาพวาดสีน้ำ — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**
+- ART STYLE ใน Style Bible ให้เขียนว่า: Painterly watercolor illustration — soft ink linework with rich watercolor washes and gentle paper texture, warm golden light with soft atmospheric haze, detailed lush backgrounds, cinematic wide compositions, emotional storytelling mood, fully colored
+- ตัวละครวาดแบบภาพวาดสัดส่วนสมจริง (ไม่ใช่การ์ตูน): ใบหน้ามีรายละเอียดและอารมณ์ชัด ผิวและผ้ามีแสงเงาแบบสีน้ำ
+- ทุกช็อตเหมือนภาพวาดหนึ่งภาพ: ฉากหลังละเอียด แสงนุ่ม หมอกบาง สีอิ่มแบบสีน้ำ
+- ตัวอักษรบนภาพใช้น้อยที่สุด (ซับไตเติลใส่ตอนตัดต่อ)`,
+    flow: 'ลายเส้น: ภาพวาดสีน้ำ ลายเส้นหมึกนุ่ม ลงสีน้ำซึมเต็มภาพ แสงทองนุ่ม ฉากหลังละเอียด ตัวละครสัดส่วนสมจริงแบบภาพวาด — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ใช้ลายเส้นนี้ทุกภาพ',
+    body: '- แบบตัวละคร: ภาพวาดสีน้ำสัดส่วนสมจริง (ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง ไม่ใช่หัวโต) ตามลายเส้นภาพวาดสีน้ำด้านล่าง · เขียนแบบนี้ใน Character Bible ด้วย',
+    bodyFlow: 'ตัวละครทุกตัววาดแบบภาพวาดสีน้ำสัดส่วนสมจริง ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง',
+  },
+  chinese: {
+    label: 'ภาพวาดจีน',
+    rule: `**ลายเส้นของคลิปนี้: ภาพวาดหมึกจีน — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**
+- ART STYLE ใน Style Bible ให้เขียนว่า: Traditional Chinese ink-wash painting (shuimo) with fine gongbi detail on the figures — expressive black ink brushstrokes, fully colored with rich translucent watercolor washes (vermilion, ochre, jade green, indigo, touches of gold) — never monochrome, aged rice-paper / silk texture, generous empty space, misty layered mountains, pine and bamboo, lotus ponds, pavilions with curved roofs, drifting clouds, cinematic scroll-painting compositions
+- ตัวละครวาดแบบภาพวาดพู่กันจีนสัดส่วนสมจริง (ไม่ใช่การ์ตูน): เส้นพู่กันเรียวคม ใบหน้ามีอารมณ์ ผ้าพลิ้วเป็นริ้ว
+- ทุกช็อตเหมือนภาพม้วนจิตรกรรมจีนหนึ่งภาพ: เว้นพื้นที่ว่างกว้าง หมอกลอยเป็นชั้น ภูเขาไกลจางเป็นหมึกอ่อน (ฉากในเรื่องยังเป็นสถานที่ตามเนื้อเรื่อง แค่วาดด้วยลายเส้นนี้)
+- ห้ามมีตัวอักษรจีน ตราประทับ หรือข้อความใดๆ บนภาพ (ซับไตเติลใส่ตอนตัดต่อ)`,
+    flow: 'ลายเส้น: ภาพวาดหมึกจีน พู่กันหมึกดำลงสีน้ำเต็มภาพ (ชาด เหลืองดิน เขียวหยก คราม แต้มทอง — ไม่ใช่หมึกขาวดำ) พื้นกระดาษสาเก่า เว้นที่ว่างกว้าง หมอกเป็นชั้น ตัวละครสัดส่วนสมจริงแบบภาพพู่กัน — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ห้ามมีตัวอักษรจีนหรือตราประทับ ใช้ลายเส้นนี้ทุกภาพ',
+    body: '- แบบตัวละคร: ภาพวาดพู่กันจีนสัดส่วนสมจริง (ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง ไม่ใช่หัวโต) ตามลายเส้นภาพวาดหมึกจีนด้านล่าง · เขียนแบบนี้ใน Character Bible ด้วย',
+    bodyFlow: 'ตัวละครทุกตัววาดแบบภาพพู่กันจีนสัดส่วนสมจริง ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง',
+  },
+  random: { label: '🎲 สุ่ม' },
 }

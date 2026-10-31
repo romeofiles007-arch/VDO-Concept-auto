@@ -26,7 +26,7 @@ if (!(head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf)) {
 const out = join(ROOT, 'setup.exe')
 execFileSync(csc, [
   '/nologo',
-  '/target:exe',
+  '/target:winexe', // หน้าต่างของตัวเอง (ฟอนต์ไทย) ไม่ใช่ console — เครื่องภาษาอื่นแสดงไทยเป็นกล่อง
   '/platform:anycpu',
   '/optimize+',
   '/codepage:65001',
@@ -35,6 +35,7 @@ execFileSync(csc, [
   '/r:System.IO.Compression.dll',
   '/r:System.IO.Compression.FileSystem.dll',
   '/r:System.Windows.Forms.dll',
+  '/r:System.Drawing.dll',
   `/out:${out}`,
   src,
 ], { stdio: 'inherit' })
