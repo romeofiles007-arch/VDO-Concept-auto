@@ -93,10 +93,83 @@ function startBridge() {
   })
 }
 
+/** GET แบบใส่ token — คืน status (0 = ต่อไม่ได้) และ JSON */
+async function authed(port, path, token) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { 'x-bridge-token': token ?? '' }, signal: AbortSignal.timeout(3000) })
+    return { status: res.status, body: await res.json().catch(() => null) }
+  } catch {
+    return { status: 0, body: null }
+  }
+}
+
+function powershellOut(script) {
+  return new Promise((resolve) => {
+    const full = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${script}`
+    const proc = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(full, 'utf16le').toString('base64')], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    proc.stdout.on('data', (d) => (out += d))
+    proc.on('close', () => resolve(out.trim()))
+    proc.on('error', () => resolve(''))
+  })
+}
+
+/** process ที่จับพอร์ตนี้อยู่ → { pid, root } (root = โฟลเดอร์ของ bridge นั้น จาก command line) */
+async function portOwner(port) {
+  const out = await powershellOut([
+    `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+    `if ($c) { $p = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $c.OwningProcess); [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$p.ProcessId + [char]9 + [string]$p.CommandLine)) }`,
+  ].join('; '))
+  if (!out) return null
+  const [pid, cmd = ''] = Buffer.from(out, 'base64').toString('utf8').split('\t')
+  const root = /"?([^"]*?)[\\/]bridge[\\/]server\.js"?/i.exec(cmd)?.[1] ?? null
+  return Number(pid) ? { pid: Number(pid), root } : null
+}
+
+function envToken(root) {
+  try {
+    return /^\s*BRIDGE_TOKEN\s*=\s*"?([^"\r\n]+)"?\s*$/m.exec(readFileSync(join(root, '.env'), 'utf8'))?.[1]?.trim() ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * มี bridge ตอบอยู่ที่พอร์ตแล้ว แต่ไม่รับ token ของโฟลเดอร์นี้ = bridge ของโฟลเดอร์อื่น
+ * (ติดตั้งรุ่นใหม่ลงโฟลเดอร์ใหม่แต่ตัวเก่ายังเปิดค้าง / อีกโปรแกรมในตระกูลเดียวกันใช้พอร์ตเดียวกัน)
+ * เดิมส่ง token ของเราไปให้ extension ทั้งที่คุยกับตัวอื่นอยู่ → แผงข้างขึ้น "token ไม่ถูกต้อง" (เจอที่เครื่องลูกค้า ต.ค. 2026)
+ * ตัวนั้นว่าง → ปิดเฉพาะ PID นั้นแล้วเปิดตัวของเรา · กำลังทำงาน → ไม่ปิดให้ บอกว่าเป็นโฟลเดอร์ไหน
+ */
+async function takeOverPort(port) {
+  const owner = await portOwner(port)
+  if (!owner) return { ok: false, error: `มีโปรแกรมอื่นใช้พอร์ต ${port} อยู่ — รีสตาร์ทเครื่องแล้วกดไอคอนอีกครั้ง` }
+  const where = owner.root ?? `process ${owner.pid}`
+  const otherToken = owner.root ? envToken(owner.root) : null
+  if (otherToken) {
+    const v = await authed(port, '/ext-version', otherToken)
+    if (v.status === 200 && v.body?.busy) {
+      return { ok: false, error: `โปรแกรมจากโฟลเดอร์อื่น (${where}) กำลังทำงานอยู่บนพอร์ตเดียวกัน — รอให้เสร็จ หรือกด ปิดโปรแกรม.bat ในโฟลเดอร์นั้น แล้วกดไอคอนอีกครั้ง` }
+    }
+  }
+  await powershellOut(`Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue`)
+  const deadline = Date.now() + 10_000
+  while (await healthy(port)) {
+    if (Date.now() > deadline) return { ok: false, error: `ปิดโปรแกรมจากโฟลเดอร์อื่น (${where}) ไม่สำเร็จ — กด ปิดโปรแกรม.bat ในโฟลเดอร์นั้น หรือรีสตาร์ทเครื่อง` }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  return { ok: true, replaced: where }
+}
+
 async function ensure() {
   const env = readEnv()
   const port = Number(env.BRIDGE_PORT || 8765)
   const token = ensureToken(env)
+
+  // bridge ที่ตอบอยู่ต้องเป็นของโฟลเดอร์นี้ (รับ token เดียวกัน) — ไม่ใช่แค่ "พอร์ตตอบ"
+  if ((await healthy(port)) && (await authed(port, '/ext-version', token)).status === 401) {
+    const took = await takeOverPort(port)
+    if (!took.ok) return took
+  }
 
   if (!(await healthy(port))) {
     if (!(await startBridge())) return { ok: false, error: 'เปิดโปรแกรมไม่สำเร็จ (สร้าง process ไม่ได้)' }
