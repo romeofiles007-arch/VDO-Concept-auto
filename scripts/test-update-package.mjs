@@ -85,7 +85,8 @@ if (!live) {
   const dir = join(base, 'offline')
   const oldSha = fakeInstall(dir, OLD)
   const zip = join(base, 'new.zip')
-  const newSha = archive('a93a049', zip)
+  // รุ่นใหม่ = commit ล่าสุดในเครื่อง (ต้องผ่านกฎตัวติดตั้งของรุ่นปัจจุบัน เช่นต้องมี ถอนการติดตั้ง.bat) — รันหลัง commit
+  const newSha = archive(process.env.NEW_REF || 'HEAD', zip)
   const calls = []
   const fakeFetch = async (url) => {
     calls.push(url)

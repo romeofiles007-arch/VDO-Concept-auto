@@ -555,10 +555,158 @@ function uninstall() {
   console.log('ถอนการลงทะเบียนและลบ shortcut แล้ว (ไฟล์โปรแกรมและงานของคุณยังอยู่ครบ)')
 }
 
+/**
+ * ถอนทั้งหมดให้เครื่องกลับเป็นเหมือนไม่เคยติดตั้ง (ถอนการติดตั้ง.bat) — ใช้ทดสอบการติดตั้งใหม่ตั้งแต่ต้น
+ *   ปิดโปรแกรม → ตัดการเชื่อมกับ Chrome/Edge → ลบ shortcut → ให้กด Remove extension ใน Chrome → ลบโฟลเดอร์นี้ทั้งโฟลเดอร์
+ * แตะเฉพาะของที่ชี้มาที่โฟลเดอร์นี้ — registry / shortcut / junction ที่ชี้ไปโฟลเดอร์อื่น (เช่นเครื่องนักพัฒนา) ไม่ลบ
+ * ทุกอย่างที่ตัวติดตั้งลง (node, ffmpeg, python) อยู่ใน runtime\ ของโฟลเดอร์นี้ ไม่ได้ลงทั้งเครื่อง → ลบโฟลเดอร์ก็หมด
+ *   --yes          ไม่ถามยืนยัน · --keep-folder  ไม่ลบโฟลเดอร์ · --quiet  ไม่มีป๊อปอัป (ใช้ทดสอบ)
+ * โฟลเดอร์ที่มี .git (โฟลเดอร์พัฒนา) ไม่ถูกลบเด็ดขาด
+ */
+function confirmBox(text) {
+  try {
+    return powershell([
+      `Add-Type -AssemblyName System.Windows.Forms`,
+      `$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }`,
+      `[string][System.Windows.Forms.MessageBox]::Show($owner, ${psText(text)}, 'Cartoon Auto — ถอนการติดตั้ง', 'YesNo', 'Warning')`,
+    ].join('; '), { timeout: 24 * 3600_000 }) === 'Yes'
+  } catch {
+    return false
+  }
+}
+
+const pointsHere = (p) => {
+  try {
+    return !!p && (samePath(dirname(p), DIR) || samePath(p, ROOT))
+  } catch {
+    return false
+  }
+}
+
+async function uninstallFull() {
+  const isDev = existsSync(join(ROOT, '.git'))
+  const keepFolder = flag('--keep-folder') || isDev
+  const yes = flag('--yes')
+  const clips = existsSync(join(ROOT, 'projects')) ? readdirSync(join(ROOT, 'projects'), { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('_')).length : 0
+  console.log(`ถอนการติดตั้งจาก: ${ROOT}${isDev ? ' (โฟลเดอร์พัฒนา — ไม่ลบไฟล์)' : ''}`)
+  if (!yes && !quiet) {
+    const ok = confirmBox([
+      'ถอน Cartoon Auto ออกจากเครื่องนี้ ให้เหมือนไม่เคยติดตั้ง',
+      '',
+      '• ปิดโปรแกรมที่เปิดอยู่',
+      '• ตัดการเชื่อมกับ Chrome และลบ shortcut "Cartoon Auto"',
+      '• เปิดหน้า chrome://extensions ให้กด Remove ที่ Cartoon Auto',
+      keepFolder ? '• ไฟล์ในโฟลเดอร์นี้ยังอยู่ครบ' : `• ลบโฟลเดอร์นี้ทั้งหมด รวมงานคลิป ${clips} เรื่อง การตั้งค่า และ key ที่ใส่ไว้ — กู้คืนไม่ได้`,
+      '',
+      ROOT,
+      '',
+      'ทำต่อไหม?',
+    ].join('\n'))
+    if (!ok) {
+      console.log('ยกเลิก — ไม่ได้เปลี่ยนอะไร')
+      return 0
+    }
+  }
+
+  step('ปิดโปรแกรม')
+  try {
+    // ปิดเฉพาะ process ของโฟลเดอร์นี้ (แบบเดียวกับ ปิดโปรแกรม.bat) ยกเว้นตัวเอง — ตัวนี้รันด้วย node ใน runtime\ เหมือนกัน
+    const n = powershell([
+      `$root = ${psText(ROOT)}`,
+      `$mine = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ${process.pid} -and (($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\runtime\\', 'OrdinalIgnoreCase')) -or ($_.CommandLine -and $_.CommandLine.Contains($root + '\\bridge\\server.js'))) })`,
+      `$mine | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+      `$mine.Count`,
+    ].join('; '))
+    report('ปิดโปรแกรม', true, Number(n) ? `ปิด ${n} process` : 'ไม่ได้เปิดอยู่')
+  } catch (err) {
+    report('ปิดโปรแกรม', false, err.message.split(/\r?\n/)[0])
+  }
+
+  step('ตัดการเชื่อมกับ Chrome / Edge')
+  for (const key of REG_KEYS) {
+    const target = readRegistry(key)
+    const name = key.includes('Google') ? 'Chrome' : 'Edge'
+    if (!target) report(`ลงทะเบียน ${name}`, true, 'ไม่มีอยู่แล้ว')
+    else if (!pointsHere(target)) report(`ลงทะเบียน ${name}`, true, `ชี้ไปโฟลเดอร์อื่น (${dirname(dirname(target))}) — ไม่แตะ`)
+    else {
+      try {
+        execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore', windowsHide: true })
+        report(`ลงทะเบียน ${name}`, true, 'ลบแล้ว')
+      } catch (err) {
+        report(`ลงทะเบียน ${name}`, false, err.message.split(/\r?\n/)[0])
+      }
+    }
+  }
+  rmSync(manifestFile, { force: true })
+  rmSync(batFile, { force: true })
+  try {
+    if (lstatSync(JUNCTION).isSymbolicLink() && samePath(JUNCTION, ROOT)) rmdirSync(JUNCTION)
+  } catch {}
+  try {
+    rmdirSync(dirname(JUNCTION)) // %LOCALAPPDATA%\CartoonAuto — ลบเมื่อว่างเท่านั้น
+  } catch {}
+
+  step('ลบ shortcut')
+  try {
+    const removed = powershell([
+      `$root = ${psText(ROOT)}`,
+      `$shell = New-Object -ComObject WScript.Shell`,
+      `$n = 0`,
+      `foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {`,
+      `  $p = Join-Path $d '${SHORTCUT_NAME}'`,
+      `  if ((Test-Path -LiteralPath $p) -and ($shell.CreateShortcut($p).WorkingDirectory.TrimEnd('\\') -ieq $root.TrimEnd('\\'))) { Remove-Item -LiteralPath $p -Force; $n++ }`,
+      `}`,
+      `$n`,
+    ].join('\n'))
+    report('Shortcut "Cartoon Auto"', true, Number(removed) ? `ลบ ${removed} อัน` : 'ไม่มีที่ชี้มาที่โฟลเดอร์นี้')
+  } catch (err) {
+    report('Shortcut "Cartoon Auto"', false, err.message.split(/\r?\n/)[0])
+  }
+
+  step('Extension ใน Chrome')
+  let ext = loadedExtension()
+  if (!ext?.here) report('Extension Cartoon Auto', true, ext ? `ตัวที่โหลดไว้มาจากโฟลเดอร์อื่น (${ext.path}) — ไม่แตะ` : 'ไม่ได้โหลดไว้')
+  else {
+    // Chrome ไม่ยอมให้โปรแกรมลบ extension แทน — เปิดหน้าให้ แล้วรอผู้ใช้กด Remove
+    const chrome = chromeExe()
+    if (chrome && !quiet) spawn(chrome, ['chrome://extensions'], { detached: true, stdio: 'ignore' }).unref()
+    if (!quiet) {
+      console.log('  กด "Remove" ที่ Cartoon Auto Bridge ในหน้า chrome://extensions ที่เปิดให้ (รอให้ทำ นานสุด 5 นาที)')
+      const deadline = Date.now() + 5 * 60_000
+      while (Date.now() < deadline && loadedExtension()?.here) await new Promise((r) => setTimeout(r, 2000))
+      ext = loadedExtension()
+    }
+    report('Extension Cartoon Auto', !ext?.here, ext?.here ? 'ยังอยู่ใน Chrome' : 'เอาออกแล้ว', 'เปิด chrome://extensions แล้วกด Remove ที่ Cartoon Auto Bridge เอง')
+  }
+
+  let deleting = false
+  if (!keepFolder) {
+    step('ลบโฟลเดอร์โปรแกรม')
+    // กันลบผิดที่: ต้องเป็นโฟลเดอร์ของโปรแกรมนี้จริง และไม่ใช่รากไดรฟ์
+    const looksRight = existsSync(join(ROOT, 'bridge', 'server.js')) && existsSync(join(ROOT, 'native', 'install.mjs')) && dirname(ROOT) !== ROOT
+    if (!looksRight) report('ลบโฟลเดอร์', false, 'โฟลเดอร์นี้ไม่ใช่โฟลเดอร์ของโปรแกรม — ไม่ลบ')
+    else {
+      // node ตัวที่รันอยู่นี้อยู่ใน runtime\ — ลบตัวเองไม่ได้ ให้ ถอนการติดตั้ง.bat ลบหลัง node ปิด (exit code 10)
+      // ไม่ใช้ process แยกที่รอลบทีหลัง: ถูกปิดตามไปด้วยเมื่อตัวที่เปิดมันจบ (เจอตอนทดสอบ)
+      deleting = true
+      report('ลบโฟลเดอร์', true, 'จะลบทันทีที่กด OK')
+    }
+  }
+
+  const failed = results.filter((r) => !r.ok)
+  console.log('\n' + '─'.repeat(60))
+  const summary = failed.length
+    ? ['ถอนการติดตั้งแล้ว แต่ยังเหลือบางอย่าง:', '', ...failed.map((r) => `✗ ${r.label}${r.detail ? ` — ${r.detail}` : ''}${r.fix ? `\n   → ${r.fix}` : ''}`)].join('\n')
+    : ['ถอน Cartoon Auto ออกจากเครื่องแล้ว — เหมือนเครื่องที่ยังไม่เคยติดตั้ง', deleting ? '\nโฟลเดอร์โปรแกรมจะถูกลบเมื่อกด OK' : keepFolder ? `\nไฟล์ในโฟลเดอร์ยังอยู่: ${ROOT}` : ''].join('')
+  console.log(summary)
+  popup(summary, failed.length ? 'Warning' : 'Information')
+  return deleting ? 10 : 0
+}
+
 // ════════════════════════ เริ่ม ════════════════════════
 if (flag('--uninstall')) {
-  uninstall()
-  process.exit(0)
+  // --full: exit 10 = ให้ ถอนการติดตั้ง.bat ลบโฟลเดอร์ต่อ
+  process.exit(flag('--full') ? await uninstallFull() : (uninstall(), 0))
 }
 console.log(`โฟลเดอร์โปรแกรม: ${ROOT}`)
 

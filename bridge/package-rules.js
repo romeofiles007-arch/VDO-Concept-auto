@@ -57,7 +57,7 @@ export function customerDefaults(config) {
 /** ไฟล์ที่ cmd.exe / PowerShell 5 ต้องอ่านได้ — คืนรายการปัญหา (ว่าง = ผ่าน) */
 export function installerProblems(read) {
   const bad = []
-  for (const bat of ['ติดตั้งครั้งแรก.bat', 'เปิดโปรแกรม.bat', 'ปิดโปรแกรม.bat']) {
+  for (const bat of ['ติดตั้งครั้งแรก.bat', 'เปิดโปรแกรม.bat', 'ปิดโปรแกรม.bat', 'ถอนการติดตั้ง.bat']) {
     const buf = read(bat)
     if (!buf) bad.push(`ไม่มี ${bat}`)
     // cmd.exe อ่าน .bat ที่ขึ้นบรรทัดแบบ LF ผิด (.gitattributes บังคับ CRLF ไว้แล้ว — กันไว้อีกชั้น)

@@ -102,6 +102,41 @@ function turnFinished(turn) {
   return false
 }
 
+/**
+ * ChatGPT ตอบไม่สำเร็จ — ข้อความ error ขึ้นในกล่องคำตอบแทนเนื้อหา (เจอจริง ต.ค. 2026)
+ * เดิมเก็บ "This response couldn't load" (27 ตัวอักษร) ไปเป็นบท · หรือถ้าปุ่มหยุดค้างไว้ด้วย รอจนครบ 30 นาทีต่อรอบ
+ * ดูเฉพาะคำตอบสั้นๆ ที่ทั้งบรรทัดเป็นข้อความ error — บทจริงที่บังเอิญมีคำเหล่านี้ไม่โดน
+ */
+const ERROR_LINE = /^(this response couldn.?t load|something went wrong\b.*|an error occurred\b.*|there was an error generating a response\b.*|network error\b.*|hmm\.*\s*something seems to have gone wrong\b.*|error in message stream|เกิดข้อผิดพลาด.*|โหลดคำตอบนี้ไม่ได้.*|ไม่สามารถโหลดคำตอบนี้ได้.*)$/i
+const LIMIT_LINE = /(you.?ve (hit|reached) (your|our|the) .*limit|usage (cap|limit)|too many requests|ถึงขีดจำกัด|เกินโควตา)/i
+function chatgptError(text) {
+  const t = String(text ?? '').trim()
+  if (!t || t.length > 400) return null
+  const lines = t.split(/\n+/).map((l) => l.trim()).filter(Boolean)
+  if (lines.some((l) => LIMIT_LINE.test(l))) return `ChatGPT แจ้งว่าใช้เกินโควตา — "${t.slice(0, 120)}" · รอให้โควตากลับมา หรือเปลี่ยนบัญชี/อัปเกรดแพ็กเกจ`
+  const line = lines.find((l) => ERROR_LINE.test(l))
+  return line ? `ChatGPT ตอบไม่สำเร็จ ("${line.slice(0, 80)}") — เปิดแชตใหม่ลองอีกครั้ง` : null
+}
+// ข้อความ error นิ่งเกินนี้ (แม้ปุ่มหยุดยังค้าง) = ChatGPT จะไม่ตอบต่อแล้ว
+const ERROR_SETTLE_MS = 8000
+const RETRY_SETTLE_MS = 20_000
+const MAX_RETRIES = 2
+
+/**
+ * ปุ่ม Retry ที่ ChatGPT แสดงคู่กับข้อความ error — ยังไม่มี data-testid ให้จับ จึงหาจากป้ายปุ่ม
+ * ไล่จากกล่องคำตอบขึ้นไปทีละชั้น (ปุ่มอยู่ในกล่องคำตอบหรือแถบปุ่มของกลุ่มคำถาม-คำตอบ) แล้วค่อยหาทั้งพื้นที่แชต
+ */
+const RETRY_LABEL = /^(retry|try again|regenerate|ลองอีกครั้ง|ลองใหม่(อีกครั้ง)?|สร้างใหม่|สร้างคำตอบใหม่)$/i
+function retryButton(turn) {
+  const label = (b) => (b.getAttribute('aria-label') || b.textContent || '').trim()
+  const usable = (b) => !!b.offsetParent && !b.disabled && RETRY_LABEL.test(label(b))
+  for (let el = turn, i = 0; el && i < 6; el = el.parentElement, i++) {
+    const hit = [...el.querySelectorAll('button')].find(usable)
+    if (hit) return hit
+  }
+  return [...document.querySelectorAll('main button')].find(usable) ?? null
+}
+
 // ป้ายปุ่มลบไฟล์แนบเป็น "Remove <ชื่อไฟล์>" (เช่น Remove Pasted text.txt) — เดิมหา "Remove file" จึงไม่เจอ ไฟล์จากรอบที่ล้มค้างสะสม
 const REMOVE = 'button[aria-label^="Remove" i], button[aria-label^="ลบ"], button[aria-label^="นำออก"]'
 /** ของที่อยู่ในช่องพิมพ์ตอนนี้ — prompt ยาว ChatGPT แปลงเป็นไฟล์แนบ ช่องพิมพ์จึงว่างได้ทั้งที่วางสำเร็จ */
@@ -213,15 +248,32 @@ async function runPrompt(prompt, { newChat = true, attachments = [] } = {}) {
   const STABLE_MS = 5000
   let lastText = ''
   let stableSince = Date.now()
+  let errorSince = Date.now()
+  let retries = 0
   const lastTurnText = () => turnText(newTurns().at(-1))
   for (;;) {
     await waitFor(
       () => {
         const last = newTurns().at(-1) ?? null
         const current = turnText(last)
+        if (current !== lastText) errorSince = Date.now()
         if (current !== lastText || pick(S.stop)) {
           lastText = current
           stableSince = Date.now()
+        }
+        // ข้อความ error ค้างนิ่ง → กด Retry ของ ChatGPT ในแชตเดิมก่อน (error ส่วนใหญ่เป็นชั่วคราว ไม่ต้องส่ง prompt ยาวใหม่ทั้งก้อน)
+        // กดครบแล้วยังไม่ได้ / หาปุ่มไม่เจอ → เลิกรอทันที ให้ฝั่งโปรแกรมเปิดแชตใหม่ลองใหม่ (ไม่ต้องรอปุ่มหยุดหาย)
+        const failed = chatgptError(current)
+        if (failed) {
+          // หลังกด Retry ให้เวลา ChatGPT เริ่มตอบใหม่นานกว่า — ข้อความ error เดิมอาจค้างอยู่สักพัก
+          if (Date.now() - errorSince < (retries ? RETRY_SETTLE_MS : ERROR_SETTLE_MS)) return false
+          const btn = retries < MAX_RETRIES ? retryButton(last) : null
+          if (!btn) throw new Error(retries ? `${failed} · กด Retry ในแชตเดิมแล้ว ${retries} ครั้ง` : failed)
+          retries++
+          console.warn(`[cartoon] ChatGPT error "${current.slice(0, 60)}" — กด Retry ครั้งที่ ${retries}`)
+          btn.click()
+          errorSince = stableSince = Date.now()
+          return false
         }
         const finished = !!last && turnFinished(last) && !pick(S.stop)
         return finished && current && Date.now() - stableSince >= STABLE_MS
@@ -237,6 +289,8 @@ async function runPrompt(prompt, { newChat = true, attachments = [] } = {}) {
   if (!turns.length) throw new Error('ไม่พบข้อความตอบกลับ — selector assistantTurns อาจเปลี่ยน')
   const text = turnText(turns.at(-1))
   if (!text) throw new Error('ข้อความตอบกลับว่าง')
+  const failed = chatgptError(text)
+  if (failed) throw new Error(failed)
   return text
 }
 
