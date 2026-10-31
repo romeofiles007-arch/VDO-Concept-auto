@@ -91,52 +91,26 @@ async function openTab(match, key) {
 }
 
 /**
- * Flow ซ่อนปุ่ม Agent เมื่อหน้าแคบ (แบบมือถือ) — แผงข้างของ Chrome กว้างๆ บีบแท็บเหลือ ~350-700px ได้ (เจอจริง ต.ค. 2026)
- * → หน้าแคบกว่านี้ ย้ายแท็บ Flow ไปหน้าต่างของตัวเอง (ไม่มีแผงข้าง) แล้วโหลดหน้าใหม่ให้ Flow วาดช่องพิมพ์แบบกว้าง
+ * Flow เป็นแท็บในหน้าต่างเดิมเสมอ — ไม่เปิดหน้าต่างใหม่
+ * ผู้ใช้ (31 ต.ค. 2026): "มันเปิดหน้าต่างใหม่ตอน google flow เลยงง ให้เปิดเป็นแท็บใหม่นะ"
  *
- * ต้องวัดตอนแท็บอยู่หน้าสุดและโหลดเสร็จแล้วเท่านั้น: แท็บเบื้องหลังรายงานความกว้างเก่า (ก่อนแผงข้างบีบ)
- * เคยวัดตอนแท็บยังอยู่เบื้องหลังได้ ≥1100 → ไม่ย้าย → พอสลับมาหน้าสุดเหลือ 713px แล้วเฟล (24 ต.ค. 2026)
- * คืนค่า true เมื่อย้ายหน้าต่างแล้ว (ผู้เรียกต้องโหลดหน้าใหม่)
+ * เหตุที่เคยย้ายไปหน้าต่างแยก: แผงข้างของ Chrome บีบแท็บเหลือ ~350-1000px แล้ว Flow ซ่อนปุ่ม Agent (หน้าแบบมือถือ)
+ * ตอนนี้ปิดแผงข้างเฉพาะแท็บ Flow แทน: ตอนดูแท็บ Flow แผงหลบให้ หน้ากว้างเต็มหน้าต่าง · แท็บอื่นยังเห็นแผงตามปกติ
+ * แผงข้างแค่แสดงความคืบหน้า (งานจริงรันในโปรแกรมในเครื่อง) ซ่อนบนแท็บ Flow จึงไม่กระทบงาน
+ * ต้องเรียกก่อนโหลดหน้า Flow เพื่อให้ Flow วาดช่องพิมพ์แบบกว้างตั้งแต่แรก
  */
-const FLOW_MIN_WIDTH = 1100
-async function flowWidth(tabId) {
-  const [probe] = await chrome.scripting.executeScript({ target: { tabId }, func: () => window.innerWidth }).catch(() => [])
-  return probe?.result ?? 0
-}
-async function ensureWideFlow(tab) {
-  const width = await flowWidth(tab.id)
-  if (!width || width >= FLOW_MIN_WIDTH) return false // วัดไม่ได้ → ไม่ย้าย ตัวขับใน content script แจ้ง error เองถ้าแคบจริง
-  const win = await chrome.windows.create({
-    tabId: tab.id,
-    ...(await flowWindowBounds(tab.windowId)),
-    focused: true, // ต้องมองเห็นได้ — หน้าต่างที่ถูกบังมิด Chrome หยุดวาดหน้าเว็บ งาน Flow ค้าง
-  })
-  console.log(`ย้าย Flow ไปหน้าต่างแยก (เดิมกว้าง ${width}px) → window ${win?.id}`)
-  return true
-}
-
-/**
- * ตำแหน่งหน้าต่าง Flow: กลางจอที่ใหญ่ที่สุด (พื้นที่ใช้งาน กว้าง×สูง) — เครื่องที่มีหลายจอ จอเล็ก 1366×768 เตี้ยเกินสำหรับ Flow
- * ขนาด 1400×900 ย่อลงให้พอดีจอถ้าจอเล็กกว่า · อ่านจอไม่ได้ → เปิดตรงหน้าต่างเดิม
- */
-async function flowWindowBounds(fromWindowId) {
-  const displays = await chrome.system?.display?.getInfo().catch(() => null)
-  const areas = (displays ?? []).map((d) => d.workArea).filter((a) => a?.width > 0 && a?.height > 0)
-  if (areas.length) return pickFlowBounds(areas)
-  const from = await chrome.windows.get(fromWindowId).catch(() => null)
-  return { left: from?.left ?? 0, top: from?.top ?? 0, width: 1400, height: 900 }
-}
-
-function pickFlowBounds(areas) {
-  const big = areas.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a))
-  const width = Math.min(1400, big.width)
-  const height = Math.min(900, big.height)
-  return {
-    left: big.left + Math.round((big.width - width) / 2),
-    top: big.top + Math.round((big.height - height) / 2),
-    width,
-    height,
-  }
+async function keepFlowInTab(tab) {
+  await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false }).catch(() => {})
+  // แท็บ Flow ที่รุ่นก่อนย้ายไปอยู่หน้าต่างแยกตัวเดียว → ย้ายกลับมาเป็นแท็บท้ายสุดของหน้าต่างหลัก (หน้าต่างที่ว่างแล้วปิดเอง)
+  const sameWindow = await chrome.tabs.query({ windowId: tab.windowId }).catch(() => [])
+  if (sameWindow.length !== 1) return
+  const others = (await chrome.windows.getAll({ windowTypes: ['normal'] }).catch(() => [])).filter(
+    (w) => w.id !== tab.windowId && !!w.incognito === !!tab.incognito,
+  )
+  if (!others.length) return
+  const last = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null)
+  const target = others.find((w) => w.id === last?.id) ?? others[0]
+  await chrome.tabs.move(tab.id, { windowId: target.id, index: -1 }).catch(() => {})
 }
 
 /** โหลด URL ในแท็บแล้วรอจนเสร็จ (สูงสุด 30 วิ) + เผื่อ SPA render อีกนิด */
@@ -184,9 +158,8 @@ async function handleJob(job) {
   if (agent === 'flow' && job.kind === 'generate-images') {
     // คลิปนี้เคยมี project ใน Flow แล้ว → กลับไป project เดิม (ตัวละครเดิม ไม่เปิด project ใหม่ทุกครั้งที่ลองซ้ำ)
     const url = /^https:\/\/flow\.google\.com\/project\//.test(job.payload.projectUrl ?? '') ? withEnglish(job.payload.projectUrl) : AGENTS.flow.match
+    await keepFlowInTab(tab) // เป็นแท็บ ไม่ใช่หน้าต่างใหม่ · แผงข้างหลบบนแท็บนี้ หน้า Flow จึงกว้างพอมีปุ่ม Agent
     await loadInTab(tab.id, url, 3000)
-    // วัดหลังแท็บขึ้นหน้าสุดแล้ว (ความกว้างจริงหลังแผงข้างบีบ) — แคบเกิน → ย้ายหน้าต่างแล้วโหลดใหม่ในหน้าต่างกว้าง
-    if (await ensureWideFlow(tab)) await loadInTab(tab.id, url, 3000)
     await reloadIfTranslated(tab.id, url, 3000)
   }
 
@@ -265,9 +238,9 @@ async function pollLoop() {
             handleJob({ ...job, agent })
               .catch((err) => {
                 let message = String(err?.message ?? err)
-                // แท็บหายกลางงาน = มีคนปิดแท็บ/หน้าต่าง Flow (เช่นหน้าต่างแยกที่ extension เปิดให้ตอนหน้าแคบ)
+                // แท็บหายกลางงาน = มีคนปิดแท็บ Flow / ChatGPT ที่ extension เปิดให้
                 if (/No tab with id/i.test(message)) {
-                  message = `แท็บ ${agent === 'flow' ? 'Google Flow' : 'ChatGPT'} ถูกปิดระหว่างทำงาน — อย่าปิดหน้าต่าง/แท็บที่ extension เปิดให้ กดทำต่อได้เลย (${message})`
+                  message = `แท็บ ${agent === 'flow' ? 'Google Flow' : 'ChatGPT'} ถูกปิดระหว่างทำงาน — อย่าปิดแท็บที่ extension เปิดให้ กดทำต่อได้เลย (${message})`
                 }
                 return postReliable('/error', { id: job.id, message })
               })

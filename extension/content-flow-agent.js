@@ -128,7 +128,7 @@ async function setAgent(on) {
     const chip = await waitFor(() => (visible(SEL.agentChip()) ? SEL.agentChip() : null), { label: 'ปุ่ม Agent' }).catch((err) => {
       // Flow ซ่อนปุ่ม Agent เมื่อหน้าแคบแบบมือถือ (เช่นแผงข้างของ Chrome กว้างจนบีบแท็บ)
       if (window.innerWidth < 1000) {
-        throw new Error(`หน้า Google Flow แคบเกินไป (${window.innerWidth}px) Flow จึงซ่อนปุ่ม Agent — ย่อแผงข้างของ Chrome หรือลากแท็บ Flow ออกเป็นหน้าต่างแยกให้กว้างกว่า 1000px แล้วกดทำต่อ`)
+        throw new Error(`หน้า Google Flow แคบเกินไป (${window.innerWidth}px) Flow จึงซ่อนปุ่ม Agent — ปิดแผงข้างของ Chrome บนแท็บ Flow หรือขยายหน้าต่าง Chrome ให้กว้างกว่า 1000px แล้วกดทำต่อ`)
       }
       throw err
     })
