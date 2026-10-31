@@ -20,6 +20,7 @@ import { createUi } from './ui.js'
 import { watchBridgeCode, extensionVersion } from './selfupdate.js'
 import { createUpdater } from './update.js'
 import { createPosting } from './posting.js'
+import { createKeepAwake } from './keepawake.js'
 
 loadEnv()
 
@@ -356,6 +357,9 @@ const workInProgress = () => ui.busy() || posting.busy() || [...jobs.values()].s
 
 // โค้ดของโปรแกรมเปลี่ยน → รีสตาร์ทตัวเองเมื่อว่าง (เฉพาะตัวจริงที่ port 8765 — ตัวทดสอบไม่ต้อง)
 if (PORT === 8765) watchBridgeCode({ busy: workInProgress, server, log })
+
+// กันเครื่องหลับเองระหว่างมีงาน หรือเปิดโหมดผลิตต่อเนื่องไว้ (รอคลิปถัดไป) — เฉพาะตัวจริง
+if (PORT === 8765) createKeepAwake({ busy: () => workInProgress() || ui.production.active(), log })
 
 // ตอนรีสตาร์ทตัวเอง ตัวเก่าอาจยังไม่ปล่อย port — ลองใหม่ทุกครึ่งวินาทีสูงสุด 15 วิ
 let listenTries = 0

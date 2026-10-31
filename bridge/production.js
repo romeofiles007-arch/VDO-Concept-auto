@@ -331,6 +331,7 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
     return json(res, 404, { error: 'ไม่มี endpoint นี้' }), true
   }
 
-  const api = { handle, tick, view, busy: () => !!state.run, onClipReady: null }
+  // active: เปิดโหมดผลิตต่อเนื่องอยู่ (รวมช่วงพักระหว่างคลิป/รอเวลาเริ่ม) — ใช้กันเครื่องหลับ ไม่งั้นคลิปถัดไปไม่เริ่ม
+  const api = { handle, tick, view, busy: () => !!state.run, active: () => !!state.active, onClipReady: null }
   return api
 }
