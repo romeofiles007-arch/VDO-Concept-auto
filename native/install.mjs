@@ -654,8 +654,15 @@ async function uninstallFull() {
   const keepFolder = flag('--keep-folder') || isDev
   const yes = flag('--yes')
   const clips = existsSync(join(ROOT, 'projects')) ? readdirSync(join(ROOT, 'projects'), { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('_')).length : 0
+  // หน้าต่าง cmd ของ Windows 10 หลายเครื่องแสดงภาษาไทยเป็นกล่อง ▯ อ่านไม่ออก (เจอจริง ต.ค. 2026)
+  // → ถอนการติดตั้ง.bat ขอข้อความภาษาอังกฤษในหน้าต่าง · รายละเอียดภาษาไทยอยู่ในป๊อปอัป (แสดงไทยได้ทุกเครื่อง)
+  const en = process.env.CARTOON_CONSOLE === 'en'
+  const say = (text) => en && process.stdout.write(`${text}\n`)
+  if (en) console.log = () => {}
   console.log(`ถอนการติดตั้งจาก: ${ROOT}${isDev ? ' (โฟลเดอร์พัฒนา — ไม่ลบไฟล์)' : ''}`)
+  say(`Cartoon Auto - uninstall from: ${ROOT}`)
   if (!yes && !quiet) {
+    say('Answer the "Cartoon Auto" popup window (Yes / No)...')
     const ok = confirmBox([
       'ถอน Cartoon Auto ออกจากเครื่องนี้ ให้เหมือนไม่เคยติดตั้ง',
       '',
@@ -670,11 +677,13 @@ async function uninstallFull() {
     ].join('\n'))
     if (!ok) {
       console.log('ยกเลิก — ไม่ได้เปลี่ยนอะไร')
+      say('Cancelled - nothing was changed.')
       return 0
     }
   }
 
   step('ปิดโปรแกรม')
+  say('- Stopping the program...')
   try {
     // ปิดเฉพาะ process ของโฟลเดอร์นี้ (แบบเดียวกับ ปิดโปรแกรม.bat) ยกเว้นตัวเอง — ตัวนี้รันด้วย node ใน runtime\ เหมือนกัน
     const n = powershell([
@@ -689,6 +698,7 @@ async function uninstallFull() {
   }
 
   step('ตัดการเชื่อมกับ Chrome / Edge')
+  say('- Unlinking from Chrome / Edge...')
   for (const key of REG_KEYS) {
     const target = readRegistry(key)
     const name = key.includes('Google') ? 'Chrome' : 'Edge'
@@ -713,6 +723,7 @@ async function uninstallFull() {
   } catch {}
 
   step('ลบ shortcut')
+  say('- Removing "Cartoon Auto" shortcuts...')
   try {
     const removed = powershell([
       `$root = ${psText(ROOT)}`,
@@ -738,6 +749,7 @@ async function uninstallFull() {
     if (chrome && !quiet) spawn(chrome, ['chrome://extensions'], { detached: true, stdio: 'ignore' }).unref()
     if (!quiet) {
       console.log('  กด "Remove" ที่ Cartoon Auto Bridge ในหน้า chrome://extensions ที่เปิดให้ (รอให้ทำ นานสุด 5 นาที)')
+      say('- In Chrome (chrome://extensions page just opened): click "Remove" on "Cartoon Auto Bridge". Waiting up to 5 minutes...')
       const deadline = Date.now() + 5 * 60_000
       while (Date.now() < deadline && loadedExtension()?.here) await new Promise((r) => setTimeout(r, 2000))
       ext = loadedExtension()
@@ -748,6 +760,7 @@ async function uninstallFull() {
   let deleting = false
   if (!keepFolder) {
     step('ลบโฟลเดอร์โปรแกรม')
+    say('- This folder will be deleted after you click OK in the popup.')
     // กันลบผิดที่: ต้องเป็นโฟลเดอร์ของโปรแกรมนี้จริง และไม่ใช่รากไดรฟ์
     const looksRight = existsSync(join(ROOT, 'bridge', 'server.js')) && existsSync(join(ROOT, 'native', 'install.mjs')) && dirname(ROOT) !== ROOT
     if (!looksRight) report('ลบโฟลเดอร์', false, 'โฟลเดอร์นี้ไม่ใช่โฟลเดอร์ของโปรแกรม — ไม่ลบ')
@@ -765,6 +778,8 @@ async function uninstallFull() {
     ? ['ถอนการติดตั้งแล้ว แต่ยังเหลือบางอย่าง:', '', ...failed.map((r) => `✗ ${r.label}${r.detail ? ` — ${r.detail}` : ''}${r.fix ? `\n   → ${r.fix}` : ''}`)].join('\n')
     : ['ถอน Cartoon Auto ออกจากเครื่องแล้ว — เหมือนเครื่องที่ยังไม่เคยติดตั้ง', deleting ? '\nโฟลเดอร์โปรแกรมจะถูกลบเมื่อกด OK' : keepFolder ? `\nไฟล์ในโฟลเดอร์ยังอยู่: ${ROOT}` : ''].join('')
   console.log(summary)
+  say('')
+  say(failed.length ? `Finished, ${failed.length} item(s) need attention - details (Thai) in the popup window. Click OK.` : 'Finished - Cartoon Auto is removed. Click OK in the popup window.')
   popup(summary, failed.length ? 'Warning' : 'Information')
   return deleting ? 10 : 0
 }
