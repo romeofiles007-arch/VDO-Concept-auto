@@ -265,6 +265,72 @@ async function ensureEdgeTts() {
   }
 }
 
+// ════════════════════════ 2.5 การตั้งค่าที่ใช้ได้ทันที + รุ่นของโปรแกรม ════════════════════════
+const isDevFolder = () => existsSync(join(ROOT, '.git'))
+
+function envKeys() {
+  const keys = {}
+  try {
+    for (const line of readFileSync(join(ROOT, '.env'), 'utf8').split(/\r?\n/)) {
+      const m = /^\s*([A-Z0-9_]+)\s*=\s*"?([^"\r\n]*)"?\s*$/.exec(line)
+      if (m && m[2].trim()) keys[m[1]] = m[2].trim()
+    }
+  } catch {}
+  return keys
+}
+
+/**
+ * ZIP ที่โหลดจาก GitHub ตรงๆ มี config/project.config.json ของเครื่องนักพัฒนาติดมา (เสียง ElevenLabs ที่โคลนไว้ · Kie)
+ * และแตกทับแล้วทับค่าที่ลูกค้าตั้งไว้ด้วย → ตรวจความพร้อมฟ้อง "ElevenLabs ยังไม่มี API key" (เจอจริง ต.ค. 2026)
+ * ของที่ต้องมี key แต่เครื่องนี้ไม่มี → เปลี่ยนเป็นของที่ใช้ได้ทันที (เสียง Edge · ภาพนิ่งแทน Kie) แล้วบอกในสรุป
+ */
+function ensureUsableSettings() {
+  if (isDevFolder()) return // เครื่องนักพัฒนา — ไม่แตะการตั้งค่า
+  const file = join(ROOT, 'config', 'project.config.json')
+  if (!existsSync(file)) return // แพ็กเกจปกติ — ค่าเริ่มต้นใช้ได้ทันทีอยู่แล้ว
+  let config
+  try {
+    config = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return report('การตั้งค่า', false, 'อ่าน config\\project.config.json ไม่ได้', 'ลบไฟล์นั้นทิ้งแล้วดับเบิลคลิก setup.exe อีกครั้ง (ระบบใช้ค่าเริ่มต้นแทน)')
+  }
+  const keys = envKeys()
+  const changes = []
+  const tts = config.tts ?? {}
+  if (tts.engine === 'elevenlabs' && !(keys.ELEVENLABS_API_KEY && tts.elevenlabs?.voiceId && tts.elevenlabs.voiceId !== '7pvyWmzdRPOd6aNRqaHi')) {
+    // Voice ID นี้คือเสียงที่โคลนไว้ในบัญชีของเรา — เครื่องอื่นใช้ไม่ได้แม้มี key ของตัวเอง
+    tts.engine = 'edge'
+    if (tts.elevenlabs) Object.assign(tts.elevenlabs, { voiceId: '', voiceName: '' })
+    changes.push('เสียงพากย์ → Edge (ElevenLabs ยังไม่มี API key / Voice ID ของเครื่องนี้)')
+  } else if (tts.engine === 'gemini' && !keys.GEMINI_API_KEY) {
+    tts.engine = 'edge'
+    changes.push('เสียงพากย์ → Edge (Gemini ยังไม่มี API key)')
+  }
+  if (config.clips?.provider === 'kie' && !keys.KIE_API_KEY) {
+    config.clips.provider = 'off'
+    changes.push('แอนิเมชัน Kie → ปิด ใช้ภาพนิ่งแทน (ยังไม่มี Kie API key)')
+  }
+  if (!changes.length) return
+  writeFileSync(file, JSON.stringify(config, null, 2) + '\n')
+  report('ตั้งค่าให้ใช้ได้ทันที', true, changes.join(' · '))
+}
+
+/**
+ * ติดตั้งจาก ZIP ของ GitHub ตรงๆ (ไม่มี git และไม่มี VERSION.json แบบแพ็กเกจ) → สร้าง VERSION.json ให้
+ * ระบบอัปเดตในโปรแกรมจึงดึงรุ่นใหม่เองได้ ไม่ต้องโหลด ZIP มาแตกทับอีก (ซึ่งทับการตั้งค่าของลูกค้า)
+ */
+function ensureVersionFile() {
+  const file = join(ROOT, 'VERSION.json')
+  if (isDevFolder() || existsSync(file)) return
+  let repo = null
+  try {
+    repo = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).repository?.url ?? null
+  } catch {}
+  if (!repo) return
+  writeFileSync(file, JSON.stringify({ commit: 'unknown', sha: null, source: 'github-zip', repo: repo.replace(/\.git$/, ''), branch: 'main', files: [], createdAt: new Date().toISOString() }, null, 2) + '\n')
+  report('อัปเดตในโปรแกรม', true, 'เปิดใช้แล้ว — มีรุ่นใหม่จะขึ้นแถบ "มีอัปเดตใหม่" ในแผงข้าง')
+}
+
 // ════════════════════════ 3. ลงทะเบียน native host ════════════════════════
 /**
  * Chrome เรียก host ด้วย `cmd.exe /d /c "<path>" ...` — ถ้า path มี & ^ % ! cmd ตัดคำสั่งผิด (ภาษาไทย เว้นวรรค วงเล็บ ใช้ได้)
@@ -729,6 +795,8 @@ step('เตรียมโปรแกรมที่ต้องใช้')
 report('Node.js', true, process.version)
 await ensureFfmpeg()
 await ensureEdgeTts()
+ensureUsableSettings()
+ensureVersionFile()
 
 step('เชื่อมกับ Chrome')
 const hostPath = writeHostFiles()

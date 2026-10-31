@@ -184,11 +184,15 @@ export function createPackageUpdater({ log = () => {}, busy = () => false, cwd, 
         return snapshot()
       }
       const recent = await recentCommits(v.repo, v.branch ?? 'main', fetchFn)
-      const at = recent.findIndex((c) => c.sha.startsWith(current))
-      const commits = at >= 0 ? recent.slice(0, at) : recent
+      // ติดตั้งจาก ZIP ของ GitHub (setup สร้าง VERSION.json ให้ แต่ไม่รู้ว่าเป็น commit ไหน) → อัปเดตครั้งแรกให้รู้รุ่นแน่นอน
+      const unknown = !v.sha && !/^[0-9a-f]{7,40}$/.test(String(v.commit ?? ''))
+      const at = unknown ? -1 : recent.findIndex((c) => c.sha.startsWith(current))
+      const commits = at >= 0 ? recent.slice(0, at) : unknown ? recent.slice(0, 5) : recent
       state.behind = Math.max(1, commits.length)
       state.commits = commits.map(({ sha, date, author, subject }) => ({ sha: sha.slice(0, 7), date, author, subject }))
-      state.notes = at < 0 && recent.length ? [`รุ่นในเครื่องเก่ากว่า ${recent.length} รายการล่าสุด`] : []
+      state.notes = unknown
+        ? ['ติดตั้งจาก ZIP ของ GitHub — ยังไม่รู้รุ่นในเครื่อง กดอัปเดตครั้งเดียวให้เป็นรุ่นล่าสุด (ค่าที่ตั้งไว้ไม่หาย)']
+        : at < 0 && recent.length ? [`รุ่นในเครื่องเก่ากว่า ${recent.length} รายการล่าสุด`] : []
       state.error = null
       state.checkedAt = Date.now()
       return snapshot()
