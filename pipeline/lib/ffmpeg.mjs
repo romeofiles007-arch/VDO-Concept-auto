@@ -79,32 +79,35 @@ function writeConcatFile(lines, tag) {
  * @param {{file:string, gapAfter:number}[]} parts
  */
 export async function concatAudio(parts, outFile, { sampleRate = 24000 } = {}) {
-  const inputs = []
-  const filters = []
-  parts.forEach((p, i) => {
-    inputs.push('-i', p.file)
-    filters.push(`[${i}:a]aresample=${sampleRate}[a${i}]`)
-  })
-  // แทรกความเงียบเป็น stream สังเคราะห์ระหว่างแต่ละชิ้น
-  const chain = []
-  parts.forEach((p, i) => {
-    chain.push(`[a${i}]`)
-    const isLast = i === parts.length - 1
-    if (!isLast && p.gapAfter > 0) {
-      const idx = parts.length + i
-      inputs.push('-f', 'lavfi', '-t', String(p.gapAfter), '-i', `anullsrc=r=${sampleRate}:cl=mono`)
-      filters.push(`[${idx}:a]aresample=${sampleRate}[s${i}]`)
-      chain.push(`[s${i}]`)
+  // เดิมใส่ทุกไฟล์ + ความเงียบทุกช่วงเป็น input ของคำสั่ง ffmpeg เดียว → บทยาว (11 นาที ~300 ประโยค
+  // path มีชื่อเรื่องภาษาไทย) คำสั่งยาวเกินที่ Windows รับ (32,767 ตัวอักษร) = "spawn ENAMETOOLONG" (เจอจริง ต.ค. 2026)
+  // ตอนนี้: แปลงทุกชิ้นเป็นรูปแบบเดียวกัน (concat demuxer ต้องการ sample rate/ช่องเสียงตรงกัน) + ไฟล์เงียบตามความยาวที่ใช้
+  // แล้วต่อผ่านไฟล์รายการ — คำสั่งสั้นเท่าเดิมไม่ว่าบทจะยาวแค่ไหน
+  const fmt = ['-ar', String(sampleRate), '-ac', '1', '-c:a', 'pcm_s16le']
+  const work = join(dirname(outFile), `_concat_${Date.now()}`)
+  mkdirSync(work, { recursive: true })
+  let list = null
+  try {
+    const norm = parts.map((_, i) => join(work, `${String(i).padStart(5, '0')}.wav`))
+    await eachLimit(parts, Math.max(2, Math.min(8, cpus().length)), (p, i) => run('ffmpeg', ['-y', '-v', 'error', '-i', p.file, ...fmt, norm[i]]))
+    const silences = new Map()
+    for (const p of parts.slice(0, -1)) {
+      if (!(p.gapAfter > 0) || silences.has(p.gapAfter)) continue
+      const file = join(work, `gap_${Math.round(p.gapAfter * 1000)}.wav`)
+      await run('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-t', String(p.gapAfter), '-i', `anullsrc=r=${sampleRate}:cl=mono`, ...fmt, file])
+      silences.set(p.gapAfter, file)
     }
-  })
-  filters.push(`${chain.join('')}concat=n=${chain.length}:v=0:a=1[out]`)
-
-  await run('ffmpeg', [
-    '-y', ...inputs,
-    '-filter_complex', filters.join(';'),
-    '-map', '[out]', '-ar', String(sampleRate), '-ac', '1', '-c:a', 'pcm_s16le',
-    outFile,
-  ])
+    const lines = []
+    parts.forEach((p, i) => {
+      lines.push(concatLine(norm[i]))
+      if (i < parts.length - 1 && p.gapAfter > 0) lines.push(concatLine(silences.get(p.gapAfter)))
+    })
+    list = writeConcatFile(lines, 'audio')
+    await run('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, ...fmt, outFile])
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+    if (list) rmSync(list, { force: true })
+  }
   return outFile
 }
 
