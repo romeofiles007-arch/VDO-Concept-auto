@@ -234,10 +234,18 @@ const lastLine = (text) =>
     .filter((l) => l.trim() && !/^Node\.js v\d/.test(l.trim()) && !/^\s+at /.test(l) && !/^Assertion failed:.*\bsrc[\\/]win[\\/]/.test(l.trim()))
     .pop() ?? ''
 
+/**
+ * ChatGPT ตอบ "This response couldn't load" เป็นพักๆ แล้วหายเอง — เจอจริง ต.ค. 2026: prompt กำกับภาพล้ม 3 ครั้งในช่วง 4 นาที
+ * (ลองใหม่ทุก 30 วิ หมดก่อน ChatGPT กลับมา งานทั้งคลิปหยุด) แล้ว prompt เดิมเป๊ะผ่าน 2/2 เมื่อส่งใหม่ 10 นาทีต่อมา
+ * → error แบบนี้รอนานขึ้นเรื่อยๆ (รวม ~14 นาที) ก่อนยอมแพ้ · เกินโควตา = ลองใหม่ไม่ช่วย หยุดเลย
+ */
+const CHATGPT_DOWN_WAITS = [30, 60, 120, 240, 360]
+const waitText = (s) => (s < 60 ? `${s} วิ` : `${s / 60} นาที`)
+
 /** ถาม ChatGPT ผ่านคิวของ bridge — ลองใหม่เมื่อหน้าเว็บค้างหรือ ChatGPT ตอบไม่ได้ */
 async function askChatGPT(prompt, label, { tries = 3, attachments, timeoutMs = 40 * 60_000 } = {}) {
   let lastError
-  for (let attempt = 1; attempt <= tries; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     try {
       const result = await runJob({ agent: 'chatgpt', kind: 'prompt', payload: { prompt, newChat: true, ...(attachments?.length && { attachments }) }, timeoutMs, label })
       if (result?.text?.trim()) return result.text
@@ -245,10 +253,13 @@ async function askChatGPT(prompt, label, { tries = 3, attachments, timeoutMs = 4
     } catch (err) {
       lastError = err
     }
-    if (attempt < tries) {
-      console.warn(`   ${label}: ${lastError.message} — ลองใหม่ใน 30 วิ (${attempt}/${tries})`)
-      await sleep(30_000)
-    }
+    if (/เกินโควตา/.test(lastError.message)) break
+    const down = /ChatGPT ตอบไม่สำเร็จ/.test(lastError.message)
+    const max = down ? Math.max(tries, CHATGPT_DOWN_WAITS.length + 1) : tries
+    if (attempt >= max) break
+    const wait = down ? CHATGPT_DOWN_WAITS[Math.min(attempt, CHATGPT_DOWN_WAITS.length) - 1] : 30
+    console.warn(`   ${label}: ${lastError.message} — ${down ? 'ChatGPT ล้มเป็นพักๆ รอให้กลับมาแล้ว' : ''}ลองใหม่ใน ${waitText(wait)} (${attempt}/${max})`)
+    await sleep(wait * 1000)
   }
   throw lastError
 }
