@@ -44,9 +44,13 @@ const PROTECTED = [
 export const isProtected = (rel) => PROTECTED.some((re) => re.test(rel))
 export const isCustomerData = (rel) => rel.startsWith('projects/')
 
-/** ค่าการตั้งค่าของเรา → ค่าเริ่มต้นของลูกค้า: ล้างสิ่งที่ผูกกับบัญชีของเรา และเปิดเฉพาะของที่ใช้ได้ทันทีโดยไม่ต้องมี key */
+/**
+ * ค่าการตั้งค่าของเรา → ค่าเริ่มต้นของลูกค้า: ล้างสิ่งที่ผูกกับบัญชีของเรา และเปิดเฉพาะของที่ใช้ได้ทันทีโดยไม่ต้องมี key
+ * คลิปแรกของลูกค้า: 1 นาที · เสียง Edge (ฟรี) · ไม่ใช้ Kie (0% — ภาพนิ่งซูม/เลื่อนกล้อง ไม่เสียเงิน)
+ */
 export function customerDefaults(config) {
   const c = structuredClone(config)
+  if (c.script) c.script.targetMinutes = 1
   if (c.tts?.elevenlabs) Object.assign(c.tts.elevenlabs, { voiceId: '', voiceName: '' })
   // เสียงที่โคลนไว้ไม่ได้ติดไปด้วย → ลูกค้าเริ่มที่เสียง Edge ซึ่งใช้ได้ทันที
   if (c.tts) c.tts.engine = 'edge'

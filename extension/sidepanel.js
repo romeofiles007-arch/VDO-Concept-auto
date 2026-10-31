@@ -16,7 +16,8 @@ initIcons()
 const $ = (id) => document.getElementById(id)
 const CHATGPT_URL = 'https://chatgpt.com/'
 const WORDS_PER_MINUTE = 150
-const S = { topics: [], selected: null, script: null, titleLanguage: 'en', language: 'th', minutes: 10, emotion: 'calm', speed: 1 }
+// ค่าเริ่มต้นคลิป 1 นาที — เดิม 10 นาที ลูกค้าใหม่ได้บทยาว ~300 ประโยคตั้งแต่คลิปแรก (ช้าและใช้ ChatGPT หนัก)
+const S = { topics: [], selected: null, script: null, titleLanguage: 'en', language: 'th', minutes: 1, emotion: 'calm', speed: 1 }
 let busy = false
 // อัปเดตจาก GitHub — ประกาศไว้บนสุด เพราะ render() เรียก renderUpdate() ได้ตั้งแต่ก่อนถึงส่วนอัปเดตท้ายไฟล์
 let gitUpdate = null
@@ -189,7 +190,7 @@ async function selectTopic(t) {
 // ── 2 บทพากย์ ──
 $('askScript').addEventListener('click', async () => {
   $('scriptRawBox').hidden = true
-  S.minutes = Math.min(60, Math.max(1, Number($('minutes').value) || 10))
+  S.minutes = Math.min(60, Math.max(1, Number($('minutes').value) || 1))
   const opts = { language: S.language, targetMinutes: S.minutes, wordsPerMinute: WORDS_PER_MINUTE }
   try {
     const text = await withBusy('scriptStatus', 'ChatGPT กำลังเขียนบท (บทยาว ใช้เวลาหลายนาที)', async () =>
