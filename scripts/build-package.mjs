@@ -21,30 +21,13 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
+// ไฟล์ที่ไปถึงลูกค้า / ค่าเริ่มต้นของลูกค้า — กฎชุดเดียวกับตัวอัปเดตในเครื่องลูกค้า (bridge/update-package.js)
+import { RESET, USER_CONFIG, DEFAULT_CONFIG, shipsToCustomer, isCustomerData, customerDefaults, installerProblems, githubRepoUrl } from '../bridge/package-rules.js'
 
 const OUT_NAME = 'CartoonAuto'
 const DIST = join(ROOT, 'dist')
 const OUT = join(DIST, OUT_NAME)
 const zip = process.argv.includes('--zip')
-
-/** ไฟล์ที่ git ติดตาม แต่ไม่ควรไปถึงลูกค้า */
-const EXCLUDE = [
-  /^\.impeccable\//,
-  /^docs\/design\//,
-  /^scripts\/(test-|preview-|selftest|build-icons|build-package|build-setup)/,
-  /^\.claude\//,
-  /^Ex sample audio/,
-  /^DESIGN\.md$/,
-  /^PRODUCT\.md$/,
-  /^extension\/agents\/.*PROMPT.*\.md$/,
-  /(^|\/)desktop\.ini$/i, // ไฟล์ตกแต่งโฟลเดอร์ของ Windows
-]
-
-/** ไฟล์ข้อมูลที่ git ติดตาม แต่เป็นของเรา — ลูกค้าได้ค่าว่างแทน */
-const RESET = {
-  'projects/topics.json': '[]\n',
-  'projects/_topic_history.json': '[]\n',
-}
 
 const step = (msg) => console.log(`▸ ${msg}`)
 const mb = (bytes) => `${(bytes / 1048576).toFixed(0)} MB`
@@ -79,14 +62,16 @@ mkdirSync(OUT, { recursive: true })
 step('คัดลอกโค้ด (ไฟล์ที่ git ติดตาม + ไฟล์ใหม่ที่ไม่ได้ ignore)')
 const tracked = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
 let copied = 0
+const shipped = [] // รายชื่อไฟล์โค้ดในแพ็กเกจ → VERSION.json ให้ตัวอัปเดตรู้ว่าไฟล์ไหนถูกลบออกในรุ่นใหม่
 for (const rel of tracked) {
-  if (EXCLUDE.some((re) => re.test(rel))) continue
+  if (!shipsToCustomer(rel)) continue
   const src = join(ROOT, rel)
   if (!existsSync(src)) continue // ลบในเครื่องแล้วแต่ยังไม่ commit
   const dest = join(OUT, rel)
   mkdirSync(dirname(dest), { recursive: true })
   if (RESET[rel] !== undefined) writeFileSync(dest, RESET[rel])
   else copyFileSync(src, dest)
+  if (rel !== USER_CONFIG && !isCustomerData(rel)) shipped.push(rel)
   copied++
 }
 console.log(`  ${copied} ไฟล์`)
@@ -95,14 +80,10 @@ console.log(`  ${copied} ไฟล์`)
 // ลูกค้าวางแพ็กเกจรุ่นใหม่ทับโฟลเดอร์เดิม ค่าที่ตั้งไว้จึงไม่ถูกทับ (ดู loadConfig ใน pipeline/lib/config.mjs)
 // ใช้ค่าปัจจุบันของเราเป็นค่าเริ่มต้น แต่ล้างสิ่งที่ผูกกับบัญชี/เครื่องของเรา
 {
-  const userFile = join(OUT, 'config', 'project.config.json')
+  const userFile = join(OUT, USER_CONFIG)
   const config = JSON.parse(readFileSync(userFile, 'utf8'))
   rmSync(userFile)
-  if (config.tts?.elevenlabs) Object.assign(config.tts.elevenlabs, { voiceId: '', voiceName: '' })
-  // เสียงที่โคลนไว้ไม่ได้ติดไปด้วย → ลูกค้าเริ่มที่เสียง Edge ซึ่งใช้ได้ทันที
-  if (config.tts?.engine !== 'edge') config.tts.engine = 'edge'
-  if (config.clips) config.clips.provider = 'off' // Kie มีค่าใช้จ่าย — ให้ลูกค้าเปิดเองเมื่อมี key
-  writeFileSync(join(OUT, 'config', 'default.config.json'), JSON.stringify(config, null, 2) + '\n')
+  writeFileSync(join(OUT, DEFAULT_CONFIG), JSON.stringify(customerDefaults(config), null, 2) + '\n')
 }
 
 // ── 2. runtime ──
@@ -157,7 +138,20 @@ writeFileSync(join(OUT, 'runtime', 'LICENSES.txt'), [
 // รุ่นของแพ็กเกจ — บอกลูกค้าและผู้ดูแลว่ามาจาก commit ไหน
 const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf8' }).trim().length > 0
-writeFileSync(join(OUT, 'VERSION.json'), JSON.stringify({ commit, dirty, builtAt: new Date().toISOString() }, null, 2) + '\n')
+const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
+// ลูกค้าอัปเดตเองจาก GitHub (bridge/update-package.js) — ต้องรู้ repo และสาขาที่ push ขึ้นไป
+const upstream = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return 'origin/main'
+  }
+})()
+const [remoteName, ...branchParts] = upstream.split('/')
+const repo = githubRepoUrl(execFileSync('git', ['remote', 'get-url', remoteName], { cwd: ROOT, encoding: 'utf8' }))
+if (!repo) console.warn('  ⚠️ remote ไม่ใช่ GitHub — แพ็กเกจนี้อัปเดตเองไม่ได้')
+if (dirty) console.warn('  ⚠️ มีงานที่ยังไม่ commit — ลูกค้าอัปเดตเองได้เฉพาะของที่ push ขึ้น GitHub แล้ว')
+writeFileSync(join(OUT, 'VERSION.json'), JSON.stringify({ commit, sha, dirty, builtAt: new Date().toISOString(), repo, branch: branchParts.join('/') || 'main', files: shipped.sort() }, null, 2) + '\n')
 
 writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   'Cartoon Auto — ระบบทำคลิปการ์ตูนอัตโนมัติ',
@@ -177,8 +171,8 @@ writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   '',
   'ย้ายโฟลเดอร์ทีหลัง / มีอะไรพัง → ดับเบิลคลิก setup.exe อีกครั้ง (รันซ้ำได้ งานไม่หาย)',
   'ถ้าโปรแกรมป้องกันไวรัสบล็อก setup.exe → ดับเบิลคลิก ติดตั้งครั้งแรก.bat แทน (ทำงานเหมือนกัน)',
-  'อัปเดตเป็นรุ่นใหม่ → ดับเบิลคลิก ปิดโปรแกรม.bat ก่อน แล้วแตกไฟล์รุ่นใหม่วางทับโฟลเดอร์เดิม (เลือก "แทนที่ไฟล์")',
-  '                    แล้วดับเบิลคลิก setup.exe อีกครั้ง — การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย',
+  'อัปเดตเป็นรุ่นใหม่ → โปรแกรมตรวจเองทุก 30 นาที มีรุ่นใหม่จะขึ้นแถบ "มีอัปเดตใหม่" ในแผงข้าง กด "อัปเดต" ได้เลย',
+  '                    (การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย · อัปเดตได้เมื่อไม่ได้ทำคลิปอยู่)',
   '',
   `รุ่น ${commit}${dirty ? ' (+ งานที่ยังไม่ commit)' : ''} · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`,
   '',
@@ -187,16 +181,7 @@ writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
 // ── ตัวติดตั้งต้องอยู่ครบและอ่านได้บนเครื่องลูกค้า ──
 step('ตรวจไฟล์ตัวติดตั้ง')
 {
-  const bad = []
-  for (const bat of ['ติดตั้งครั้งแรก.bat', 'เปิดโปรแกรม.bat', 'ปิดโปรแกรม.bat']) {
-    // cmd.exe อ่าน .bat ที่ขึ้นบรรทัดแบบ LF ผิด (.gitattributes บังคับ CRLF ไว้แล้ว — กันไว้อีกชั้น)
-    if (/(^|[^\r])\n/.test(readFileSync(join(OUT, bat), 'latin1'))) bad.push(`${bat} ไม่ได้ขึ้นบรรทัดแบบ CRLF`)
-  }
-  // ตัวติดตั้งหลักต้องเป็น ASCII ล้วน — ภาษาไทยใน .bat ทำให้ cmd บางรุ่นรันคำสั่งเพี้ยน (ข้อความไทยอยู่ใน bootstrap.ps1 / install.mjs)
-  if (readFileSync(join(OUT, 'ติดตั้งครั้งแรก.bat')).some((b) => b > 0x7f)) bad.push('ติดตั้งครั้งแรก.bat มีอักษรที่ไม่ใช่ ASCII')
-  const ps = readFileSync(join(OUT, 'native', 'bootstrap.ps1'))
-  if (!(ps[0] === 0xef && ps[1] === 0xbb && ps[2] === 0xbf)) bad.push('native/bootstrap.ps1 ต้องเป็น UTF-8 แบบมี BOM (PowerShell 5 อ่านภาษาไทยเพี้ยน)')
-  for (const f of ['native/install.mjs', 'native/host.mjs', 'native/extension-id.txt', 'setup.exe']) if (!existsSync(join(OUT, f))) bad.push(`ไม่มี ${f}`)
+  const bad = installerProblems((f) => (existsSync(join(OUT, f)) ? readFileSync(join(OUT, f)) : null))
   // ชื่อ "setup" ทำให้ Windows ขอสิทธิ์ admin เองถ้าไม่มี manifest asInvoker — ลงทะเบียนจะไปผิดบัญชีผู้ใช้
   if (existsSync(join(OUT, 'setup.exe')) && !readFileSync(join(OUT, 'setup.exe'), 'latin1').includes('asInvoker')) bad.push('setup.exe ไม่มี manifest asInvoker')
   if (existsSync(join(OUT, 'native', 'host.bat')) || readdirSync(join(OUT, 'native')).some((f) => f.endsWith('.json'))) bad.push('native/ มีไฟล์ลงทะเบียนของเครื่องนี้ติดไป')

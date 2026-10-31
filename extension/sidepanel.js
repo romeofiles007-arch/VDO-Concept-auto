@@ -3086,6 +3086,7 @@ function renderUpdate() {
     $('updateTitle').textContent = `✅ อัปเดตแล้ว ${updateApplied.count} รายการ`
     $('updateNote').textContent = 'โปรแกรมในเครื่องจะรีสตาร์ทเอง และแผงนี้จะโหลดตัวใหม่เองภายในไม่กี่นาที — ไม่ต้องทำอะไร'
       + (updateApplied.stashKept ? ' · ⚠️ ไฟล์ที่แก้ไว้ในเครื่องบางไฟล์ชนกับอัปเดต ระบบใช้ของใหม่ไปก่อน ส่วนของเดิมเก็บไว้ใน git stash (ไม่หาย) — ให้คนดูแลโค้ดรวมให้' : '')
+      + (updateApplied.notes?.length ? ` · ⚠️ ${updateApplied.notes.join(' · ')}` : '')
     $('applyUpdate').hidden = true
     $('updateDetails').hidden = true
     return
@@ -3146,7 +3147,7 @@ $('applyUpdate').addEventListener('click', async () => {
     const app = await localApp()
     const count = gitUpdate?.behind ?? 0
     gitUpdate = await api(app, '/api/update/apply', {})
-    updateApplied = { count, stashKept: !!gitUpdate.applied?.stashKept }
+    updateApplied = { count, stashKept: !!gitUpdate.applied?.stashKept, notes: gitUpdate.applied?.notes ?? [] }
   } catch (err) {
     await loadUpdate().catch(() => {})
     $('updateNote').textContent = err.message // หลัง renderUpdate ใน loadUpdate — ไม่งั้นข้อความ error ถูกทับ

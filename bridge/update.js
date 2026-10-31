@@ -14,6 +14,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
+import { createPackageUpdater } from './update-package.js'
 
 const CHECK_EVERY_MS = 30 * 60_000
 const FIRST_CHECK_MS = 20_000
@@ -43,7 +44,7 @@ function explain(stderr) {
 }
 
 /** ไฟล์ในอัปเดตที่ต้องทำอะไรเพิ่มหลังดึง — บอกล่วงหน้าบนปุ่มอัปเดต */
-function followUps(files) {
+export function followUps(files) {
   const notes = []
   if (files.some((f) => /^tts\/requirements\.txt$|^scripts\/setup-tts\.ps1$/.test(f))) notes.push('ระบบเสียงในเครื่องมีของใหม่ — หลังอัปเดตกด "ตรวจความพร้อม" แล้วติดตั้งเพิ่ม')
   if (files.some((f) => /^native\//.test(f))) notes.push('ตัวเชื่อม Chrome เปลี่ยน — หลังอัปเดตดับเบิลคลิก setup.exe อีกครั้ง')
@@ -53,6 +54,8 @@ function followUps(files) {
 
 /** cwd / schedule มีไว้ให้เทสต์ชี้ไป repo จำลองโดยไม่ตั้งเวลาตรวจเอง */
 export function createUpdater({ log, busy, cwd = ROOT, schedule = true }) {
+  // แพ็กเกจลูกค้า (ไม่มี .git แต่มี VERSION.json) → ดึงรุ่นใหม่จาก GitHub เป็น zip แทน git
+  if (!existsSync(join(cwd, '.git')) && existsSync(join(cwd, 'VERSION.json'))) return createPackageUpdater({ log, busy, cwd, schedule, followUps })
   const run = (args, opts) => git(cwd, args, opts)
   const state = {
     supported: existsSync(join(cwd, '.git')),
