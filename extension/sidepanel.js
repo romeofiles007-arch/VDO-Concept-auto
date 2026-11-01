@@ -3081,6 +3081,8 @@ function render() {
 
 function renderUpdate() {
   const banner = $('updateBanner')
+  // แผงเปิดค้างหลังอัปเดต แล้ว GitHub มีรุ่นใหม่อีก → เลิกบอก "อัปเดตแล้ว" (เคยค้างข้อความนี้จนกดตรวจกี่ครั้งก็ไม่เจออัปเดต)
+  if (updateApplied && gitUpdate?.available) updateApplied = null
   if (updateApplied) {
     banner.hidden = false
     banner.classList.add('done')
