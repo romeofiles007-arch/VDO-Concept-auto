@@ -34,12 +34,12 @@ import { tmpdir, homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Mac ใช้ตัวติดตั้งไฟล์นี้ตัวเดียวกัน — ติดตั้งครั้งแรก.command → native/bootstrap.sh หา/ลง Node.js → ไฟล์นี้
+ * Mac ใช้ตัวติดตั้งไฟล์นี้ตัวเดียวกัน — ติดตั้งครั้งแรก (for Mac).command → native/bootstrap.sh หา/ลง Node.js → ไฟล์นี้
  * ขั้นเหมือน Windows ทุกข้อ ต่างแค่วิธีทำ: ลงทะเบียน Chrome ด้วยไฟล์ JSON แทน registry · shortcut เป็น .app แทน .lnk
  * ป๊อปอัปด้วย osascript แทน PowerShell · ffmpeg / Python รุ่น macOS (Apple Silicon หรือ Intel ตามเครื่อง)
  */
 const MAC = process.platform === 'darwin'
-const SETUP = MAC ? 'ติดตั้งครั้งแรก.command' : 'setup.exe'
+const SETUP = MAC ? 'ติดตั้งครั้งแรก (for Mac).command' : 'setup.exe'
 
 const HOST = process.env.CARTOON_AUTO_HOST || 'com.cartoon_auto.bridge'
 const DIR = dirname(fileURLToPath(import.meta.url))
@@ -623,7 +623,7 @@ async function machineChecklist(info) {
 
 // ════════════════════════ 4. shortcut ════════════════════════
 // Mac: shortcut = แอปเล็กๆ "Cartoon Auto.app" ใน ~/Applications (ค้นใน Spotlight / Launchpad ได้) + ลิงก์บนเดสก์ท็อป
-// ข้างในแค่เรียก native/host.sh --open แบบเดียวกับ เปิดโปรแกรม.command แต่ไม่มีหน้าต่าง Terminal โผล่
+// ข้างในแค่เรียก native/host.sh --open แบบเดียวกับ เปิดโปรแกรม (for Mac).command แต่ไม่มีหน้าต่าง Terminal โผล่
 // สร้างในเครื่องเอง (ไม่ได้ดาวน์โหลด) → macOS ไม่ติดป้ายกักกัน เปิดได้ทันที
 const APP_NAME = `${SHORTCUT_NAME.replace(/\.lnk$/i, '')}.app`
 const macShortcutDirs = () => option('--shortcut-dir') ? { apps: resolve(option('--shortcut-dir')), desktop: null } : { apps: join(homedir(), 'Applications'), desktop: join(homedir(), 'Desktop') }

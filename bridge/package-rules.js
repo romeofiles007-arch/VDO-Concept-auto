@@ -73,7 +73,7 @@ export function installerProblems(read) {
   if (!ps || !(ps[0] === 0xef && ps[1] === 0xbb && ps[2] === 0xbf)) bad.push('native/bootstrap.ps1 ต้องเป็น UTF-8 แบบมี BOM (PowerShell 5 อ่านภาษาไทยเพี้ยน)')
   for (const f of ['native/install.mjs', 'native/host.mjs', 'native/extension-id.txt', 'setup.exe']) if (!read(f)) bad.push(`ไม่มี ${f}`)
   // ตัวติดตั้งของ Mac — bash อ่านไฟล์ที่ขึ้นบรรทัดแบบ CRLF ไม่ได้ (.gitattributes บังคับ LF ไว้แล้ว — กันไว้อีกชั้น)
-  for (const sh of ['ติดตั้งครั้งแรก.command', 'เปิดโปรแกรม.command', 'ปิดโปรแกรม.command', 'ถอนการติดตั้ง.command', 'native/bootstrap.sh']) {
+  for (const sh of ['ติดตั้งครั้งแรก (for Mac).command', 'เปิดโปรแกรม (for Mac).command', 'ปิดโปรแกรม (for Mac).command', 'ถอนการติดตั้ง (for Mac).command', 'native/bootstrap.sh']) {
     const buf = read(sh)
     if (!buf) bad.push(`ไม่มี ${sh}`)
     else if (buf.includes(0x0d)) bad.push(`${sh} ต้องขึ้นบรรทัดแบบ LF (ไม่ใช่ CRLF)`)

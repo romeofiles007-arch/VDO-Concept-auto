@@ -1,5 +1,5 @@
 #!/bin/bash
-# ตัวติดตั้งขั้นแรกของ Mac — ติดตั้งครั้งแรก.command เรียกไฟล์นี้ (คู่กับ native/bootstrap.ps1 ของ Windows)
+# ตัวติดตั้งขั้นแรกของ Mac — ติดตั้งครั้งแรก (for Mac).command เรียกไฟล์นี้ (คู่กับ native/bootstrap.ps1 ของ Windows)
 #
 # หน้าที่เดียว: หา Node.js 20+ ให้ได้ แล้วส่งต่อให้ native/install.mjs ทำที่เหลือทั้งหมด
 #   1. runtime/node/bin/node ที่ดาวน์โหลดไว้แล้ว
@@ -50,7 +50,7 @@ if [ -z "$NODE" ]; then
   esac
   BASE="https://nodejs.org/dist/latest-v24.x"
   echo "▸ ดาวน์โหลด Node.js (~50 MB) — ครั้งแรกครั้งเดียว"
-  SUMS="$(/usr/bin/curl -fsSL --retry 2 "$BASE/SHASUMS256.txt")" || fail "ต่อ nodejs.org ไม่ได้ — ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ติดตั้งครั้งแรก.command อีกครั้ง"
+  SUMS="$(/usr/bin/curl -fsSL --retry 2 "$BASE/SHASUMS256.txt")" || fail "ต่อ nodejs.org ไม่ได้ — ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ติดตั้งครั้งแรก (for Mac).command อีกครั้ง"
   LINE="$(printf '%s\n' "$SUMS" | grep -E " node-v[0-9.]+-darwin-$ARCH\.tar\.gz$" | head -n 1)"
   [ -n "$LINE" ] || fail "หาไฟล์ Node.js สำหรับ Mac ใน nodejs.org ไม่เจอ"
   SHA="${LINE%% *}"

@@ -19,8 +19,8 @@ import { hasKey } from '../pipeline/lib/env.mjs'
 const HF = join(homedir(), '.cache', 'huggingface', 'hub')
 const SETUP_CMD = 'powershell -ExecutionPolicy Bypass -File scripts\\setup-tts.ps1'
 const MAC = process.platform === 'darwin'
-// ตัวติดตั้งที่ลูกค้าดับเบิลคลิก — Windows: setup.exe · Mac: ติดตั้งครั้งแรก.command (ข้างในคือ native/install.mjs ตัวเดียวกัน)
-const SETUP = MAC ? 'ติดตั้งครั้งแรก.command' : 'setup.exe'
+// ตัวติดตั้งที่ลูกค้าดับเบิลคลิก — Windows: setup.exe · Mac: ติดตั้งครั้งแรก (for Mac).command (ข้างในคือ native/install.mjs ตัวเดียวกัน)
+const SETUP = MAC ? 'ติดตั้งครั้งแรก (for Mac).command' : 'setup.exe'
 
 /** รันคำสั่งแบบไม่บล็อก bridge — คืนข้อความบรรทัดแรก หรือ null ถ้าไม่มี/พัง */
 function probe(cmd, args, timeout = 8000) {

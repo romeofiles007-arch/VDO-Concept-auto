@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cartoon Auto สำหรับ Mac — เปิดโปรแกรม: เปิด bridge แบบเบื้องหลัง (ถ้ายังไม่เปิด) แล้วเปิดหน้าเว็บ
-# ทางเดียวกับที่ extension ใช้ (native/host.mjs) · ปิดด้วย ปิดโปรแกรม.command
+# ทางเดียวกับที่ extension ใช้ (native/host.mjs) · ปิดด้วย ปิดโปรแกรม (for Mac).command
 # ใช้แอป "Cartoon Auto" บนเดสก์ท็อปแทนได้ (ตัวติดตั้งสร้างให้) — ไม่มีหน้าต่าง Terminal โผล่
 DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE=""

@@ -747,7 +747,7 @@
     } catch {
       $('pillChatgpt').classList.remove('on')
       $('pillFlow').classList.remove('on')
-      $('projTitle').textContent = `ติดต่อโปรแกรมไม่ได้ — ดับเบิลคลิก เปิดโปรแกรม${/Mac/i.test(navigator.platform) ? '.command' : '.bat'} ใหม่`
+      $('projTitle').textContent = `ติดต่อโปรแกรมไม่ได้ — ดับเบิลคลิก เปิดโปรแกรม${/Mac/i.test(navigator.platform) ? ' (for Mac).command' : '.bat'} ใหม่`
     }
   }
 

@@ -22,7 +22,7 @@ const NODE = realpathSync(process.execPath)
 const ENV_FILE = join(ROOT, '.env')
 const START_TIMEOUT_MS = 20_000
 const MAC = process.platform === 'darwin'
-const STOP_FILE = MAC ? 'ปิดโปรแกรม.command' : 'ปิดโปรแกรม.bat'
+const STOP_FILE = MAC ? 'ปิดโปรแกรม (for Mac).command' : 'ปิดโปรแกรม.bat'
 
 // ── โปรโตคอลของ Chrome: ข้อความ = ความยาว 4 ไบต์ (little-endian) + JSON ──
 function send(msg) {
