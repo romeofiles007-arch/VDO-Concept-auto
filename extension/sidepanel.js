@@ -1539,6 +1539,18 @@ function renderClipSettings() {
     }
   }
   for (const b of motion.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.motion))
+  // ตัวหนังสือในภาพ — โปรแกรมในเครื่องรุ่นเก่าไม่ส่งมา → ซ่อน
+  const imageText = $('clipImageText')
+  const imageTextOptions = clip.options.imageText ?? []
+  imageText.parentElement.hidden = !imageTextOptions.length
+  if (!imageText.childElementCount) {
+    for (const o of imageTextOptions) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      imageText.append(b)
+    }
+  }
+  for (const b of imageText.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.imageText))
   // ม้าน้ำ/Kie — เลือกสัดส่วนของฉากทั้งเรื่อง
   const ai = $('clipAi')
   const aiOptions = clip.options.aiCoverage ?? clip.options.aiClips ?? []
@@ -1591,10 +1603,11 @@ function renderClipSettings() {
   const subLabel = clip.options.subtitles.find((o) => o.id === clip.subtitles)?.label
   const pauseLabel = clip.options.pause.find((o) => o.id === clip.pause)?.label
   const artLabel = (clip.options.artStyle ?? []).find((o) => o.id === clip.artStyle)?.label
-  const summary = `${clip.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'}${artLabel ? ` · ${artLabel}` : ''} · ซับไตเติล${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · เงียบ${pauseLabel}`
+  const textLabel = clip.imageText === 'off' ? ' · ไม่มีตัวหนังสือในภาพ' : ''
+  const summary = `${clip.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9'}${artLabel ? ` · ${artLabel}` : ''}${textLabel} · ซับไตเติล${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · เงียบ${pauseLabel}`
   $('clipSettingsSummary').textContent = `ตั้งค่าคลิป: ${summary}${character?.active ? ' · ตัวละครของฉัน' : ''}`
   $('renderSettingsHint').textContent = `ซับไตเติล: ${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · แนวภาพตามภาพที่สร้างไว้ (เปลี่ยนได้ที่ ⚡ ตั้งค่าคลิป)`
-  for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button'), ...ai.querySelectorAll('button')]) el.disabled = localBusy()
+  for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button'), ...imageText.querySelectorAll('button'), ...ai.querySelectorAll('button')]) el.disabled = localBusy()
 }
 
 async function saveClipSettings(change) {
@@ -1621,6 +1634,10 @@ $('clipPause').addEventListener('click', (e) => {
 $('clipMotion').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (b && !localBusy()) saveClipSettings({ motion: b.dataset.value })
+})
+$('clipImageText').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !localBusy()) saveClipSettings({ imageText: b.dataset.value })
 })
 $('clipAi').addEventListener('click', (e) => {
   const b = e.target.closest('button')

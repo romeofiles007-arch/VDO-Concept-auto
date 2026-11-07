@@ -59,7 +59,7 @@ ${table}
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
 ${artBodyRule(artStyleOf(slug, config), bodyStyleRule())}${artImageRule(artStyleOf(slug, config))}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
-${imageLanguageRule(clipLanguage(config, slug))}`
+${imageLanguageRule(clipLanguage(config, slug), noTextOn(config))}`
 }
 
 /**
@@ -87,8 +87,19 @@ export function clipLanguage(config, slug) {
   return config.script.language
 }
 
+/** โหมดไม่มีตัวหนังสือในภาพช็อต — ค่าเริ่มต้นเปิด ปิดเมื่อ images.noText เป็น false (ภาพปกยังมีหัวข้อตามเดิม) */
+export const noTextOn = (config = loadConfig()) => config.images?.noText !== false
+
+const NO_TEXT_RULE = `- ภาพไม่มีตัวหนังสือ (ผู้ใช้เปิดโหมดนี้ไว้ — มีผลเหนือกฎ 7 และหัวข้อ ON-SCREEN TEXT, LABELS & ARROWS, THOUGHT BUBBLES ใน Style Bible): ทุกช็อตห้ามมีข้อความบนภาพ ป้ายคำ คำบรรยาย ตัวเลข หรือ speech/thought bubble ที่มีตัวอักษร · ห้ามเขียนข้อความในเครื่องหมายคำพูดเพื่อให้วาดลงภาพ · ป้าย หนังสือ จอ หรือกระดาษในฉากให้ว่างหรือเป็นลายเส้นที่อ่านไม่ออก · สื่อประเด็นด้วยท่าทาง สีหน้า สี ไอคอนภาพ (เช่น หลอดไฟ หัวใจ สายฟ้า) และองค์ประกอบภาพแทน`
+
 /** ภาษาของคำอธิบายช็อตและตัวอักษรในภาพ — ตามภาษาเสียงพากย์ของคลิป */
-export function imageLanguageRule(language) {
+export function imageLanguageRule(language, noText = false) {
+  if (noText) {
+    const desc = language === 'en'
+      ? '- เขียนคำอธิบายใน field (Env/Action/Frame) เป็นภาษาอังกฤษ'
+      : '- เขียนคำอธิบายใน field (Env/Action/Frame) เป็นภาษาไทย แต่คงชื่อ field (SHOT, Chars, Env, Action, Frame) และ @TAG เป็นภาษาอังกฤษตามเดิม'
+    return `${desc}\n${NO_TEXT_RULE}`
+  }
   if (language === 'zh') {
     return `- ภาษาในภาพ: จีน — เขียนคำอธิบายใน field (Env/Action/Frame) เป็นภาษาไทย แต่คงชื่อ field (SHOT, Chars, Env, Action, Frame) และ @TAG เป็นภาษาอังกฤษตามเดิม
 - ตัวอักษรในภาพ (on-screen text, label, thought bubble) เป็นภาษาจีนอักษรตัวย่อ 1–4 ตัว ตัวหนา เขียนถูกต้อง — ใส่ข้อความที่จะให้อยู่ในภาพในเครื่องหมายคำพูด เช่น ข้อความบนภาพ "放下" · ห้ามใช้ภาษาไทยหรืออังกฤษในภาพ`
@@ -118,6 +129,9 @@ export function orientationRule(config = loadConfig()) {
 export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   const portrait = orientationOf(config) === 'portrait'
   const charNote = characterFlowNote()
+  const textRule = noTextOn(config)
+    ? 'ห้ามมีตัวหนังสือทุกชนิดในภาพช็อต — ไม่มีข้อความ ป้ายคำ คำบรรยาย ตัวเลข หรือ bubble ที่มีตัวอักษร · ป้าย หนังสือ จอในฉากให้ว่างหรือเป็นลายเส้นอ่านไม่ออก · ถ้าช็อตไหนสั่งข้อความในเครื่องหมายคำพูดไว้ ให้ข้ามข้อความนั้น (ยกเว้นภาพปก cover.png ใส่หัวข้อตามที่สั่ง)'
+    : 'ตัวอักษรในภาพมีได้เฉพาะข้อความที่ shot สั่งไว้ในเครื่องหมายคำพูดเท่านั้น'
   return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
 เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
 ${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
@@ -129,7 +143,7 @@ ${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${c
 
 ${agentBrief}
 
-ย้ำ: ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ตัวอักษรในภาพมีได้เฉพาะข้อความที่ shot สั่งไว้ในเครื่องหมายคำพูดเท่านั้น`
+ย้ำ: ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
 }
 
 /** แยก shot list ออกจาก OUTPUT 5 แล้วจับคู่กับช่อง shot ที่เราคำนวณไว้ */

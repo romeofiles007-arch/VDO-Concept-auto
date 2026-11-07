@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, createRea
 import { pipeline as pipeStreams } from 'node:stream/promises'
 import { join, resolve, sep, extname } from 'node:path'
 import { ROOT, loadConfig, updateConfig, slugify } from '../pipeline/lib/config.mjs'
-import { topicsPrompt, scriptPrompt, parseTopics, cleanScript, GENRES } from '../pipeline/lib/prompts.mjs'
+import { topicsPrompt, scriptPrompt, parseTopics, cleanScript, GENRES, noTextOn } from '../pipeline/lib/prompts.mjs'
 import { saveScript, loadScript } from '../pipeline/lib/stage2.mjs'
 import { createRunner } from './runner.js'
 import { projectStatus, setupStatus, bgmFile, BGM_EXT, listProjects } from './project.js'
@@ -839,6 +839,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             // ลายเส้น — ใช้กับคลิปใหม่ (คลิปเดิมจำแบบที่ใช้ไว้ใน projects/<slug>/art_style.json)
             if (ART_STYLES[body.artStyle]) c.art = { ...(c.art ?? {}), style: body.artStyle }
             if (MOTION_PRESETS[body.motion]) c.render.motion = body.motion
+            // ตัวหนังสือในภาพช็อต: 'off' = ไม่มี (ค่าเริ่มต้น) · 'on' = มีได้ — ใช้กับ prompt ภาพที่สร้างหลังจากนี้
+            if (['off', 'on'].includes(body.imageText)) c.images = { ...(c.images ?? {}), noText: body.imageText === 'off' }
             // ม้าน้ำ/Kie: 'off' หรือเปอร์เซ็นต์ของฉากทั้งเรื่อง
             const aiCoverage = body.aiCoverage ?? body.aiClips // aiClips รองรับ extension รุ่นเก่า
             if (aiCoverage === 'off') c.clips = { ...(c.clips ?? {}), provider: 'off' }
@@ -870,6 +872,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           subtitles: SUBTITLE_STYLES[c.render.subtitles?.style] ? c.render.subtitles.style : 'off',
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
+          imageText: noTextOn(c) ? 'off' : 'on',
           aiCoverage,
           aiClips: aiCoverage,
           kieTier: clips.tier,
@@ -880,6 +883,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             aiClips: aiCoverageOptions,
             kieTier: Object.entries(KIE_TIERS).map(([id, t]) => ({ id, label: t.label, name: t.name, credits: t.credits, detail: t.detail })),
             motion: Object.entries(MOTION_PRESETS).map(([id, m]) => ({ id, label: m.label })),
+            imageText: [{ id: 'off', label: 'ไม่มี' }, { id: 'on', label: 'มีได้' }],
             subtitles: Object.entries(SUBTITLE_STYLES).map(([id, s]) => ({ id, label: s.label })),
             pause: Object.entries(PAUSE_PRESETS).map(([id, p]) => ({ id, label: p.label })),
           },

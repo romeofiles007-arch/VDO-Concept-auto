@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { projectDir } from './config.mjs'
-import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule } from './prompts.mjs'
+import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule, noTextOn } from './prompts.mjs'
 import { activeCharacter, characterRule, bodyStyleRule } from './character.mjs'
 import { coverRequest, parseCover, saveCoverPrompt, readCoverPrompt, coverShot, coverBriefLines } from './cover.mjs'
 import { orientationOf } from './prompts.mjs'
@@ -61,7 +61,7 @@ const bibleOf = (raws) => raws.map(briefHead).find((h) => h.length) ?? ''
 const slotLine = (s) =>
   `${s.filename} | SHOT ${String(s.shot).padStart(2, '0')} | ${s.duration}s | ${s.continuation ? '(ภาพต่อเนื่องจากช็อตก่อน) ' : ''}${s.narration}`
 
-const outputRules = (language) => `- ตอบเป็นข้อความล้วนในแชต ห้ามใส่ code block ครอบคำตอบ อย่าสร้างไฟล์
+const outputRules = (language, noText) => `- ตอบเป็นข้อความล้วนในแชต ห้ามใส่ code block ครอบคำตอบ อย่าสร้างไฟล์
 - ทุก shot ขึ้นต้นด้วยชื่อไฟล์ที่ให้มาเป๊ะๆ ที่ต้นบรรทัด (ห้ามใส่เลขข้อ ตัวหนา หรือ bullet หน้าชื่อไฟล์) ตามด้วย | คั่นแต่ละ field
 - รูปแบบ field: SHOT NN | Chars: @TAG | Env: ... | Action: ... | Frame: ...
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible: สถานที่ + ของประกอบฉาก 3–6 ชิ้นที่เข้ากับเรื่อง + แสง/เวลา/บรรยากาศ + โทนสีหลัก (ห้ามเขียนแค่ "พื้นหลังสีเรียบ") — ฉากสีเดียวล้วนใช้เฉพาะช็อต pattern interrupt / reveal
@@ -70,7 +70,7 @@ const outputRules = (language) => `- ตอบเป็นข้อความ�
 - ช็อตที่กำกับว่า "ภาพต่อเนื่อง" ให้เป็น mini-sequence ของช็อตก่อนหน้า ไม่ใช่ฉากใหม่
 - ใส่ pattern interrupt ทุก 15-30 วิ ตามกฎ 6
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
-${imageLanguageRule(language)}`
+${imageLanguageRule(language, noText)}`
 
 /**
  * prompt ของรอบถัดไป — null เมื่อทุกช็อตมี prompt แล้ว
@@ -87,7 +87,7 @@ export function nextRoundPrompt(config, slug, { title, timecodeText }) {
   const batch = slots.filter((s) => missingSet.has(s.filename)).slice(0, SHOTS_PER_ROUND)
   const round = raws.length + 1
   const language = clipLanguage(config, slug)
-  const OUTPUT_RULES = outputRules(language)
+  const OUTPUT_RULES = outputRules(language, noTextOn(config))
 
   // Bible มาจากรอบแรกที่มี 5.1/5.2 จริง (รอบต่อๆ ไปขึ้นต้นด้วย SHOT LIST เลย)
   const bible = bibleOf(raws)
