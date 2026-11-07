@@ -162,15 +162,19 @@ export function backfillPosted(queue) {
 
 /**
  * ปลายทางที่คลิปนี้ลงได้จริง: แพลตฟอร์มละ 1 ปลายทาง · ตัดแพลตฟอร์มที่คลิปนี้เคยลงแล้ว (เมื่อรู้ clip = clipKey(item))
- * หลายเพจรับคลิปได้ → เลือกเพจที่ได้คลิปไปน้อยที่สุด (กระจายคลิปให้ทุกเพจ) · เท่ากัน = ตามลำดับเดิม
+ * หลายเพจรับคลิปได้ → เลือกเพจที่มีคลิปรอในคิวน้อยที่สุด (เสมอ = ที่ลงไปน้อยกว่าใน 7 วัน · ยังเสมอ = ตามลำดับเดิม)
  */
-export function onePerPlatform(keys, { clip = null, posted = loadPosted(), queue = loadQueue() } = {}) {
+export const RECENT_MS = 7 * 86_400_000
+export function onePerPlatform(keys, { clip = null, posted = loadPosted(), queue = loadQueue(), since = Date.now() - RECENT_MS } = {}) {
   const used = clip ? posted[clip] ?? {} : {}
-  const count = new Map()
-  const add = (k) => count.set(k, (count.get(k) ?? 0) + 1)
-  for (const c of Object.values(posted)) for (const v of Object.values(c ?? {})) if (v?.key) add(v.key)
-  // คลิปที่รออยู่ในคิวนับด้วย — คลิปที่เข้าคิวพร้อมกันจะได้ไปคนละเพจทันที ไม่ต้องรอให้โพสต์ก่อน
-  for (const q of queue ?? []) if (PENDING.has(q.status) && clipKey(q) !== clip) for (const k of q.targets ?? []) add(k)
+  // หลัก: คลิปที่รอในคิวของแต่ละเพจ — คลิปใหม่สลับเพจกันไปทันที
+  // รอง (ตอนเสมอ): ที่ลงไปแล้วใน 7 วันล่าสุด — ถ้านับประวัติเป็นหลัก เพจที่ลงไป 46 คลิปในสัปดาห์จะไม่ได้คลิปใหม่เลย (8 พ.ย. 2026)
+  const pend = new Map(), hist = new Map()
+  const add = (m, k) => m.set(k, (m.get(k) ?? 0) + 1)
+  for (const q of queue ?? []) if (PENDING.has(q.status) && clipKey(q) !== clip) for (const k of q.targets ?? []) add(pend, k)
+  for (const c of Object.values(posted)) for (const v of Object.values(c ?? {})) if (v?.key && !(Number(v.at) < since)) add(hist, v.key)
+  const score = (k) => [pend.get(k) ?? 0, hist.get(k) ?? 0]
+  const less = (x, y) => { const a = score(x), b = score(y); return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]) }
   const groups = new Map()
   for (const k of keys) {
     const p = platformOf(k)
@@ -178,7 +182,7 @@ export function onePerPlatform(keys, { clip = null, posted = loadPosted(), queue
     if (!groups.has(p)) groups.set(p, [])
     groups.get(p).push(k)
   }
-  return [...groups.values()].map((g) => g.reduce((best, k) => ((count.get(k) ?? 0) < (count.get(best) ?? 0) ? k : best)))
+  return [...groups.values()].map((g) => g.reduce((best, k) => (less(k, best) ? k : best)))
 }
 
 /** ปลายทางตามหมวดของคลิป — แพลตฟอร์มละ 1 ปลายทาง (กฎห้ามโพสต์ซ้ำ) */
