@@ -433,10 +433,12 @@ export function multiAccountPlatforms(data) {
  *      คลิปที่ขึ้นบางปลายทางไปแล้ว (เช่น FB ขึ้นแล้ว รอ TikTok) ไม่ย้ายเพจเด็ดขาด
  *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกใหม่ · เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่องประจำวัน) ไม่แตะ
  *      perTarget: true = แต่ละปลายทางลงช่องว่างของตัวเอง (ธรรมะ Auto) · false = ทุกปลายทางออกพร้อมกัน (การ์ตูน Auto)
+ *   resetEdited: true = รวมคลิปที่ติ๊กเพจเอง/ผลิตต่อเนื่องกำหนดเพจไว้ด้วย (ปุ่ม ↻ จัดคิวใหม่ — ให้เพจที่เพิ่งเพิ่มได้คลิป)
+ *      คลิปที่ขึ้นบางปลายทางแล้วยังไม่ย้าย · แพลตฟอร์มที่คลิปเคยลงแล้วไม่เลือกให้อีก (สมุดบันทึกห้ามโพสต์ซ้ำ)
  *   retarget: false = จัดเวลาอย่างเดียว ไม่ย้ายคลิปข้ามเพจ (ใช้ตอนเปลี่ยนเวลาของเพจ)
  *   before = การตั้งค่าก่อนเปลี่ยนเวลา — ใช้ดูว่าคลิปไหนตั้งตามช่องเดิม (คลิปที่เวลาตรงช่องเก่าต้องย้ายตามช่องใหม่)
  */
-export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now = Date.now(), retarget = true, before = null, perTarget = false } = {}) {
+export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now = Date.now(), retarget = true, before = null, perTarget = false, resetEdited = false } = {}) {
   if (slots) data = { ...data, settings: { ...data.settings, slots } }
   const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
   const keyLists = (d, keys) => [...keys.map((k) => slotsFor(d, [k])), cleanSlots(d.settings?.slots ?? [])]
@@ -455,10 +457,10 @@ export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now
   let retargeted = 0, rescheduled = 0
   // 1) เลือกเพจใหม่ทีละคลิป โดยนับคลิปที่จัดไปแล้วในรอบนี้ (เริ่มจากคิวที่ยังไม่มีเพจของคลิปที่จะจัด)
   const multi = multiAccountPlatforms(data)
-  const movable = retarget && multi.size ? sorted.filter((q) => !q.targetsEdited && !posted1(q)) : []
+  const movable = retarget && multi.size ? sorted.filter((q) => (resetEdited || !q.targetsEdited) && !posted1(q)) : []
   // ล้างปลายทางของคลิปที่จะจัดก่อน แล้วเลือกใหม่ทีละคลิป — ได้ครบทุกแพลตฟอร์มตามหมวด (เดิมเก็บแพลตฟอร์มบัญชีเดียวไว้ตามเดิม
   // คลิปที่ยังไม่มีปลายทางเลยจึงไม่ได้ TikTok — 8 พ.ย. 2026)
-  for (const q of movable) q.targets = []
+  for (const q of movable) { q.targets = []; if (resetEdited) q.targetsEdited = false }
   for (const q of movable) {
     const next = targetsFor(data, q.category ?? null, { clip: clipKey(q), posted, queue: work })
     const old = queue.find((x) => x.id === q.id)?.targets ?? []

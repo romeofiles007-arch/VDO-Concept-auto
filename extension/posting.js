@@ -190,6 +190,7 @@ export function initPosting({ api, localApp }) {
       wrap.append(el('p', { className: 'pWarn' }, 'ยังไม่มีเพจ Facebook หรือช่อง YouTube — เพิ่มในแท็บตั้งค่าก่อน ถึงจะอนุมัติโพสต์ได้'))
     }
     wrap.append(renderLibrary())
+    if (list.length && targetList().length) wrap.append(reorgTools())
     if (!list.length) wrap.append(el('p', { className: 'pEmpty' }, data.settings.enabledAt ? 'ยังไม่มีคลิปรอตรวจ — คลิปที่ทำเสร็จจะมาอยู่ที่นี่เอง' : 'ยังไม่มีคลิปรอตรวจ — เปิดโหมดในแท็บตั้งค่า หรือเพิ่มคลิปจากคลังด้านบน'))
     const ul = el('ul', { className: 'pList' }, list.map(reviewCard))
     wrap.append(ul)
@@ -220,13 +221,19 @@ export function initPosting({ api, localApp }) {
     )
   }
 
+  // กฎห้ามโพสต์ซ้ำ: สลักแพลตฟอร์มที่คลิปนี้ลงไปแล้วไว้บนการ์ด — ลงแพลตฟอร์มนั้นซ้ำไม่ได้อีกตลอดไป
+  const LOCK_NAME = { fb: 'Facebook', yt: 'YouTube', tk: 'TikTok' }
+  function lockBadges(q) {
+    return Object.entries(q.postedOn ?? {}).map(([p, v]) => el('span', { className: 'pBadge pLock', title: `คลิปนี้ลง ${LOCK_NAME[p] ?? p} แล้วที่ ${v?.name ?? v?.key ?? ''} — ห้ามโพสต์ซ้ำในแพลตฟอร์มนี้` }, `🔒 ${LOCK_NAME[p] ?? p} แล้ว`))
+  }
+
   function head(q, extra = []) {
     const thumb = q.thumb ? el('img', { className: 'pThumb', src: `${app.url}${q.thumb.slice(1)}&k=${app.token}`, alt: '', loading: 'lazy' }) : el('span', { className: 'pThumb' })
     return el('div', { className: 'pHead' }, thumb,
       el('div', {},
         el('p', { className: 'pTitle' }, q.title),
         el('p', { className: 'pMeta' }, [fmtDur(q.seconds), `เข้าคิว ${fmtWhen(q.addedAt)}`].filter(Boolean).join(' · ')),
-        el('div', { className: 'pBadges' }, q.category ? el('span', { className: 'pBadge gold' }, q.category) : null, aiBadge(q), driveBadge(q), q.missing ? el('span', { className: 'pBadge bad' }, 'ไม่พบไฟล์วิดีโอ') : null, ...extra),
+        el('div', { className: 'pBadges' }, q.category ? el('span', { className: 'pBadge gold' }, q.category) : null, aiBadge(q), driveBadge(q), q.missing ? el('span', { className: 'pBadge bad' }, 'ไม่พบไฟล์วิดีโอ') : null, ...lockBadges(q), ...extra),
       ))
   }
 
@@ -404,13 +411,29 @@ export function initPosting({ api, localApp }) {
     )
   }
 
+  /**
+   * ↻ จัดคิวใหม่ — ผู้ใช้ (8 พ.ย. 2026): "นำเพจใหม่ไปเข้าคิวด้วย โดยยังคงใช้กฎเดิม"
+   * แบ่งคลิปที่ยังไม่โพสต์ให้ทุกเพจ (รวมเพจที่เพิ่งเพิ่ม และคลิปที่เคยติ๊กเพจเอง) · แพลตฟอร์มที่คลิปลงแล้วล็อกไว้ ไม่ลงซ้ำ
+   */
+  function reorgTools() {
+    const run = async () => {
+      if (!confirm('จัดคิวใหม่ทั้งหมด?\n\n• แบ่งคลิปที่ยังไม่โพสต์ให้ทุกเพจเท่าๆ กัน รวมเพจที่เพิ่งเพิ่ม และคลิปที่เคยติ๊กเพจเอง\n• คลิปที่ลงแพลตฟอร์มไหนแล้ว ล็อกไว้ ไม่ส่งไปลงแพลตฟอร์มนั้นซ้ำ\n• คลิปที่ขึ้นบางที่ไปแล้วไม่ย้ายเพจ · เวลาที่เลือกเองไม่แตะ')) return
+      try {
+        const out = await call('/api/posting/reorganize', { all: true }, 'จัดคิวใหม่แล้ว')
+        const r = out?.reorganized
+        if (r) setStatus(`จัดคิวใหม่แล้ว — ${(r.pages ?? []).map((p) => `${p.name} ${p.count} คลิป`).join(' · ') || 'ยังไม่มีเพจ'}${r.locked ? ` · 🔒 ล็อกแพลตฟอร์มที่ลงแล้ว ${r.locked} คลิป` : ''}`, 'ok')
+      } catch {}
+    }
+    return el('div', { className: 'pReorg' },
+      el('p', { className: 'hint', style: 'margin:0' }, 'เพิ่มเพจใหม่แล้วกดปุ่มนี้ — แบ่งคลิปให้ทุกเพจ ช่องเวลาเดียวกันโพสต์พร้อมกันได้แต่คนละคลิป · คลิปที่ลงแพลตฟอร์มไหนแล้ว 🔒 ไม่ลงซ้ำ'),
+      el('button', { type: 'button', className: 'ghost', on: { click: run } }, '↻ จัดคิวใหม่'))
+  }
+
   // ── ตั้งเวลาแล้ว ──
   function renderScheduled(list) {
     if (!list.length) return el('p', { className: 'pEmpty' }, 'ยังไม่มีคลิปที่ตั้งเวลา — อนุมัติคลิปในแท็บรอตรวจก่อน')
     // ช่องเวลาต่อเพจ: แต่ละเพจลงคลิปของตัวเองในช่องเวลาเดียวกันได้ · ปุ่มนี้จัดเพจและเวลาให้ใหม่ (ไม่แตะที่ติ๊กเพจเอง/เลือกเวลาเอง)
-    const tools = el('div', { className: 'pReorg' },
-      el('p', { className: 'hint', style: 'margin:0' }, 'ช่องเวลาเดียวกัน ทุกเพจโพสต์พร้อมกันได้ แต่คนละคลิป'),
-      el('button', { type: 'button', className: 'ghost', on: { click: () => call('/api/posting/reorganize', {}, 'จัดคิวใหม่แล้ว — กระจายคลิปให้ทุกเพจ').catch(() => {}) } }, '↻ จัดคิวใหม่'))
+    const tools = reorgTools()
     return el('div', {}, tools, el('ul', { className: 'pList' }, list.map((q) => {
       const posting = q.status === 'posting'
       const when = el('input', { type: 'datetime-local', value: toLocalInput(q.scheduleAt) })

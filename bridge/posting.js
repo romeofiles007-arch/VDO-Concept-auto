@@ -649,7 +649,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         return json(res, 200, await view()), true
       }
       if (path === '/api/posting/reorganize') {
-        const out = reorganize('กดจัดคิวใหม่')
+        const out = reorganize('กดจัดคิวใหม่', { all: body.all === true })
         return json(res, 200, { ...(await view()), reorganized: out }), true
       }
       if (path === '/api/posting/check') {
@@ -751,10 +751,10 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     log(`โพสต์อัตโนมัติ: ${reason} — ย้ายเวลา ${rescheduled} คลิปตามช่องใหม่`)
   }
 
-  function reorganize(reason) {
+  function reorganize(reason, { all = false } = {}) {
     if (uploading) throw new Error('กำลังโพสต์อยู่ — รอโพสต์เสร็จแล้วค่อยจัดคิวใหม่')
     const before = loadQueue()
-    const { queue, retargeted, rescheduled } = reorganizeQueue(before, loadAccounts())
+    const { queue, retargeted, rescheduled } = reorganizeQueue(before, loadAccounts(), { resetEdited: all })
     const accounts = loadAccounts()
     const name = (k) => findTarget(accounts, k).account?.name ?? k
     for (const q of queue) {
@@ -765,7 +765,13 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     }
     saveQueue(queue)
     log(`โพสต์อัตโนมัติ: จัดคิวใหม่ (${reason}) — เปลี่ยนเพจ ${retargeted} คลิป · เปลี่ยนเวลา ${rescheduled} คลิป`)
-    return { retargeted, rescheduled }
+    // สรุปให้ผู้ใช้เห็นว่าแต่ละเพจได้กี่คลิป (รวมเพจที่เพิ่งเพิ่ม) · คลิปที่ลงบางแพลตฟอร์มแล้ว = ล็อกแพลตฟอร์มนั้นไว้
+    const acc = loadAccounts()
+    const waiting = queue.filter((q) => ['review', 'scheduled'].includes(q.status))
+    const ledger = loadPosted()
+    const pages = allTargets(acc).map((k) => ({ key: k, name: findTarget(acc, k).account?.name ?? k, count: waiting.filter((q) => (q.targets ?? []).includes(k) && !q.results?.[k]?.ok).length }))
+    const locked = waiting.filter((q) => Object.keys(ledger[clipKey(q)] ?? {}).length).length
+    return { retargeted, rescheduled, pages, locked }
   }
   // รุ่นที่เปลี่ยนเป็นช่องเวลาต่อเพจ: จัดคิวเดิมใหม่ครั้งเดียวตอนเปิดโปรแกรม
   // (เฉพาะตอนมีแพลตฟอร์มที่มีหลายเพจ — เพจเดียวไม่มีอะไรให้กระจาย)
