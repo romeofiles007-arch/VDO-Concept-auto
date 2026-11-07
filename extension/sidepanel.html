@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="icons.css" />
 <link rel="stylesheet" href="agents.css" />
 <link rel="stylesheet" href="posting.css" />
+<link rel="stylesheet" href="production.css" />
+<link rel="stylesheet" href="start-confirm.css" />
 <style>
   /* ธีมทะเล: สว่าง = ชายหาดกลางวัน (ทราย · น้ำตื้น · เปลือกหอย) · มืด = มหาสมุทรยามค่ำ (น้ำลึก · แสงเรือง)
      ตรวจ contrast แล้ว ข้อความทุกสีบนพื้นกล่อง ≥ 4.5:1 */
@@ -46,6 +48,7 @@
   .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
   .field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
   .field input { width: 58px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
+  .field select.unit { padding: 7px 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
   .primary { border: 0; background: var(--accent); color: var(--accent-ink); padding: 10px 16px; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer; }
   .wide { width: 100%; }
   .stop { border: 1px solid var(--accent); background: transparent; color: var(--accent); padding: 9px 14px; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer; }
@@ -312,33 +315,35 @@
     </div>
     <!-- 🏭 ผลิตต่อเนื่อง: สั่งทำคลิปอัตโนมัติทีละคลิปเองตามเวลา (bridge/production.js) -->
     <details class="clipSettings prodBox" id="prodBox" style="margin-top:12px">
-      <summary><span class="blockTitle">🏭 ผลิตต่อเนื่อง</span> <span class="hint" id="prodBadge" style="margin:0"></span></summary>
-      <div class="pick" style="margin-top:10px">จำนวนคลิป
-        <div class="controls" style="margin:0">
-          <label class="field"><input type="number" id="prodCount" min="0" max="100" value="5" style="width:64px" /> คลิป</label>
-          <span class="hint" style="margin:0">0 = ไม่จำกัด จนกว่าจะกดหยุด</span>
+      <summary><span class="blockTitle">🏭 ตั้งเวลาผลิต</span> <span class="hint" id="prodBadge"></span></summary>
+      <p class="hint prodIntro">ทำคลิปอัตโนมัติทีละคลิป ตามเวลาที่เลือก</p>
+      <fieldset class="prodModes" id="prodModes">
+        <legend class="prodLabel">ทำคลิปแบบไหน</legend>
+        <div class="prodMode" data-mode="batch">
+          <input type="radio" name="prodMode" id="prodModeBatch" value="batch" />
+          <div class="prodModeBody">
+            <label class="prodModeTitle" for="prodModeBatch">ทำตามจำนวน</label>
+            <div class="prodSentence">ทำ <input type="number" id="prodBatchCount" min="1" max="100" value="1" aria-label="จำนวนคลิป" /> คลิป ต่อกันจนครบ</div>
+            <label class="prodCheck prodLater"><input type="checkbox" id="prodBatchLater" /> รอเริ่มตอน <input type="time" id="prodBatchTime" value="22:00" aria-label="เวลาเริ่ม" /> น.</label>
+          </div>
         </div>
-      </div>
-      <div class="pick">เริ่มเมื่อไร
-        <div class="seg" id="prodStart" role="group" aria-label="เวลาเริ่มผลิต">
-          <button type="button" data-value="now">เริ่มทันที</button>
-          <button type="button" data-value="at">เริ่มตอน</button>
-          <button type="button" data-value="daily">ทุกวันตอน</button>
+        <div class="prodMode" data-mode="daily">
+          <input type="radio" name="prodMode" id="prodModeDaily" value="daily" />
+          <div class="prodModeBody">
+            <label class="prodModeTitle" for="prodModeDaily">ทุกวัน ตามเวลา</label>
+            <div class="prodSentence"><input type="time" id="prodDailyTime" value="22:00" aria-label="เวลาทำคลิปทุกวัน" /> น. ทำ <input type="number" id="prodDailyCount" min="1" max="100" value="1" aria-label="จำนวนคลิปต่อวัน" /> คลิป</div>
+          </div>
         </div>
-        <label class="field" id="prodTimeRow" style="margin-top:6px">เวลา <input type="time" id="prodTime" value="22:00" /></label>
-      </div>
-      <div class="pick">พักระหว่างคลิป (สุ่มในช่วงนี้)
-        <div class="controls" style="margin:0">
-          <label class="field"><input type="number" id="prodDelayMin" min="0" max="720" value="20" style="width:56px" /></label>–
-          <label class="field"><input type="number" id="prodDelayMax" min="0" max="720" value="40" style="width:56px" /> นาที</label>
+        <div class="prodMode" data-mode="loop">
+          <input type="radio" name="prodMode" id="prodModeLoop" value="loop" />
+          <div class="prodModeBody">
+            <label class="prodModeTitle" for="prodModeLoop">ทำไปเรื่อยๆ ทีละคลิป จนกดหยุด</label>
+            <div class="prodSentence">เว้น <input type="number" id="prodLoopHours" min="0" max="12" step="1" value="2" inputmode="numeric" aria-label="ชั่วโมงที่เว้นระหว่างคลิป" /> ชั่วโมง <input type="number" id="prodLoopMins" min="0" max="59" step="5" value="0" inputmode="numeric" aria-label="นาทีที่เว้นระหว่างคลิป" /> นาที</div>
+          </div>
         </div>
-      </div>
-      <style>
-        #prodBox .prodCheck { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 400; }
-        #prodBox .prodCheck input, #prodLangs input { width: auto; height: auto; margin: 0; flex: none; }
-        #prodLangs { display: inline-flex; gap: 10px; flex-wrap: wrap; }
-        #prodLangs label { display: inline-flex; align-items: center; gap: 4px; }
-      </style>
+      </fieldset>
+      <details class="prodOptions">
+      <summary>ตัวเลือกเพิ่มเติม · สุ่มเนื้อหาและการโพสต์</summary>
       <div class="pick">สุ่มอะไรบ้าง <span class="hint" style="margin:0">(ไม่ติ๊ก = ใช้ค่าที่ตั้งไว้)</span>
         <label class="prodCheck"><input type="checkbox" id="prodRandGenre" /> หมวดและหัวข้อ</label>
         <label class="prodCheck"><input type="checkbox" id="prodRandArt" /> ลายเส้นของภาพ</label>
@@ -351,25 +356,35 @@
           </span>
         </div>
       </div>
-      <div class="pick">ผลิตเสร็จแล้ว → 📣 โพสต์อัตโนมัติ
+      <div class="pick">เมื่อผลิตเสร็จ
         <div class="seg" id="prodAutoPost" role="group" aria-label="ส่งเข้าคิวโพสต์">
-          <button type="button" data-value="off">ไม่โพสต์</button>
-          <button type="button" data-value="ai">AI ตรวจแล้วตั้งเวลา</button>
-          <button type="button" data-value="now">ตั้งเวลาทันที</button>
+          <button type="button" data-value="off">เก็บในคลัง</button>
+          <button type="button" data-value="ai">ให้ AI ตรวจ</button>
+          <button type="button" data-value="now">เข้าคิวโพสต์</button>
         </div>
         <span class="hint" id="prodPostHint" style="margin:2px 0 0">คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปตามที่ตั้งในหน้า 📣</span>
       </div>
+      <p class="hint" style="margin-top:12px">เวลาเริ่มผลิตกับเวลาโพสต์แยกกัน ตั้งเวลาโพสต์ในหน้า “📣 โพสต์อัตโนมัติ”</p>
+      </details>
+      <div class="prodPlan" aria-live="polite">
+        <strong id="prodPlanTitle"></strong>
+        <p class="hint" id="prodPlanDetail"></p>
+      </div>
+      <div class="run">
+        <button class="primary" id="prodGo" disabled>เริ่มผลิต</button>
+        <button class="stop" id="prodStop" disabled>หยุดผลิต</button>
+      </div>
+      <p class="hint" id="prodSaveState" role="status">บันทึกค่าที่เลือกให้อัตโนมัติ</p>
       <div class="status" id="prodStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <details class="prodHistoryBox" id="prodHistoryBox" hidden>
+      <summary>คลิปที่ผลิตแล้ว</summary>
       <div class="controls" id="prodReady" style="display:none;margin:8px 0 0;gap:6px;flex-wrap:wrap">
         <span id="prodReadyText"></span>
         <button type="button" class="ghost" id="prodReadyPlay" title="เปิดคลิปแรกของชุดเต็มจอด้วยโปรแกรมดูวิดีโอของ Windows">▶ ดูเต็มจอ</button>
         <button type="button" class="ghost" id="prodReadyFolder" title="เปิดโฟลเดอร์ที่รวมคลิปทั้งชุดไว้ เรียงตามลำดับ">📂 เปิดโฟลเดอร์</button>
       </div>
       <ol class="hint" id="prodHistory" style="margin:4px 0 0;padding-left:18px"></ol>
-      <div class="run">
-        <button class="primary" id="prodGo">▶ เริ่มผลิต</button>
-        <button class="stop" id="prodStop" disabled>■ หยุด</button>
-      </div>
+      </details>
     </details>
     </div>
     <div class="agentBlock agentSetting" id="autoTopicBlock" data-agent="chatgpt" data-agent-label="ChatGPT">
@@ -406,7 +421,7 @@
             <button type="button" data-value="en">พากย์อังกฤษ</button>
             <button type="button" data-value="zh">พากย์จีน</button>
           </div>
-          <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="1" /> นาที</label>
+          <label class="field">ยาว <input type="number" id="autoMinutes" min="1" max="30" value="1" /> <select class="unit" id="autoUnit" aria-label="หน่วยความยาว"><option value="sec">วินาที</option><option value="min">นาที</option></select></label>
         </div>
       </div>
       <label class="pick">เสียงที่ใช้
@@ -542,7 +557,7 @@
         <button type="button" data-value="en">พากย์อังกฤษ</button>
         <button type="button" data-value="zh">พากย์จีน</button>
       </div>
-      <label class="field">ยาว <input type="number" id="minutes" min="1" max="60" value="1" /> นาที</label>
+      <label class="field">ยาว <input type="number" id="minutes" min="1" max="60" value="1" /> <select class="unit" id="minutesUnit" aria-label="หน่วยความยาว"><option value="sec">วินาที</option><option value="min">นาที</option></select></label>
     </div>
     <div class="run">
       <button class="primary" id="askScript">▶ เริ่มเขียนบทพากย์</button>
@@ -551,7 +566,7 @@
     <div class="status" id="scriptStatus" role="status" aria-live="polite" style="margin-top:8px"></div>
     <details id="scriptRawBox" hidden><summary>คำตอบดิบจาก ChatGPT</summary><pre id="scriptRaw"></pre></details>
     <div id="scriptResult" hidden>
-      <div class="facts">ประมาณ <b id="estMinutes"></b> นาที (เป้า <span id="target"></span>)</div>
+      <div class="facts">ประมาณ <b id="estMinutes"></b> (เป้า <span id="target"></span>)</div>
       <p class="warn" id="offTarget" hidden>ความยาวห่างจากเป้าเกิน 25% — ลองกดเขียนใหม่</p>
       <pre class="script" id="scriptText"></pre>
       <div class="controls">
@@ -777,5 +792,18 @@
   </div>
 </div>
 
+<!-- หน้าสรุปก่อนเริ่มงาน (sidepanel.js: confirmStart) — ค่าที่โปรแกรมจะใช้จริง กดยืนยันก่อนสั่งงาน -->
+<dialog id="startConfirm" aria-labelledby="scTitle">
+  <div class="scBody">
+    <h2 id="scTitle">สรุปก่อนเริ่ม</h2>
+    <p class="scIntro" id="scIntro">ตรวจค่าที่จะใช้ ถ้าไม่ตรงกดยกเลิกแล้วแก้ก่อน</p>
+    <dl id="scList"></dl>
+    <p class="scWarn" id="scWarn" role="alert"></p>
+    <div class="scActions">
+      <button type="button" class="ghost" data-sc="cancel">ยกเลิก</button>
+      <button type="button" class="primary" data-sc="ok" id="scOk">ยืนยัน เริ่มเลย</button>
+    </div>
+  </div>
+</dialog>
 <script type="module" src="sidepanel.js"></script>
 </html>

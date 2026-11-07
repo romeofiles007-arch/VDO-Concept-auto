@@ -69,7 +69,8 @@ await test('ปลายทางตามหมวด: ไม่เลือก
     facebook: [{ id: 'all' }, { id: 'space', categories: ['อวกาศ & จักรวาล'] }],
     youtube: [{ id: 'dino', refreshToken: 'r', categories: ['ไดโนเสาร์ & โลกดึกดำบรรพ์'] }, { id: 'off', categories: [] }],
   }
-  assert.deepEqual(P.targetsFor(data, 'อวกาศ & จักรวาล'), ['fb:all', 'fb:space'])
+  // 2 เพจรับหมวดนี้ แต่กฎห้ามโพสต์ซ้ำให้ลงได้เพจเดียวต่อแพลตฟอร์ม (ยังไม่มีประวัติ = เพจแรก)
+  assert.deepEqual(P.targetsFor(data, 'อวกาศ & จักรวาล'), ['fb:all'])
   assert.deepEqual(P.targetsFor(data, 'ไดโนเสาร์ & โลกดึกดำบรรพ์'), ['fb:all', 'yt:dino'])
   assert.deepEqual(P.targetsFor(data, null), ['fb:all'], 'ช่องที่ไม่ได้เชื่อมต่อ (ไม่มี refreshToken) ไม่นับ')
   assert.deepEqual(P.cleanCategories(['อวกาศ & จักรวาล', 'มั่ว', 'อวกาศ & จักรวาล']), ['อวกาศ & จักรวาล'])
@@ -359,7 +360,14 @@ try {
     const before = uploads.filter((u) => u.kind === 'fb').length
     await call('/api/posting/retry', { id })
     await posting.tick()
-    const v = await call('/api/posting')
+    let v = await call('/api/posting')
+    assert.equal(v.queue[0].status, 'scheduled', 'เพิ่งโพสต์ Facebook ไป → รอให้ครบ 30 นาทีก่อน ไม่โพสต์รัว')
+    // จำลองว่าโพสต์ล่าสุดผ่านไป 31 นาทีแล้ว
+    const queue = P.loadQueue()
+    for (const q of queue) for (const r of Object.values(q.results ?? {})) if (r?.ok) r.at = Date.now() - 31 * 60_000
+    P.saveQueue(queue)
+    await posting.tick()
+    v = await call('/api/posting')
     assert.equal(v.queue[0].status, 'posted')
     assert.equal(uploads.filter((u) => u.kind === 'fb').length, before, 'Facebook ต้องไม่ถูกโพสต์ซ้ำ')
     assert.ok(Object.values(v.queue[0].results).every((r) => r.ok && r.url))
@@ -435,6 +443,10 @@ try {
     assert.ok(v.queue[0].drive.fileId)
     const fileId = v.queue[0].drive.fileId
     youtubeFails = false
+    // คลิปทดสอบนี้เคยโพสต์ไปแล้วในข้อก่อน — ข้อนี้ทดสอบ Drive ไม่ใช่กฎห้ามโพสต์ซ้ำ จึงล้างสมุดบันทึกและผลเดิมก่อน
+    rmSync(join(tmp, 'posted.json'), { force: true })
+    P.saveQueue(P.loadQueue().map((q) => (q.id === id ? { ...q, results: {} } : q)))
+    await call('/api/posting/item', { id, resetTargets: true })
     await call('/api/posting/approve', { id, when: 'now' })
     await posting.tick()
     v = await call('/api/posting')
@@ -464,6 +476,8 @@ try {
     assert.equal(v.categories.length > 20, true, 'ส่งรายการหมวดให้หน้าจอ')
 
     // คลิปใหม่ ยังไม่รู้หมวด → ลงเฉพาะช่องที่รับทุกหมวด
+    // (ใช้คลิปทดสอบตัวเดิมที่โพสต์ไปแล้วในข้อก่อน — ข้อนี้ทดสอบหมวด จึงล้างสมุดบันทึกห้ามโพสต์ซ้ำก่อน)
+    rmSync(join(tmp, 'posted.json'), { force: true })
     await call('/api/posting/remove', { id: v.queue[0].id })
     v = await call('/api/posting/add', { slug: SLUG, file: `${SLUG}.mp4` })
     const id = v.queue.find((q) => q.status === 'review').id
@@ -498,11 +512,17 @@ try {
     v = await call('/api/posting/account/categories', { kind: 'facebook', id: dinoPage, categories: [] })
     assert.deepEqual(v.queue.find((q) => q.id === id).targets, [`fb:${spacePage}`])
 
-    // กลับไปเลือกตามหมวด → เพจไดโนเสาร์ตอนนี้รับทุกหมวดแล้ว จึงได้ด้วย
+    // กลับไปเลือกตามหมวด → เพจไดโนเสาร์ตอนนี้รับทุกหมวดแล้ว รับคลิปอวกาศได้ทั้ง 2 เพจ
+    // แต่กฎห้ามโพสต์ซ้ำ: Facebook ได้เพจเดียว (1 ใน 2 เพจนี้) + YouTube 1 ช่อง
     v = await call('/api/posting/item', { id, resetTargets: true })
     item = v.queue.find((q) => q.id === id)
     assert.equal(item.targetsEdited, false)
-    assert.deepEqual(item.targets.sort(), [`fb:${dinoPage}`, `fb:${spacePage}`, `yt:${yt}`].sort())
+    const fbTargets = item.targets.filter((k) => k.startsWith('fb:'))
+    assert.equal(fbTargets.length, 1, 'Facebook ได้เพจเดียวต่อคลิป')
+    assert.ok([`fb:${dinoPage}`, `fb:${spacePage}`].includes(fbTargets[0]))
+    assert.ok(item.targets.includes(`yt:${yt}`))
+    // ติ๊กเองสองเพจ Facebook พร้อมกัน → ไม่ยอม
+    await call('/api/posting/item', { id, targets: [`fb:${dinoPage}`, `fb:${spacePage}`] }, { expect: 500 })
   })
 
   await test('ปิดโปรแกรมกลางการโพสต์ → เปิดใหม่ไม่โพสต์ซ้ำเอง (เป็นโพสต์ไม่สำเร็จ)', async () => {

@@ -21,6 +21,7 @@ import { join, dirname } from 'node:path'
 import { loadConfig, projectDir, slugify, ROOT } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
 import { scriptPrompt, scoredTopicsPrompt, parseScoredTopics } from './lib/prompts.mjs'
+import { lengthLabel } from '../extension/prompts.js'
 import { saveScript, loadScript } from './lib/stage2.mjs'
 import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRoundPrompt } from './lib/shotlist.mjs'
 import { collectImages } from './lib/shotfile.mjs'
@@ -274,14 +275,14 @@ async function scriptDepartment() {
   const existing = loadScript(config, title)
   // บทเดิมยาวผิดเป้าหลายเท่า (เช่นค้างจากรอบที่ ChatGPT เขียนเกิน) → เขียนใหม่ ไม่ใช้ต่อ
   const existingRatio = existing ? existing.minutes / existing.target : 1
-  if (existing && existingRatio <= 2 && existingRatio >= 0.5) return dept('script', { status: 'done', detail: `ใช้บทเดิม (~${existing.minutes.toFixed(1)} นาที)` })
+  if (existing && existingRatio <= 2 && existingRatio >= 0.5) return dept('script', { status: 'done', detail: `ใช้บทเดิม (~${lengthLabel(existing.minutes)})` })
   if (existing) {
-    console.warn(`   บทเดิมยาว ${existing.minutes.toFixed(1)} นาที ห่างจากเป้า ${existing.target} นาทีหลายเท่า — เขียนใหม่`)
+    console.warn(`   บทเดิมยาว ${lengthLabel(existing.minutes)} ห่างจากเป้า ${lengthLabel(existing.target)}หลายเท่า — เขียนใหม่`)
     setAsideScript(existing.file)
   }
   let feedback = ''
   for (let attempt = 1; attempt <= 3; attempt++) {
-    dept('script', { status: 'working', attempts: attempt, expectSec: 150 + config.script.targetMinutes * 20, detail: `ChatGPT กำลังเขียนบท (${config.script.targetMinutes} นาที)` })
+    dept('script', { status: 'working', attempts: attempt, expectSec: 150 + config.script.targetMinutes * 20, detail: `ChatGPT กำลังเขียนบท (${lengthLabel(config.script.targetMinutes)})` })
     const text = await askChatGPT(scriptPrompt(config, title) + feedback, `เขียนบท "${title}"`)
     // จบด้วยสระหน้า (เ แ โ ใ ไ) = ขาดกลางคำแน่นอน (ไม่มีคำไทยจบแบบนี้) → ขอใหม่ ไม่งั้นเสียงท้ายคลิปขาด
     if (/[เแโใไ]\s*$/.test(text.trim()) && attempt < 3) {
@@ -293,15 +294,15 @@ async function scriptDepartment() {
     const ratio = saved.minutes / saved.target
     // บทสั้น/ยาวผิดเป้าเล็กน้อย รอบสุดท้ายยอมรับ · ผิดเป้าหลายเท่า (เช่น เป้า 1 นาทีได้ 13 นาที) ห้ามไปต่อ — เสียเวลาทำเสียงและภาพเป็นร้อยช็อต
     if (!saved.offTarget || (attempt === 3 && ratio <= 2 && ratio >= 0.5)) {
-      return dept('script', { status: 'done', detail: `ได้บท ~${saved.minutes.toFixed(1)} นาที (เป้า ${saved.target})` })
+      return dept('script', { status: 'done', detail: `ได้บท ~${lengthLabel(saved.minutes)} (เป้า ${lengthLabel(saved.target)})` })
     }
     if (attempt === 3) {
       setAsideScript(saved.file)
-      throw new Error(`ChatGPT เขียนบทยาว ${saved.minutes.toFixed(1)} นาที ห่างจากเป้า ${saved.target} นาทีเกินไป 3 รอบ — ลองกดทำคลิปอัตโนมัติอีกครั้ง หรือเพิ่มความยาวเป้าหมาย`)
+      throw new Error(`ChatGPT เขียนบทยาว ${lengthLabel(saved.minutes)} ห่างจากเป้า ${lengthLabel(saved.target)}เกินไป 3 รอบ — ลองกดทำคลิปอัตโนมัติอีกครั้ง หรือเพิ่มความยาวเป้าหมาย`)
     }
     const words = Math.round(saved.target * config.script.wordsPerMinute)
-    feedback = `\n\n⚠️ รอบก่อนบทยาวประมาณ ${saved.minutes.toFixed(1)} นาที แต่เป้าคือ ${saved.target} นาที — เขียนใหม่ให้${ratio > 1 ? 'สั้นลง' : 'ยาวขึ้น'} รวมประมาณ ${words} ${config.script.language === 'th' ? 'คำ' : 'words'} (${Math.round(saved.target * 60)} วินาที) เท่านั้น`
-    console.warn(`   บทยาว ${saved.minutes.toFixed(1)} นาที ห่างจากเป้า ${saved.target} นาทีเกินไป — ขอเขียนใหม่`)
+    feedback = `\n\n⚠️ รอบก่อนบทยาวประมาณ ${lengthLabel(saved.minutes)} แต่เป้าคือ ${lengthLabel(saved.target)} — เขียนใหม่ให้${ratio > 1 ? 'สั้นลง' : 'ยาวขึ้น'} รวมประมาณ ${words} ${config.script.language === 'th' ? 'คำ' : 'words'} เท่านั้น`
+    console.warn(`   บทยาว ${lengthLabel(saved.minutes)} ห่างจากเป้า ${lengthLabel(saved.target)}เกินไป — ขอเขียนใหม่`)
   }
 }
 
@@ -493,7 +494,7 @@ async function editDepartment() {
 const WORK = { script: scriptDepartment, voice: voiceDepartment, art: artDepartment, images: imagesDepartment, clips: clipsDepartment, edit: editDepartment }
 
 console.log(`🎬 ทำคลิปอัตโนมัติ: ${title}`)
-console.log(`   ${({ en: 'อังกฤษ', zh: 'จีน' })[config.script.language] ?? 'ไทย'} · ${config.script.targetMinutes} นาที · เสียง ${config.tts.engine}`)
+console.log(`   ${({ en: 'อังกฤษ', zh: 'จีน' })[config.script.language] ?? 'ไทย'} · ${lengthLabel(config.script.targetMinutes)} · เสียง ${config.tts.engine}`)
 await requireBridge()
 
 // ข้อความโพสต์ (ชื่อคลิป คำบรรยาย แฮชแท็ก) — เริ่มคิดตอน Flow วาดภาพ (ChatGPT ว่างช่วงนั้น) ไม่ต้องรอตอนท้าย

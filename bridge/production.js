@@ -26,7 +26,7 @@ const MAX_FAILS_IN_ROW = 3
 export const LANGUAGES = ['th', 'zh', 'en']
 
 export const DEFAULT_SETTINGS = {
-  count: 5, // 0 = ไม่จำกัด จนกว่าจะกดหยุด
+  count: 1, // 0 = ไม่จำกัด จนกว่าจะกดหยุด · ค่าตั้งต้น 1 คลิปต่อรอบ เหมือนธรรมะ Auto
   start: 'now', // now | at | daily
   time: '22:00',
   delayMin: 20,
@@ -197,29 +197,7 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
     }
     const name = result.title ? `"${result.title}"` : 'คลิป'
     if (state.made >= target()) {
-      playDoneSound()
-      // คลิปพร้อมดู: รวมเป็นโฟลเดอร์เดียว เปิดโฟลเดอร์ + เปิดคลิปแรกเต็มจอ
-      try {
-        const ready = prepareReady(state.history.filter((h) => h.batch === state.batch))
-        if (ready) {
-          state.ready = ready
-          openMax(ready.dir)
-          openMax(ready.files[0].file)
-        }
-      } catch (err) {
-        log(`ผลิตต่อเนื่อง: เตรียมคลิปพร้อมดูไม่ได้ — ${err.message}`)
-      }
-      if (settings.start === 'daily') {
-        state.nextAt = nextTimeAt(settings.time, now)
-        state.made = 0
-        state.failed = 0
-        state.batch++
-        say(`ครบ ${settings.count} คลิปของวันนี้ — รอบถัดไป ${fmt(state.nextAt)} พรุ่งนี้`)
-      } else {
-        state.active = false
-        state.nextAt = null
-        say(`เสร็จครบ ${state.made} คลิป${state.failed ? ` (ล้ม ${state.failed})` : ''}`)
-      }
+      completeBatch(now)
     } else if (state.failsInRow >= MAX_FAILS_IN_ROW) {
       state.active = false
       state.nextAt = null
@@ -229,6 +207,30 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
       say(`${result.ok ? `ได้ ${name}` : `${name} ไม่สำเร็จ — ข้าม`} · คลิปถัดไป ${fmt(state.nextAt)}`)
     }
     save()
+  }
+
+  /** ครบจำนวนคลิปของรอบ → แจ้งเสร็จ แล้วหยุด (หรือรอรอบพรุ่งนี้ในโหมดทุกวัน) */
+  function completeBatch(now = Date.now()) {
+    playDoneSound()
+    // คลิปพร้อมดู: รวมเป็นโฟลเดอร์เดียว — ไม่เปิดเอง กด "ดูเต็มจอ" / "เปิดโฟลเดอร์" ในกล่องตั้งเวลาผลิตเมื่ออยากดู
+    // (ยกมาจากธรรมะ Auto 57baa5d: ผลิตตอนกลางคืนแล้วหน้าต่างวิดีโอเด้งขึ้นมาเอง)
+    try {
+      const ready = prepareReady(state.history.filter((h) => h.batch === state.batch))
+      if (ready) state.ready = ready
+    } catch (err) {
+      log(`ผลิตต่อเนื่อง: เตรียมคลิปพร้อมดูไม่ได้ — ${err.message}`)
+    }
+    if (settings.start === 'daily') {
+      state.nextAt = nextTimeAt(settings.time, now)
+      state.made = 0
+      state.failed = 0
+      state.batch++
+      say(`ครบ ${settings.count} คลิปของวันนี้ — รอบถัดไป ${fmt(state.nextAt)} พรุ่งนี้`)
+    } else {
+      state.active = false
+      state.nextAt = null
+      say(`เสร็จครบ ${state.made} คลิป${state.failed ? ` (ล้ม ${state.failed})` : ''}`)
+    }
   }
 
   function launch(now = Date.now()) {
@@ -254,6 +256,11 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
       return
     }
     if (!state.nextAt || now < state.nextAt) return
+    // ลดจำนวนคลิปต่อรอบระหว่างรอบ จนทำครบแล้ว → จบรอบ ไม่เริ่มคลิปเกิน
+    if (state.made >= target()) {
+      completeBatch(now)
+      return save()
+    }
     if (runner.snapshot()?.status === 'running') {
       if (!state.message.startsWith('รองานอื่น')) say('รองานอื่นที่กำลังทำอยู่ให้เสร็จก่อน')
       return

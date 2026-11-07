@@ -96,6 +96,18 @@
 .pLibrary .pThumb { width: 40px; }
 .pLibrary span { font-size: 13px; overflow-wrap: anywhere; }
 
+.pSlotBox { display: grid; gap: 8px; }
+.pSlotHead { display: grid; gap: 2px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.pSlotHead small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.pSlots { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--gull-line); border-radius: 10px; overflow: hidden; }
+.pSlots li { display: grid; grid-template-columns: 56px 1fr 40px; gap: 8px; align-items: center; padding: 6px 8px; background: var(--gull-bg); }
+.pSlots li + li { border-top: 1px solid var(--gull-line); }
+.pSlotN { font-size: 12px; color: var(--muted); }
+.pSlots input[type='time'] { width: 100%; min-height: 40px; padding: 6px 10px; border: 1px solid var(--gull-line); border-radius: 8px; background: var(--gull-panel); color: var(--ink); font: inherit; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color-scheme: light dark; }
+.pSlots input[type='time']:focus-visible { outline: 2px solid var(--gull); outline-offset: 1px; }
+.pSlotDel { min-width: 40px; min-height: 40px; padding: 0; }
+.pSlotDel:disabled { opacity: .35; cursor: not-allowed; }
+
 .pBox { background: var(--gull-panel); border: 1px solid var(--gull-line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
 .pBox h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .pBox .hint { margin: 0; }
@@ -107,6 +119,9 @@
 .pAccounts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .pAccounts li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--gull-line); border-radius: 10px; font-size: 13px; }
 .pAccounts li strong { flex: 1 1 120px; overflow-wrap: anywhere; }
+/* รูปโปรไฟล์เพจ — วงกลมหน้าชื่อเพจ · โหลดไม่ได้เป็นตัวอักษรแรกของชื่อ */
+.pAvatar { flex: none; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid var(--gull-line); background: var(--gull-bg); }
+.pAvatarText { display: inline-grid; place-items: center; font-size: 17px; font-weight: 700; color: var(--gull); }
 .pAccounts select { padding: 6px 8px; border: 1px solid var(--gull-line); border-radius: 8px; background: var(--gull-bg); color: var(--ink); font: inherit; font-size: 13px; }
 .pGrid2 { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .pWarn { font-size: 12px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--warn); color: var(--ink); background: color-mix(in srgb, var(--warn) 10%, transparent); margin: 0; }
@@ -120,3 +135,9 @@
 .pCat input { accent-color: var(--gull); margin-top: 2px; flex: none; }
 .linkBtn { border: 0; background: none; padding: 0; color: var(--gull); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .pField select { width: 100%; }
+
+/* ปลายทางที่คลิปนี้ลงแพลตฟอร์มนั้นไปแล้ว — ติ๊กไม่ได้ (กฎห้ามโพสต์ซ้ำ) */
+.pTarget.pLocked { opacity: .5; cursor: not-allowed; text-decoration: line-through; }
+
+/* ปุ่มจัดคิวใหม่ในแท็บตั้งเวลาแล้ว */
+.pReorg { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

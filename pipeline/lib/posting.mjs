@@ -116,12 +116,77 @@ export function acceptsCategory(account, category) {
   return !cats.length || (!!category && cats.includes(category))
 }
 
-/** ปลายทางตามหมวดของคลิป */
-export function targetsFor(data, category) {
-  return [
+// ── กฎห้ามโพสต์ซ้ำ (ผู้ใช้ 7 พ.ย. 2026) ─────────────────────────────
+// 1 คลิปลงได้ 1 เพจ/ช่องต่อแพลตฟอร์ม (Facebook 1 เพจ · YouTube 1 ช่อง) — คลิปเดียวกันหลายเพจผิดกฎชุมชน "คลิปซ้ำ"
+// ลงแพลตฟอร์มไหนแล้ว ห้ามลงแพลตฟอร์มนั้นอีกตลอดไป (แม้เอาออกจากคิวแล้วเพิ่มใหม่) · แพลตฟอร์มอื่นยังลงได้ตามกฎเดียวกัน
+// สมุดบันทึกถาวร projects/_posting/posted.json = { "<slug>/<file>": { fb: { key, name, at, url, title }, yt: {…} } } — ไม่ลบเอง
+
+const POSTED_FILE = () => join(POSTING_DIR, 'posted.json')
+export const platformOf = (key) => String(key).split(':')[0]
+/** ตัวระบุคลิปในสมุดบันทึก — แบบเดียวกับคิว (โปรเจกต์ + ไฟล์) · ทำคลิปใหม่ทับไฟล์เดิม = คลิปเดิม */
+export const clipKey = (item) => (item?.slug ? (item.file ? `${item.slug}/${item.file}` : item.slug) : null)
+export const PLATFORM_NAME = { fb: 'Facebook', yt: 'YouTube' }
+
+export function loadPosted() {
+  const raw = readJson(POSTED_FILE(), {})
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+}
+
+/** clip = clipKey(item) · บันทึกว่าคลิปนี้ลงแพลตฟอร์มนี้แล้ว — มีบันทึกเดิมของแพลตฟอร์มนั้นอยู่แล้ว = ไม่ทับ (ครั้งแรกคือหลักฐาน) */
+export function recordPosted(clip, key, info = {}) {
+  const all = loadPosted()
+  const p = platformOf(key)
+  if (!clip || all[clip]?.[p]) return all
+  all[clip] = { ...(all[clip] ?? {}), [p]: { key, ...info, at: info.at ?? Date.now() } }
+  writeJson(POSTED_FILE(), all)
+  return all
+}
+
+/** คลิปที่โพสต์ไปก่อนมีสมุดบันทึก — เติมจากผลโพสต์ในคิว (เรียกตอนเปิดโปรแกรม) · คืนจำนวนที่เติม */
+export function backfillPosted(queue) {
+  const all = loadPosted()
+  let added = 0
+  const done = [...queue].sort((a, b) => (a.postedAt ?? a.addedAt ?? 0) - (b.postedAt ?? b.addedAt ?? 0))
+  for (const q of done) {
+    for (const [key, r] of Object.entries(q.results ?? {})) {
+      const p = platformOf(key)
+      const clip = clipKey(q)
+      if (!r?.ok || !clip || all[clip]?.[p]) continue
+      all[clip] = { ...(all[clip] ?? {}), [p]: { key, name: r.name, at: r.at ?? q.postedAt ?? Date.now(), url: r.url ?? null, title: q.title } }
+      added++
+    }
+  }
+  if (added) writeJson(POSTED_FILE(), all)
+  return added
+}
+
+/**
+ * ปลายทางที่คลิปนี้ลงได้จริง: แพลตฟอร์มละ 1 ปลายทาง · ตัดแพลตฟอร์มที่คลิปนี้เคยลงแล้ว (เมื่อรู้ clip = clipKey(item))
+ * หลายเพจรับคลิปได้ → เลือกเพจที่ได้คลิปไปน้อยที่สุด (กระจายคลิปให้ทุกเพจ) · เท่ากัน = ตามลำดับเดิม
+ */
+export function onePerPlatform(keys, { clip = null, posted = loadPosted(), queue = loadQueue() } = {}) {
+  const used = clip ? posted[clip] ?? {} : {}
+  const count = new Map()
+  const add = (k) => count.set(k, (count.get(k) ?? 0) + 1)
+  for (const c of Object.values(posted)) for (const v of Object.values(c ?? {})) if (v?.key) add(v.key)
+  // คลิปที่รออยู่ในคิวนับด้วย — คลิปที่เข้าคิวพร้อมกันจะได้ไปคนละเพจทันที ไม่ต้องรอให้โพสต์ก่อน
+  for (const q of queue ?? []) if (PENDING.has(q.status) && clipKey(q) !== clip) for (const k of q.targets ?? []) add(k)
+  const groups = new Map()
+  for (const k of keys) {
+    const p = platformOf(k)
+    if (used[p]) continue
+    if (!groups.has(p)) groups.set(p, [])
+    groups.get(p).push(k)
+  }
+  return [...groups.values()].map((g) => g.reduce((best, k) => ((count.get(k) ?? 0) < (count.get(best) ?? 0) ? k : best)))
+}
+
+/** ปลายทางตามหมวดของคลิป — แพลตฟอร์มละ 1 ปลายทาง (กฎห้ามโพสต์ซ้ำ) */
+export function targetsFor(data, category, { clip = null, posted, queue } = {}) {
+  return onePerPlatform([
     ...data.facebook.filter((a) => acceptsCategory(a, category)).map((a) => `fb:${a.id}`),
     ...data.youtube.filter((a) => a.refreshToken && acceptsCategory(a, category)).map((a) => `yt:${a.id}`),
-  ]
+  ], { clip, ...(posted && { posted }), ...(queue && { queue }) })
 }
 
 /** หมวดที่ถูกต้องเท่านั้น ไม่ซ้ำ */
@@ -259,6 +324,84 @@ export function driveToTrash(queue) {
 /** คลิปที่ถึงเวลาโพสต์ — เรียงตามเวลา */
 export function dueItems(queue, now = Date.now()) {
   return queue.filter((q) => q.status === 'scheduled' && q.scheduleAt && q.scheduleAt <= now).sort((a, b) => a.scheduleAt - b.scheduleAt)
+}
+
+// ── ช่องเวลาต่อเพจ (ผู้ใช้ 7 พ.ย. 2026: "โพสต์พร้อมกันได้แต่คนละคลิป") ───────────
+// ช่องเวลาประจำวันชุดเดียวกัน แต่แต่ละเพจ/ช่องมีที่ว่างของตัวเอง: 12:00 เพจ A ลงคลิป 1 · เพจ B ลงคลิป 2 พร้อมกันได้
+// คลิปเดียวกันไปหลายแพลตฟอร์ม (FB + TikTok) ต้องได้ช่องที่ว่างพร้อมกันทุกปลายทางของคลิป
+
+/** สถานะที่ยังจองเพจไว้ (ยังไม่โพสต์ และไม่ได้ตีกลับ/เอาออก) */
+export const PENDING = new Set(['review', 'scheduled', 'posting', 'failed'])
+
+/** เวลาที่ถูกจองแล้วของปลายทางเหล่านี้ — เพจอื่นใช้เวลาเดียวกันได้ */
+export function takenFor(queue, targets, excludeId = null) {
+  const keys = new Set(targets ?? [])
+  return queue
+    .filter((q) => q.status === 'scheduled' && q.id !== excludeId && q.scheduleAt && (q.targets ?? []).some((k) => keys.has(k)))
+    .map((q) => q.scheduleAt)
+}
+
+/** ช่องเวลาว่างถัดไปของคลิปนี้ (ว่างพร้อมกันทุกปลายทางของคลิป) */
+export const nextSlotFor = (slots, queue, item, now = Date.now()) => nextFreeSlot(slots, takenFor(queue, item?.targets, item?.id), now)
+
+/** เวลาโพสต์สำเร็จล่าสุดของปลายทางนี้ (ms) — ใช้เว้นระยะทีละเพจ ไม่ใช่รวมทุกเพจ */
+export function lastPostAtFor(queue, key) {
+  let last = 0
+  for (const q of queue) {
+    const r = q.results?.[key]
+    if (r?.ok && Number(r.at) > last) last = Number(r.at)
+  }
+  return last
+}
+
+/** คลิปที่ถึงเวลาและทุกปลายทางของคลิปพ้นช่วงเว้นแล้ว — เพจอื่นไม่ต้องรอเพจที่เพิ่งโพสต์ */
+export function readyItems(queue, gapMs, now = Date.now()) {
+  return dueItems(queue, now).filter((it) => (it.targets ?? []).every((k) => now - lastPostAtFor(queue, k) >= gapMs))
+}
+
+/** แพลตฟอร์มที่มีหลายเพจ/ช่อง/บัญชี (มีเรื่องให้กระจายคลิป) เช่น Set{'fb'} */
+export function multiAccountPlatforms(data) {
+  const n = new Map()
+  for (const k of allTargets(data)) n.set(platformOf(k), (n.get(platformOf(k)) ?? 0) + 1)
+  return new Set([...n].filter(([, c]) => c > 1).map(([p]) => p))
+}
+
+/**
+ * จัดคิวใหม่ตามช่องเวลาต่อเพจ — คืนคิวใหม่ (ไม่บันทึกเอง) และสรุปสิ่งที่เปลี่ยน
+ *   1) คลิปที่ระบบเลือกเพจให้ (ไม่ได้ติ๊กเอง) ยังไม่โพสต์ → เลือกเพจใหม่ให้กระจายเท่าๆ กัน เฉพาะแพลตฟอร์มที่มีหลายเพจ
+ *      (แพลตฟอร์มละ 1 เพจ ไม่ซ้ำแพลตฟอร์มที่เคยลง) · ปลายทางของแพลตฟอร์มที่มีบัญชีเดียวคงไว้ตามเดิม
+ *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกของเพจนั้นใหม่ (เพจอื่นช่องเดียวกันได้) · เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่อง) ไม่แตะ
+ */
+export function reorganizeQueue(queue, data, { slots = data.settings?.slots ?? [], posted = loadPosted(), now = Date.now() } = {}) {
+  const list = cleanSlots(slots)
+  const onSlot = (t) => { const d = new Date(t); return list.includes(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`) }
+  const work = queue.map((q) => ({ ...q, targets: [...(q.targets ?? [])] }))
+  const order = (q) => [q.status === 'scheduled' ? 0 : 1, q.scheduleAt ?? q.addedAt ?? 0]
+  const sorted = work.filter((q) => ['review', 'scheduled'].includes(q.status)).sort((a, b) => { const x = order(a), y = order(b); return x[0] - y[0] || x[1] - y[1] })
+  let retargeted = 0, rescheduled = 0
+  // 1) เลือกเพจใหม่ทีละคลิป โดยนับคลิปที่จัดไปแล้วในรอบนี้ (เริ่มจากคิวที่ยังไม่มีเพจของคลิปที่จะจัด)
+  const multi = multiAccountPlatforms(data)
+  const movable = multi.size ? sorted.filter((q) => !q.targetsEdited) : []
+  const keep = new Map(movable.map((q) => [q.id, q.targets.filter((k) => !multi.has(platformOf(k)))]))
+  for (const q of movable) q.targets = keep.get(q.id)
+  for (const q of movable) {
+    const spread = targetsFor(data, q.category ?? null, { clip: clipKey(q), posted, queue: work }).filter((k) => multi.has(platformOf(k)))
+    const next = [...spread, ...keep.get(q.id)]
+    const old = queue.find((x) => x.id === q.id)?.targets ?? []
+    if ([...next].sort().join() !== [...old].sort().join()) retargeted++
+    q.targets = next
+  }
+  // 2) จัดเวลาใหม่: ปลดช่องประจำวันของทุกคลิปที่ตั้งเวลาไว้ก่อน แล้วลงช่องว่างแรกของเพจนั้นตามลำดับเดิม
+  const auto = sorted.filter((q) => q.status === 'scheduled' && q.scheduleAt && onSlot(q.scheduleAt))
+  const before = new Map(auto.map((q) => [q.id, q.scheduleAt]))
+  for (const q of auto) q.scheduleAt = null
+  for (const q of auto) {
+    const at = nextSlotFor(list, work, q, now)
+    if (!at) { q.scheduleAt = before.get(q.id); continue }
+    q.scheduleAt = at
+    if (at !== before.get(q.id)) rescheduled++
+  }
+  return { queue: work, retargeted, rescheduled }
 }
 
 // ── AI ตรวจคลิป (ChatGPT ผ่านหน้าเว็บ — ไม่ใช้ API) ────────────────

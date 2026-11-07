@@ -122,7 +122,22 @@ export function orientationRule(config = loadConfig()) {
   if (orientationOf(config) !== 'portrait') return ''
   return `- คลิปนี้เป็นวิดีโอแนวตั้ง 9:16 (Shorts / Reels / TikTok) — ใช้ ASPECT RATIO 9:16 แทนค่าเริ่มต้น 16:9 ใน Style Bible ของ Blueprint ทุกภาพเป็น 9:16
 - จัดองค์ประกอบแนวตั้ง: ตัวละครและจุดสนใจอยู่กลางภาพ ฉากหลังต้องเต็มเฟรมถึงขอบทุกด้าน
-- ห้ามเว้นพื้นที่ว่าง แถบสี ขอบขาว หรือโซน subtitle-safe ในภาพ และห้ามเขียนคำพวกนี้ลงใน prompt (ซับไตเติลมีกล่องพื้นทึบของตัวเองอยู่แล้ว)`
+- ห้ามเว้นพื้นที่ว่าง แถบสี ขอบขาว หรือโซน subtitle-safe ในภาพ และห้ามเขียนคำพวกนี้ลงใน prompt (ซับไตเติลมีกล่องพื้นทึบของตัวเองอยู่แล้ว)
+- ห้ามใช้คำ wide / panoramic / พาโนรามา / landscape composition ในช็อตใดๆ และห้ามจัดฉากแบบซ้าย–ขวายาวทั้งภาพ — วางชั้นภาพจากล่างขึ้นบน (foreground ด้านล่าง ตัวละครกลางภาพ ท้องฟ้า/ฉากไกลด้านบน) ขอบฟ้าเป็นเส้นแนวนอนเสมอ`
+}
+
+/**
+ * คลิปแนวตั้ง: คำสั่ง "ภาพกว้าง/พาโนรามา" ทำให้ Flow วาดฉากแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง
+ * (7 พ.ย. 2026 ช็อต "wide panoramic composition ภายในเฟรมแนวตั้ง" ได้ภาพสัตว์วิ่งข้าง ขอบฟ้าตั้ง) — เปลี่ยนเป็นองค์ประกอบแนวตั้ง
+ * คำว่า landscape ที่แปลว่าทิวทัศน์ไม่แตะ แก้เฉพาะที่หมายถึงแนวภาพ
+ */
+export function fitPortrait(text) {
+  return String(text ?? '')
+    .replace(/\b(?:ultra[- ]?)?wide(?:[- ]angle)?[- ]panoram\w*(?:\s+(?:composition|view|shot|scene))?/gi, 'tall vertical composition')
+    .replace(/\bpanoram\w*(?:\s+(?:composition|view|shot|scene))?/gi, 'tall vertical composition')
+    .replace(/\blandscape[- ](?:orientation|format|composition|framing)\b/gi, 'portrait framing')
+    .replace(/(?:ภาพ|แบบ)?พาโนรามา/g, 'องค์ประกอบแนวตั้ง')
+    .replace(/tall vertical composition\s+ภายในเฟรมแนวตั้ง/g, 'tall vertical composition')
 }
 
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
@@ -134,14 +149,14 @@ export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
     : 'ตัวอักษรในภาพมีได้เฉพาะข้อความที่ shot สั่งไว้ในเครื่องหมายคำพูดเท่านั้น'
   return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
 เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
-${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ' : ''}
+${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ · ห้ามวาดภาพแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง — ขอบฟ้าเป็นแนวนอน พื้นอยู่ล่าง ท้องฟ้าอยู่บน ตัวละครยืนตั้งตรง' : ''}
 ทุกภาพต้องเต็มเฟรม ฉากหลังยาวถึงขอบทุกด้าน ห้ามมีแถบว่าง ขอบขาว หรือพื้นที่เปล่าด้านบน/ล่าง
 ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"
 ชื่อไฟล์ เลข SHOT และ @TAG ใช้ตั้งชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ
 @TAG (เช่น @main @crowd1) เป็นชื่อเรียกตัวละครในคำสั่งเท่านั้น ห้ามวาดป้ายชื่อ ตัวอักษร @ หรือชื่อตัวละครลอยเหนือหัว/บนตัวละครเด็ดขาด
 
-${agentBrief}
+${portrait ? fitPortrait(agentBrief) : agentBrief}
 
 ย้ำ: ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
 }

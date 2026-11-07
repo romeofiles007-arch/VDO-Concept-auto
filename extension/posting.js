@@ -22,6 +22,17 @@ const el = (tag, props = {}, ...children) => {
   return node
 }
 
+/**
+ * รูปโปรไฟล์เพจ Facebook — ลิงก์สาธารณะของ Graph (ใช้แค่ Page ID ไม่ต้องใช้โทเค็น) · โหลดไม่ได้ = ตัวอักษรแรกของชื่อเพจแทน
+ * ใส่ on ก่อน src เพื่อให้จับ error ได้ทันแม้รูปโหลดพลาดเร็ว
+ */
+export const pageAvatarUrl = (pageId) => `https://graph.facebook.com/${encodeURIComponent(pageId)}/picture?type=square&width=96&height=96`
+const pageAvatar = (a) => el('img', {
+  className: 'pAvatar', alt: '', width: 40, height: 40, loading: 'lazy', referrerPolicy: 'no-referrer', title: a.name,
+  on: { error: (e) => e.target.replaceWith(el('span', { className: 'pAvatar pAvatarText', 'aria-hidden': 'true' }, [...String(a.name ?? '?').trim()][0] ?? '?')) },
+  src: pageAvatarUrl(a.pageId),
+})
+
 const fmtWhen = (ms) => (ms ? new Date(ms).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '')
 const fmtDur = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '')
 /** ค่าให้ <input type=datetime-local> (เวลาเครื่อง) */
@@ -29,6 +40,19 @@ const toLocalInput = (ms) => {
   const d = new Date(ms)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** ＋ เพิ่มเวลา: เวลาที่เสนอให้ — ต่อจากเวลาสุดท้าย 3 ชั่วโมง (วนข้ามเที่ยงคืน) ไม่ซ้ำของเดิม */
+export function suggestSlot(slots) {
+  const mins = slots.map((s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m }).sort((a, b) => a - b)
+  if (!mins.length) return '12:00'
+  const taken = new Set(mins)
+  let t = mins.at(-1)
+  for (let i = 0; i < 8; i++) {
+    t = (t + 180) % 1440
+    if (!taken.has(t)) break
+  }
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
 }
 
 export function initPosting({ api, localApp }) {
@@ -318,33 +342,46 @@ export function initPosting({ api, localApp }) {
     const all = targetList()
     if (!all.length) return el('p', { className: 'hint' }, 'ยังไม่มีเพจหรือช่อง — เพิ่มในแท็บตั้งค่า')
     const chosen = new Set(q.targets ?? [])
+    // กฎห้ามโพสต์ซ้ำ: แพลตฟอร์มละ 1 เพจ/ช่อง · แพลตฟอร์มที่คลิปนี้ลงไปแล้วเลือกไม่ได้อีก
+    const postedOn = q.postedOn ?? {}
+    const PLATFORM = { fb: 'Facebook', yt: 'YouTube' }
+    const lockedNote = Object.entries(postedOn).map(([p, v]) => `ลง ${PLATFORM[p] ?? p} แล้วที่ ${v.name ?? v.key}`)
     return el('fieldset', { className: 'pField', style: 'border:0;padding:0;margin:0' },
       el('legend', { style: 'padding:0;margin-bottom:4px' }, 'โพสต์ลง',
         q.targetsEdited
           ? el('span', {}, ' · เลือกเอง ', el('button', { type: 'button', className: 'linkBtn', on: { click: () => call('/api/posting/item', { id: q.id, resetTargets: true }, 'เลือกปลายทางตามหมวดแล้ว').catch(() => {}) } }, 'เลือกตามหมวด'))
           : el('span', {}, q.category ? ' · เลือกตามหมวดให้แล้ว' : ' · เพจ/ช่องที่รับทุกหมวด')),
-      el('div', { className: 'pTargets' }, all.map((t) => el('label', { className: 'pTarget' },
-        el('input', {
-          type: 'checkbox', checked: chosen.has(t.key),
-          on: { change: (e) => {
-            if (e.target.checked) chosen.add(t.key)
-            else chosen.delete(t.key)
-            call('/api/posting/item', { id: q.id, targets: [...chosen] }, 'บันทึกปลายทางแล้ว').catch(() => {})
-          } },
-        }),
-        kindTag(t.kind), t.name))),
+      el('div', { className: 'pTargets' }, all.map((t) => {
+        const locked = !!postedOn[t.kind] && !q.results?.[t.key]?.ok
+        return el('label', { className: `pTarget${locked ? ' pLocked' : ''}`, title: locked ? `คลิปนี้ลง ${PLATFORM[t.kind]} ไปแล้ว — ห้ามโพสต์ซ้ำ` : '' },
+          el('input', {
+            type: 'checkbox', checked: chosen.has(t.key) && !locked, disabled: locked,
+            on: { change: (e) => {
+              if (e.target.checked) {
+                // แพลตฟอร์มเดียวกันเลือกได้เพจเดียว — ติ๊กเพจนี้ = เอาเพจอื่นของแพลตฟอร์มนี้ออก
+                for (const k of [...chosen]) if (k.split(':')[0] === t.kind) chosen.delete(k)
+                chosen.add(t.key)
+              } else chosen.delete(t.key)
+              call('/api/posting/item', { id: q.id, targets: [...chosen] }, 'บันทึกปลายทางแล้ว').catch(() => {})
+            } },
+          }),
+          kindTag(t.kind), t.name)
+      })),
+      el('p', { className: 'hint', style: 'margin:4px 0 0' }, `1 คลิปลงได้ 1 เพจต่อแพลตฟอร์ม (ห้ามคลิปซ้ำ)${lockedNote.length ? ` · ${lockedNote.join(' · ')}` : ''}`),
     )
   }
 
   function reviewCard(q) {
-    const when = el('input', { type: 'datetime-local', value: toLocalInput(q.scheduleAt ?? data.nextSlot ?? Date.now() + 3600_000) })
+    // ช่องเวลาต่อเพจ: ช่องว่างถัดไปของเพจที่คลิปนี้จะลง (เพจอื่นช่องเดียวกันได้)
+    const slot = q.nextSlot ?? data.nextSlot
+    const when = el('input', { type: 'datetime-local', value: toLocalInput(q.scheduleAt ?? slot ?? Date.now() + 3600_000) })
     const approve = async (whenValue, label) => {
       try {
         await flush(q)
         await call('/api/posting/approve', { id: q.id, when: whenValue }, label)
       } catch {}
     }
-    const nextLabel = data.nextSlot ? `✓ อนุมัติ · ${fmtWhen(data.nextSlot)}` : '✓ อนุมัติ · ช่องเวลาถัดไป'
+    const nextLabel = slot ? `✓ อนุมัติ · ${fmtWhen(slot)}` : '✓ อนุมัติ · ช่องเวลาถัดไป'
     return el('li', { className: 'pCard' },
       head(q),
       aiBlock(q),
@@ -369,7 +406,11 @@ export function initPosting({ api, localApp }) {
   // ── ตั้งเวลาแล้ว ──
   function renderScheduled(list) {
     if (!list.length) return el('p', { className: 'pEmpty' }, 'ยังไม่มีคลิปที่ตั้งเวลา — อนุมัติคลิปในแท็บรอตรวจก่อน')
-    return el('ul', { className: 'pList' }, list.map((q) => {
+    // ช่องเวลาต่อเพจ: แต่ละเพจลงคลิปของตัวเองในช่องเวลาเดียวกันได้ · ปุ่มนี้จัดเพจและเวลาให้ใหม่ (ไม่แตะที่ติ๊กเพจเอง/เลือกเวลาเอง)
+    const tools = el('div', { className: 'pReorg' },
+      el('p', { className: 'hint', style: 'margin:0' }, 'ช่องเวลาเดียวกัน ทุกเพจโพสต์พร้อมกันได้ แต่คนละคลิป'),
+      el('button', { type: 'button', className: 'ghost', on: { click: () => call('/api/posting/reorganize', {}, 'จัดคิวใหม่แล้ว — กระจายคลิปให้ทุกเพจ').catch(() => {}) } }, '↻ จัดคิวใหม่'))
+    return el('div', {}, tools, el('ul', { className: 'pList' }, list.map((q) => {
       const posting = q.status === 'posting'
       const when = el('input', { type: 'datetime-local', value: toLocalInput(q.scheduleAt) })
       return el('li', { className: 'pCard' },
@@ -385,7 +426,7 @@ export function initPosting({ api, localApp }) {
             el('button', { type: 'button', className: 'ghost', on: { click: () => call('/api/posting/unschedule', { id: q.id }, 'ยกเลิกเวลาแล้ว กลับไปรอตรวจ').catch(() => {}) } }, 'ยกเลิกเวลา'),
           ),
       )
-    }))
+    })))
   }
 
   // ── โพสต์แล้ว / พลาด ──
@@ -446,17 +487,32 @@ export function initPosting({ api, localApp }) {
     const toggle = (key, label, help, checked) => el('label', { className: 'pSwitch' },
       el('input', { type: 'checkbox', checked, on: { change: (e) => call('/api/posting/settings', { [key]: e.target.checked }, 'บันทึกแล้ว').catch(() => {}) } }),
       el('span', {}, label, el('small', {}, help)))
-    const slots = el('input', { type: 'text', value: (s.slots ?? []).join(', '), placeholder: '12:00, 19:00' })
+    // ช่องเวลาประจำวัน: ตาราง เลือกเวลา/ลบ/เพิ่ม แล้วบันทึกเองทันที (bridge เรียงและตัดตัวซ้ำให้)
+    const list = s.slots ?? []
+    const saveSlots = (next, ok) => call('/api/posting/settings', { slots: next }, ok).catch(() => {})
+    const slotTable = el('div', { className: 'pSlotBox' },
+      el('div', { className: 'pSlotHead' }, 'เวลาโพสต์ประจำวัน', el('small', {}, 'โพสต์ทุกวันตามเวลาเหล่านี้ · แก้แล้วบันทึกเอง · แต่ละโพสต์ห่างกันอย่างน้อย 30 นาที')),
+      el('ol', { className: 'pSlots' }, list.map((t, i) => el('li', {},
+        el('span', { className: 'pSlotN' }, `ช่อง ${i + 1}`),
+        el('input', {
+          type: 'time', value: t, step: 300, required: true, 'aria-label': `เวลาช่อง ${i + 1}`,
+          on: { change: (e) => { if (e.target.value) saveSlots(list.map((x, j) => (j === i ? e.target.value : x)), `เปลี่ยนเป็น ${e.target.value} น. แล้ว`) } },
+        }),
+        el('button', {
+          type: 'button', className: 'ghost pSlotDel', 'aria-label': `ลบเวลา ${t}`, title: list.length <= 1 ? 'ต้องมีอย่างน้อย 1 เวลา' : `ลบเวลา ${t}`,
+          disabled: list.length <= 1,
+          on: { click: () => saveSlots(list.filter((_, j) => j !== i), `ลบเวลา ${t} แล้ว`) },
+        }, '✕'),
+      ))),
+      el('button', { type: 'button', className: 'ghost', on: { click: () => { const t = suggestSlot(list); saveSlots([...list, t], `เพิ่มเวลา ${t} น. แล้ว — แตะที่เวลาเพื่อเปลี่ยนได้`) } } }, '＋ เพิ่มเวลา'),
+    )
 
     const mode = el('section', { className: 'pBox', 'aria-label': 'การทำงาน' },
       el('h3', {}, 'การทำงาน'),
       toggle('enabled', 'เปิดโหมดโพสต์อัตโนมัติ', 'คลิปที่ทำเสร็จหลังจากนี้เข้าคิวรอตรวจเอง (คลิปเก่าเพิ่มจากคลังได้)', !!s.enabledAt),
       toggle('autoCheck', 'ให้ AI ตรวจเองเมื่อคลิปเข้าคิว', 'ใช้ ChatGPT ในแท็บเดิม · ตรวจเฉพาะตอนไม่มีงานทำคลิปค้างอยู่ ไม่แย่งคิว', !!s.autoCheck),
       toggle('autoApprove', 'อนุมัติเองเมื่อ AI ให้ผ่าน', 'คลิปที่ AI ให้ผ่านลงช่องเวลาถัดไปเลยโดยไม่ต้องกด — ปิดไว้ถ้าอยากดูทุกคลิปก่อน', !!s.autoApprove),
-      el('div', { className: 'pWhen' },
-        el('label', { className: 'pField' }, 'ช่องเวลาโพสต์ประจำวัน (คั่นด้วยจุลภาค)', slots),
-        el('button', { type: 'button', className: 'ghost', on: { click: () => call('/api/posting/settings', { slots: slots.value }, 'บันทึกช่องเวลาแล้ว').catch(() => {}) } }, 'บันทึกช่องเวลา'),
-      ),
+      slotTable,
       el('p', { className: 'hint' }, 'โปรแกรมในเครื่องต้องเปิดอยู่ตอนถึงเวลาโพสต์ — ถ้าปิดไว้ คลิปจะโพสต์ทันทีที่เปิดโปรแกรมครั้งถัดไป'),
     )
 
@@ -468,7 +524,7 @@ export function initPosting({ api, localApp }) {
       el('h3', {}, kindTag('fb'), 'Facebook Page'),
       data.facebook.length
         ? el('ul', { className: 'pAccounts' }, data.facebook.map((a) => el('li', {},
-          el('strong', {}, a.name), el('span', { className: 'pMeta' }, `ID ${a.pageId} · โทเค็น ${a.token}`),
+          pageAvatar(a), el('strong', {}, a.name), el('span', { className: 'pMeta' }, `ID ${a.pageId} · โทเค็น ${a.token}`),
           el('button', { type: 'button', className: 'ghost', on: { click: () => { if (confirm(`ลบเพจ "${a.name}" ออกจากโหมดโพสต์? (โทเค็นจะถูกลบจากเครื่องนี้)`)) call('/api/posting/facebook/remove', { id: a.id }, 'ลบเพจแล้ว').catch(() => {}) } } }, 'ลบ'),
           catPicker('facebook', a))))
         : el('p', { className: 'hint' }, 'ยังไม่มีเพจ'),

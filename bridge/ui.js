@@ -840,6 +840,11 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             if (ART_STYLES[body.artStyle]) c.art = { ...(c.art ?? {}), style: body.artStyle }
             if (MOTION_PRESETS[body.motion]) c.render.motion = body.motion
             // ตัวหนังสือในภาพช็อต: 'off' = ไม่มี (ค่าเริ่มต้น) · 'on' = มีได้ — ใช้กับ prompt ภาพที่สร้างหลังจากนี้
+            // ความยาวคลิป (นาที · 0.5 = 30 วินาที) — ตั้งเวลาผลิตอ่านค่านี้ทุกคลิป แผงข้างจึงต้องส่งมาเก็บไว้ที่นี่
+            if (body.minutes !== undefined && Number(body.minutes) >= 0.5 && Number(body.minutes) <= 60) c.script.targetMinutes = Number(body.minutes)
+            // ภาษาพากย์ / หมวดหัวข้อ — ตั้งเวลาผลิตอ่านจาก config เช่นกัน (ไม่สุ่ม = ใช้ค่านี้)
+            if (['th', 'en', 'zh'].includes(body.language)) c.script.language = body.language
+            if (body.genre === 'mix' || GENRES.includes(body.genre)) c.script.genre = body.genre
             if (['off', 'on'].includes(body.imageText)) c.images = { ...(c.images ?? {}), noText: body.imageText === 'off' }
             // ม้าน้ำ/Kie: 'off' หรือเปอร์เซ็นต์ของฉากทั้งเรื่อง
             const aiCoverage = body.aiCoverage ?? body.aiClips // aiClips รองรับ extension รุ่นเก่า
@@ -873,6 +878,9 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
           imageText: noTextOn(c) ? 'off' : 'on',
+          minutes: c.script.targetMinutes,
+          language: c.script.language,
+          genre: c.script.genre ?? 'mix',
           aiCoverage,
           aiClips: aiCoverage,
           kieTier: clips.tier,
@@ -953,7 +961,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         }
         if (minutes !== undefined) {
           const m = Number(minutes)
-          if (!(m >= 1 && m <= 60)) return json(res, 400, { error: 'ความยาวต้องอยู่ระหว่าง 1-60 นาที' }), true
+          if (!(m >= 0.5 && m <= 60)) return json(res, 400, { error: 'ความยาวต้องอยู่ระหว่าง 30 วินาที - 60 นาที' }), true
           config.script.targetMinutes = m
         }
         const job = enqueue('chatgpt', 'prompt', {

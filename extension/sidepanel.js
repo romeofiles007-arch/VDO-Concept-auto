@@ -6,10 +6,11 @@
  *
  * prompt ใช้ชุดเดียวกับ pipeline/ (extension/prompts.js) ผลจึงเหมือนรันจาก terminal
  */
-import { BLUEPRINT_FILE, topicsPrompt, scriptPrompt, parseTopics, cleanScript, estimateMinutes, slugify, scoredTopicsPrompt, parseScoredTopics, GENRES } from './prompts.js'
+import { BLUEPRINT_FILE, topicsPrompt, scriptPrompt, parseTopics, cleanScript, estimateMinutes, lengthLabel, slugify, scoredTopicsPrompt, parseScoredTopics, GENRES } from './prompts.js'
 import { initIcons, setIconLabel } from './icons.js'
 import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed, SEA_ASSETS } from './agents.js'
 import { initPosting } from './posting.js'
+import { modeFields, scheduleFromMode, scheduleCopy } from './production-schedule.js'
 
 initIcons()
 
@@ -28,6 +29,23 @@ async function load() {
   Object.assign(S, (await chrome.storage.local.get('panel')).panel ?? {})
 }
 const save = () => chrome.storage.local.set({ panel: S })
+
+// ── ความยาวคลิป: เก็บเป็นนาทีเสมอ (S.minutes) · ช่องแสดงเป็นวินาทีหรือนาทีตาม S.lengthUnit ──
+const MIN_MINUTES = 0.5 // 30 วินาที — สั้นกว่านี้ ChatGPT เขียนบทยาวเกินเป้าบ่อย
+const lengthUnit = () => S.lengthUnit ?? (S.minutes < 1 ? 'sec' : 'min')
+function readLength(inputId, maxMinutes) {
+  const n = Number($(inputId).value)
+  if (!(n > 0)) return S.minutes
+  const minutes = lengthUnit() === 'sec' ? n / 60 : n
+  return Math.min(maxMinutes, Math.max(MIN_MINUTES, minutes))
+}
+function showLength(inputId, unitId, maxMinutes) {
+  const unit = lengthUnit()
+  const input = $(inputId)
+  $(unitId).value = unit
+  Object.assign(input, unit === 'sec' ? { min: 30, max: maxMinutes * 60, step: 5 } : { min: MIN_MINUTES, max: maxMinutes, step: 'any' })
+  if (document.activeElement !== input) input.value = unit === 'sec' ? Math.round(S.minutes * 60) : +S.minutes.toFixed(2)
+}
 
 function setStatus(id, text, kind = '') {
   const el = $(id)
@@ -190,7 +208,7 @@ async function selectTopic(t) {
 // ── 2 บทพากย์ ──
 $('askScript').addEventListener('click', async () => {
   $('scriptRawBox').hidden = true
-  S.minutes = Math.min(60, Math.max(1, Number($('minutes').value) || 1))
+  S.minutes = readLength('minutes', 60)
   const opts = { language: S.language, targetMinutes: S.minutes, wordsPerMinute: WORDS_PER_MINUTE }
   try {
     const text = await withBusy('scriptStatus', 'ChatGPT กำลังเขียนบท (บทยาว ใช้เวลาหลายนาที)', async () =>
@@ -1239,15 +1257,104 @@ async function runAuto(app, slug) {
   }
 }
 
-$('startAuto').addEventListener('click', () => {
+$('startAuto').addEventListener('click', async () => {
   const autoTopic = S.autoTopicMode === 'auto'
   const title = autoTopic ? '' : $('autoTitle').value.trim()
   if (!title && !autoTopic) {
     setStatus('autoStatus', S.autoTopicMode === 'suggest' ? 'เลือกหัวข้อจากรายการที่ AI เสนอก่อน' : 'พิมพ์หัวข้อคลิปก่อน', 'error')
     return S.autoTopicMode === 'suggest' ? $('suggestTopics').focus() : $('autoTitle').focus()
   }
+  S.minutes = readLength('autoMinutes', 30)
+  try {
+    if (!(await confirmStart({ kind: 'auto', title, autoTopic }))) return
+  } catch (err) {
+    return setStatus('autoStatus', err.message, 'error')
+  }
   startAutopilot({ title, autoTopic })
 })
+
+// ── หน้าสรุปก่อนเริ่มงาน: ค่าที่โปรแกรมในเครื่องจะใช้จริง ต้องกดยืนยันก่อนสั่งงาน (ทำคลิปอัตโนมัติ · ตั้งเวลาผลิต) ──
+const LANG_NAME = { th: 'ไทย', en: 'อังกฤษ', zh: 'จีน' }
+const POST_MODE = { off: 'เก็บในคลัง ไม่โพสต์', ai: 'ให้ AI ตรวจ แล้วเข้าคิวโพสต์', now: 'เข้าคิวโพสต์ทันที (ไม่ตรวจ)' }
+
+function voiceLabel() {
+  if (V.choice?.startsWith('edge:')) return `Edge · ${V.choice.slice(5)}`
+  if (V.choice?.startsWith('gemini:')) return `Gemini · ${V.choice.slice(7)}`
+  if (V.choice?.startsWith('elevenlabs:')) return `ElevenLabs · ${V.elevenlabs?.voiceName || V.choice.slice(11)}`
+  return V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
+}
+
+/** @returns {Promise<boolean>} true = ผู้ใช้กดยืนยัน */
+async function confirmStart({ kind, title = '', autoTopic = false, schedule = null }) {
+  const app = await localApp()
+  // อ่านค่าล่าสุดจากโปรแกรมในเครื่อง ไม่ใช้ค่าที่ค้างในแผง
+  const [settings, voices] = await Promise.all([
+    api(app, '/api/clip-settings').catch(() => clip),
+    api(app, '/api/voices').catch(() => null),
+  ])
+  if (settings) clip = settings
+  if (voices) Object.assign(V, voices, { loaded: true })
+  const c = settings
+  const label = (list, id) => (list ?? []).find((o) => o.id === id)?.label ?? id
+  const genre = !S.genre || S.genre === 'mix' ? 'สุ่มคนละแนว' : S.genre
+  const rand = schedule?.random ?? {}
+  const rows = []
+  const add = (name, value, note = '') => rows.push([name, value, note])
+
+  if (kind === 'auto') add('หัวข้อ', autoTopic ? 'ให้ AI เลือกหัวข้อคะแนนสูงสุดเอง' : title, autoTopic ? `แนว: ${genre}` : '')
+  else add('หัวข้อ', rand.genre ? 'สุ่มหมวดและหัวข้อทุกคลิป' : 'ให้ AI เลือกหัวข้อเองทุกคลิป', rand.genre ? '' : `แนว: ${genre}`)
+  add('ความยาว', `คลิปละ ${lengthLabel(S.minutes)}`)
+  add('ภาษาพากย์', kind === 'prod' && rand.language ? `สุ่มจาก ${schedule.languages.map((l) => LANG_NAME[l] ?? l).join(' / ')}` : LANG_NAME[S.language] ?? S.language)
+  add('เสียงพากย์', voiceLabel() ?? 'ยังไม่ได้เลือกเสียง')
+  const ai = c?.aiCoverage ?? c?.aiClips
+  const aiOn = !!ai && ai !== 'off'
+  if (c) {
+    const art = kind === 'prod' && rand.art ? 'สุ่มลายเส้นทุกคลิป' : label(c.options?.artStyle, c.artStyle)
+    const text = !c.imageText ? '' : c.imageText === 'off' ? 'ไม่มีตัวหนังสือในภาพ (ภาพปกยังมีชื่อเรื่อง)' : 'มีตัวหนังสือในภาพได้'
+    add('ภาพ', [c.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9', art].filter(Boolean).join(' · '), text)
+    add('ซับไตเติล', label(c.options?.subtitles, c.subtitles))
+    add('แอนิเมชัน Kie', aiOn ? `เปิด ${ai}% ของฉาก` : 'ปิด',
+      aiOn ? (c.kie?.name ? `${c.kie.name} ≈ ${c.kie.credits} เครดิต/ฉาก · มีค่าใช้จ่าย` : 'มีค่าใช้จ่ายต่อฉาก') : 'ภาพนิ่งซูม/เลื่อนกล้อง ไม่มีค่าใช้จ่าย')
+  }
+  if (kind === 'prod') {
+    const copy = scheduleCopy(schedule)
+    add('เวลา', copy.headline, schedule.start === 'now' ? 'เริ่มทันทีเมื่อกดยืนยัน' : copy.firstStart)
+    add('ระหว่างคลิป', copy.detail)
+    add('เมื่อเสร็จ', POST_MODE[schedule.autoPost] ?? schedule.autoPost)
+  }
+
+  const list = $('scList')
+  list.textContent = ''
+  for (const [name, value, note] of rows) {
+    const dd = Object.assign(document.createElement('dd'), { textContent: value })
+    if (note) dd.append(Object.assign(document.createElement('small'), { textContent: note }))
+    list.append(Object.assign(document.createElement('dt'), { textContent: name }), dd)
+  }
+  const blocked = aiOn && !c.kie?.hasKey
+  $('scWarn').textContent = blocked ? 'เปิดแอนิเมชัน Kie แต่ยังไม่มี API key — กรอก key ในกล่องม้าน้ำ หรือปิด Kie ก่อนเริ่ม' : ''
+  $('scTitle').textContent = kind === 'prod' ? 'สรุปก่อนตั้งเวลาผลิต' : 'สรุปก่อนทำคลิป'
+  $('scOk').textContent = kind === 'prod' ? `ยืนยัน · ${scheduleCopy(schedule).action}` : 'ยืนยัน · เริ่มทำคลิป'
+  $('scOk').disabled = blocked
+  const dialog = $('startConfirm')
+  dialog.showModal()
+  ;(blocked ? dialog.querySelector('[data-sc="cancel"]') : $('scOk')).focus()
+  // ฟังปุ่มเองแทนอีเวนต์ close ของ <dialog> — บางหน้า (แผงตัวอย่าง) ไม่ส่ง close ทำให้กดยืนยันแล้วเงียบ
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      dialog.removeEventListener('click', onClick)
+      dialog.removeEventListener('cancel', onCancel)
+      if (dialog.open) dialog.close()
+      resolve(ok)
+    }
+    const onClick = (e) => {
+      const b = e.target.closest('button[data-sc]')
+      if (b && !b.disabled) done(b.dataset.sc === 'ok')
+    }
+    const onCancel = (e) => { e.preventDefault(); done(false) } // กด Esc = ยกเลิก
+    dialog.addEventListener('click', onClick)
+    dialog.addEventListener('cancel', onCancel)
+  })
+}
 
 // ✨ เริ่มวิดีโอใหม่: ช่องหัวข้อจำเรื่องเดิมไว้ กด ▶ ทีไรก็ทำต่อเรื่องเดิม — ปุ่มนี้ล้างเรื่องเดิม แล้วพาไปตั้งค่าคลิปใหม่
 // ยังไม่เริ่มทำ (ผู้ใช้เคยกดแล้วระบบเริ่มทันทีทั้งที่ยังไม่ได้ตั้งค่า) — ตั้งเสร็จค่อยกด ▶ ทำคลิปอัตโนมัติ
@@ -1266,7 +1373,7 @@ $('newAuto').addEventListener('click', async () => {
 async function startAutopilot({ title, autoTopic }) {
   S.autoTitle = title
   autoResume = null // เริ่มคลิปใหม่ ไม่ต้องทำต่อคลิปเก่า
-  S.minutes = Number($('autoMinutes').value) || S.minutes
+  S.minutes = readLength('autoMinutes', 30)
   await save()
   autoRunning = true
   render()
@@ -1364,10 +1471,20 @@ $('autoTitle').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !$('startAuto').disabled) $('startAuto').click()
 })
 $('autoMinutes').addEventListener('change', async () => {
-  S.minutes = Math.min(30, Math.max(1, Number($('autoMinutes').value) || S.minutes))
+  S.minutes = readLength('autoMinutes', 30)
   await save()
   render()
+  // ตั้งเวลาผลิตอ่านความยาวจาก config ของโปรแกรมในเครื่อง — ไม่ส่งไป = ผลิตตามค่าเก่า (เช่นตั้ง 30 วิ แต่ได้ 1 นาที)
+  saveClipSettings({ minutes: S.minutes })
 })
+// เปลี่ยนหน่วย วินาที/นาที — ความยาวเท่าเดิม แค่แสดงคนละหน่วย (เช่น 30 วินาที ↔ 0.5 นาที)
+for (const id of ['autoUnit', 'minutesUnit']) {
+  $(id).addEventListener('change', async (e) => {
+    S.lengthUnit = e.target.value === 'sec' ? 'sec' : 'min'
+    await save()
+    render()
+  })
+}
 $('autoLang').addEventListener('click', async (e) => {
   const b = e.target.closest('button')
   if (!b || busy || localBusy()) return
@@ -3012,8 +3129,9 @@ function render() {
 
   lockStep('scriptSection', !S.selected, 'เลือกหัวข้อในขั้นที่ 1 ก่อน')
   if (S.selected) $('pickedTitle').textContent = `หัวข้อ: ${S.selected.title}`
-  if (document.activeElement !== $('minutes')) $('minutes').value = S.minutes
+  showLength('minutes', 'minutesUnit', 60)
   $('minutes').disabled = busy
+  $('minutesUnit').disabled = busy
   $('askScript').disabled = busy || localBusy() || !S.selected
   setIconLabel($('askScript'), 'script', S.script ? 'เริ่มเขียนบทใหม่' : 'เริ่มเขียนบทพากย์')
 
@@ -3021,8 +3139,8 @@ function render() {
   $('scriptResult').hidden = !sc
   if (sc) {
     const est = estimateMinutes(sc.text, WORDS_PER_MINUTE)
-    $('estMinutes').textContent = est.toFixed(1)
-    $('target').textContent = sc.minutes
+    $('estMinutes').textContent = lengthLabel(est)
+    $('target').textContent = lengthLabel(sc.minutes)
     $('offTarget').hidden = Math.abs(est - sc.minutes) <= sc.minutes * 0.25
     $('scriptText').textContent = sc.text
   }
@@ -3075,13 +3193,14 @@ function render() {
   if (restartTarget) $('restartAuto').title = `เริ่ม "${restartTarget.title}" ใหม่ — งานเดิมย้ายไปเก็บในโฟลเดอร์ _restart (กู้คืนได้)`
   $('autoTitle').disabled = autoRunning
   $('autoMinutes').disabled = autoRunning
-  if (document.activeElement !== $('autoMinutes')) $('autoMinutes').value = S.minutes
+  $('autoUnit').disabled = autoRunning
+  showLength('autoMinutes', 'autoUnit', 30)
   if (!$('autoTitle').value && S.autoTitle && !autoRunning) $('autoTitle').value = S.autoTitle
   for (const b of $('autoLang').querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(b.dataset.value === S.language))
     b.disabled = busy || localBusy()
   }
-  const voiceName = V.choice?.startsWith('edge:') ? `Edge · ${V.choice.slice(5)}` : V.choice?.startsWith('gemini:') ? `Gemini · ${V.choice.slice(7)}` : V.choice?.startsWith('elevenlabs:') ? `ElevenLabs · ${V.elevenlabs?.voiceName || V.choice.slice(11)}` : V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
+  const voiceName = voiceLabel()
   // หัวกล่องปรับแต่งเสียงบอกเสียงที่ใช้อยู่ — เก็บกล่องแล้วยังเห็น · ขั้นที่ 3 แสดงชื่อเดียวกันพร้อมลิงก์กลับมาที่กล่องนี้
   $('autoVoice').textContent = voiceName ? `เสียงพากย์: ${voiceName}` : 'เสียงพากย์'
   $('voiceCurrent').textContent = voiceName ? `เสียงที่ใช้: ${voiceName}` : 'ยังไม่ได้เลือกเสียง'
@@ -3189,16 +3308,35 @@ let prodFilled = false
 const PROD_LANG = { th: 'ไทย', zh: 'จีน', en: 'อังกฤษ' }
 const prodTime = (t) => new Date(t).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', day: new Date(t).toDateString() === new Date().toDateString() ? undefined : 'numeric', month: new Date(t).toDateString() === new Date().toDateString() ? undefined : 'short' })
 
-function prodForm() {
+const prodMode = () => document.querySelector('input[name="prodMode"]:checked')?.value ?? ''
+
+function prodOptions() {
   return {
-    count: Number($('prodCount').value),
-    start: $('prodStart').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'now',
-    time: $('prodTime').value,
-    delayMin: Number($('prodDelayMin').value),
-    delayMax: Number($('prodDelayMax').value),
     random: { genre: $('prodRandGenre').checked, art: $('prodRandArt').checked, narration: $('prodRandNarration').checked, language: $('prodRandLang').checked },
     languages: [...$('prodLangs').querySelectorAll('input:checked')].map((i) => i.value),
     autoPost: $('prodAutoPost').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'ai',
+  }
+}
+
+function prodForm() {
+  const s = scheduleFromMode({ mode: prodMode(),
+    batchCount: $('prodBatchCount').value, later: $('prodBatchLater').checked, batchTime: $('prodBatchTime').value,
+    dailyTime: $('prodDailyTime').value, dailyCount: $('prodDailyCount').value, loopHours: $('prodLoopHours').value, loopMins: $('prodLoopMins').value })
+  const f = { ...prodOptions(), ...s }
+  if (f.random.language && !f.languages.length) throw Object.assign(new Error('เลือกภาษาที่จะสุ่มอย่างน้อย 1 ภาษา'), { field: 'prodRandLang' })
+  return f
+}
+
+function prodValidation(err, focus = false) {
+  $('prodSaveState').textContent = err.message
+  $('prodSaveState').classList.add('error')
+  if (err.field) {
+    $(err.field).setAttribute('aria-invalid', 'true')
+    if (focus) {
+      const disclosure = $(err.field).closest('.prodOptions')
+      if (disclosure) disclosure.open = true
+      $(err.field).focus()
+    }
   }
 }
 
@@ -3207,34 +3345,49 @@ function renderProd() {
   const { settings: s, state: st } = prod
   if (!prodFilled) {
     prodFilled = true
-    $('prodCount').value = s.count
-    $('prodTime').value = s.time
-    $('prodDelayMin').value = s.delayMin
-    $('prodDelayMax').value = s.delayMax
+    const f = modeFields(s)
+    for (const r of document.querySelectorAll('input[name="prodMode"]')) r.checked = r.value === f.mode
+    $('prodBatchCount').value = f.batchCount
+    $('prodBatchLater').checked = f.later
+    $('prodBatchTime').value = f.batchTime
+    $('prodDailyTime').value = f.dailyTime
+    $('prodDailyCount').value = f.dailyCount
+    $('prodLoopHours').value = f.loopHours
+    $('prodLoopMins').value = f.loopMins
     $('prodRandGenre').checked = s.random.genre
     $('prodRandArt').checked = s.random.art
     $('prodRandNarration').checked = s.random.narration
     $('prodRandLang').checked = s.random.language
     for (const i of $('prodLangs').querySelectorAll('input')) i.checked = s.languages.includes(i.value)
     for (const b of $('prodAutoPost').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === s.autoPost))
-    for (const b of $('prodStart').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === s.start))
   }
-  const postMode = prodForm().autoPost
+  const postMode = prodOptions().autoPost
   $('prodPostHint').textContent = postMode === 'off'
     ? 'คลิปที่เสร็จอยู่ในคลังวิดีโอ ไม่เข้าคิวโพสต์'
     : !prod.postTargets
-      ? '⚠️ ยังไม่ได้เชื่อมเพจ/ช่อง — คลิปจะรอในคิว กด 📣 โพสต์อัตโนมัติ (แถวบนสุด) เพื่อเชื่อม Facebook Page / YouTube'
+      ? 'ยังไม่ได้เชื่อมเพจ/ช่อง — คลิปจะรอในคิว เปิดหน้า “โพสต์อัตโนมัติ” เพื่อเชื่อมช่องทาง'
       : postMode === 'now'
         ? 'คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปเลย (ไม่ตรวจ)'
         : 'คลิปเข้าคิวทันทีที่เสร็จ → AI ตรวจ → ผ่านแล้วลงช่องเวลาโพสต์ถัดไปเอง (ไม่ผ่าน = รอคุณตรวจในหน้า 📣)'
-  $('prodTimeRow').style.display = prodForm().start === 'now' ? 'none' : '' // .field ตั้ง display เอง — hidden ไม่มีผล
-  $('prodLangs').style.opacity = $('prodRandLang').checked ? '1' : '.45'
+  $('prodBatchTime').disabled = !$('prodBatchLater').checked
+  try {
+    const copy = scheduleCopy(prodForm())
+    $('prodPlanTitle').textContent = copy.headline
+    const s2 = prodForm()
+    $('prodPlanDetail').textContent = `คลิปละ ${lengthLabel(S.minutes)} (ตามช่อง "ยาว" ด้านบน) · ${copy.detail}${s2.start === 'now' ? '' : ` · ${copy.firstStart}`}`
+    $('prodGo').textContent = copy.action
+  } catch {
+    $('prodPlanTitle').textContent = 'กรอกค่าที่เลือกให้ครบก่อนเริ่มผลิต'
+    $('prodPlanDetail').textContent = ''
+    $('prodGo').textContent = 'เริ่มผลิต'
+  }
+  for (const input of $('prodLangs').querySelectorAll('input')) input.disabled = !$('prodRandLang').checked
   const total = s.count ? `/${s.count}` : ''
-  const waiting = st.active && !st.run && st.nextAt
+  const waiting = st.active && !st.run && st.nextAt > Date.now()
   $('prodStatus').textContent = st.active
-    ? `${st.run ? `▶ กำลังทำคลิป ${st.made + 1}${total}` : waiting ? `⏳ คลิปถัดไป ${prodTime(st.nextAt)}` : ''} · ได้แล้ว ${st.made}${total}${st.failed ? ` · ล้ม ${st.failed}` : ''}${st.message ? ` — ${st.message}` : ''}`
-    : st.message || 'ยังไม่ได้เริ่ม'
-  $('prodBadge').textContent = st.active ? (st.run ? `กำลังผลิต ${st.made + 1}${total}` : `รอ ${prodTime(st.nextAt)}`) : ''
+    ? `${st.run ? `กำลังทำคลิป ${st.made + 1}${total}` : waiting ? `คลิปถัดไป ${prodTime(st.nextAt)}` : 'รอเริ่มคลิปถัดไป'} · เสร็จแล้ว ${st.made}${total}${st.failed ? ` · ไม่สำเร็จ ${st.failed}` : ''}${st.message ? ` — ${st.message}` : ''}`
+    : st.message || 'ยังไม่ได้เปิดผลิตอัตโนมัติ'
+  $('prodBadge').textContent = st.active ? (st.run ? `กำลังผลิต ${st.made + 1}${total}` : waiting ? `รอ ${prodTime(st.nextAt)}` : 'รอเริ่มผลิต') : ''
   const list = $('prodHistory')
   list.textContent = ''
   for (const h of st.history ?? []) {
@@ -3259,35 +3412,56 @@ function renderProd() {
     list.append(li)
   }
   $('prodReady').style.display = st.ready ? '' : 'none' // .controls ตั้ง display เอง — hidden ไม่มีผล
+  $('prodHistoryBox').hidden = !st.ready && !st.history?.length
   if (st.ready) $('prodReadyText').textContent = `🎬 ชุดล่าสุด ${st.ready.files.length} คลิป พร้อมดู`
-  $('prodGo').disabled = st.active
-  $('prodStop').disabled = !st.active
+  $('prodGo').disabled = st.active || prodCommandBusy
+  $('prodStop').disabled = !st.active || prodCommandBusy
+  if (st.active) $('prodGo').textContent = st.run ? 'กำลังผลิต' : 'ตั้งเวลาไว้แล้ว'
 }
 
+let prodRequest = 0, prodAppliedRequest = 0
 async function prodCall(path, body) {
+  if (path === '/api/production' && prodCommandBusy) return false
+  const request = ++prodRequest
   try {
-    prod = await api(await localApp(), path, body)
-    renderProd()
+    const result = await api(await localApp(), path, body)
+    if (request >= prodAppliedRequest) {
+      prodAppliedRequest = request
+      prod = result
+      renderProd()
+    }
+    return true
   } catch (err) {
-    $('prodStatus').textContent = err.message
+    if (path === '/api/production/settings') prodValidation(new Error(`บันทึกไม่สำเร็จ: ${err.message} — ลองเปลี่ยนค่าอีกครั้ง`))
+    else $('prodStatus').textContent = err.message
+    return false
   }
 }
 
 let prodSaveTimer = null
+let prodSaveRevision = 0
+let prodSettingsWrites = Promise.resolve()
+let prodCommandBusy = false
 function prodSave() {
-  renderProd()
   clearTimeout(prodSaveTimer)
-  prodSaveTimer = setTimeout(() => prodCall('/api/production/settings', prodForm()), 500)
+  const revision = ++prodSaveRevision
+  for (const el of $('prodBox').querySelectorAll('[aria-invalid]')) el.removeAttribute('aria-invalid')
+  renderProd()
+  let f
+  try { f = prodForm() } catch (err) { prodValidation(err); return }
+  $('prodSaveState').classList.remove('error')
+  $('prodSaveState').textContent = 'กำลังบันทึก…'
+  prodSaveTimer = setTimeout(() => {
+    prodSettingsWrites = prodSettingsWrites.then(async () => {
+      if (revision !== prodSaveRevision) return
+      const ok = await prodCall('/api/production/settings', f)
+      if (ok && revision === prodSaveRevision) $('prodSaveState').textContent = 'บันทึกค่าที่เลือกแล้ว'
+    })
+  }, 500)
 }
 
 $('prodBox').addEventListener('toggle', () => {
   if ($('prodBox').open) prodCall('/api/production')
-})
-$('prodStart').addEventListener('click', (e) => {
-  const b = e.target.closest('button')
-  if (!b) return
-  for (const x of $('prodStart').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
-  prodSave()
 })
 $('prodAutoPost').addEventListener('click', (e) => {
   const b = e.target.closest('button')
@@ -3295,17 +3469,57 @@ $('prodAutoPost').addEventListener('click', (e) => {
   for (const x of $('prodAutoPost').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
   prodSave()
 })
-for (const id of ['prodCount', 'prodTime', 'prodDelayMin', 'prodDelayMax', 'prodRandGenre', 'prodRandArt', 'prodRandNarration', 'prodRandLang']) {
+for (const id of ['prodBatchLater', 'prodRandGenre', 'prodRandArt', 'prodRandNarration', 'prodRandLang']) {
   $(id).addEventListener('change', prodSave)
 }
+// แตะตรงไหนของการ์ด หรือพิมพ์ตัวเลขในประโยคของการ์ดไหน = เลือกแบบนั้น
+function pickProdCard(el) {
+  const radio = el?.closest('.prodMode')?.querySelector('input[name="prodMode"]')
+  if (!radio || radio.checked) return false
+  radio.checked = true
+  return true
+}
+for (const id of ['prodBatchCount', 'prodBatchTime', 'prodDailyTime', 'prodDailyCount', 'prodLoopHours', 'prodLoopMins']) {
+  $(id).addEventListener('input', (e) => { pickProdCard(e.target); prodSave() })
+}
+$('prodModes').addEventListener('change', (e) => { if (e.target.name === 'prodMode') prodSave() })
+$('prodModes').addEventListener('click', (e) => { if (pickProdCard(e.target)) prodSave() })
+$('prodModes').addEventListener('focusin', (e) => { if (pickProdCard(e.target)) prodSave() })
 $('prodLangs').addEventListener('change', prodSave)
-$('prodGo').addEventListener('click', () => {
-  const f = prodForm()
-  if (f.random.language && !f.languages.length) return ($('prodStatus').textContent = 'เลือกภาษาที่จะสุ่มอย่างน้อย 1 ภาษา')
-  $('prodGo').disabled = true
-  prodCall('/api/production/start', { settings: f })
+$('prodGo').addEventListener('click', async () => {
+  let f
+  try { f = prodForm() } catch (err) { prodValidation(err, true); return }
+  S.minutes = readLength('autoMinutes', 30)
+  try {
+    if (!(await confirmStart({ kind: 'prod', schedule: f }))) return
+    // ตั้งเวลาผลิตอ่านความยาว ภาษา และหมวดจาก config ของโปรแกรมในเครื่อง — ส่งค่าที่เห็นในแผงไปก่อนเริ่ม
+    await api(await localApp(), '/api/clip-settings', { minutes: S.minutes, language: S.language, ...(S.genre && { genre: S.genre }) })
+  } catch (err) {
+    $('prodStatus').textContent = err.message
+    return
+  }
+  await prodCommand('/api/production/start', { settings: f })
 })
-$('prodStop').addEventListener('click', () => prodCall('/api/production/stop', {}))
+$('prodStop').addEventListener('click', () => prodCommand('/api/production/stop', {}))
+async function prodCommand(path, body) {
+  if (prodCommandBusy) return
+  if (path.endsWith('/start')) {
+    clearTimeout(prodSaveTimer)
+    ++prodSaveRevision
+  }
+  prodCommandBusy = true
+  renderProd()
+  try {
+    // Serialize mutations, including a debounce that fires while Stop is in flight.
+    const operation = prodSettingsWrites.then(() => prodCall(path, body))
+    prodSettingsWrites = operation
+    const ok = await operation
+    if (ok && path.endsWith('/start')) {
+      $('prodSaveState').classList.remove('error')
+      $('prodSaveState').textContent = 'บันทึกและเปิดผลิตแล้ว'
+    }
+  } finally { prodCommandBusy = false; renderProd() }
+}
 $('prodReadyPlay').addEventListener('click', () => prodCall('/api/production/open', { what: 'play', index: 0 }))
 $('prodReadyFolder').addEventListener('click', () => prodCall('/api/production/open', { what: 'folder' }))
 

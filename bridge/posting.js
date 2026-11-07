@@ -17,6 +17,7 @@ import {
   POSTING_DIR, loadAccounts, updateAccounts, publicAccounts, allTargets, findTarget, newId, cleanSlots, targetsFor, cleanCategories, CATEGORIES,
   loadQueue, saveQueue, newItem, postFromFile, cleanHashtags, videosToEnroll, caption, nextFreeSlot, dueItems,
   frameTimes, qcPrompt, parseQc, STATUS, nextDriveUpload, driveToTrash,
+  loadPosted, recordPosted, backfillPosted, clipKey, platformOf, PLATFORM_NAME, takenFor, nextSlotFor, readyItems, reorganizeQueue, multiAccountPlatforms,
 } from '../pipeline/lib/posting.mjs'
 import { facebookPageInfo, facebookUpload, youtubeAuthUrl, youtubeConnect, youtubeUpload, DRIVE_SCOPES, driveConnect, driveUpload, driveTrash } from '../pipeline/lib/social.mjs'
 import { listVideos } from './videos.js'
@@ -25,6 +26,19 @@ const PROJECTS = join(ROOT, 'projects')
 const TICK_MS = 30_000
 const ENROLL_EVERY_MS = 2 * 60_000
 const OAUTH_TTL_MS = 15 * 60_000
+// โพสต์อัตโนมัติห่างกันอย่างน้อย 30 นาที — ยกมาจากธรรมะ Auto (E:\พุทธ cf38792): กด "ลองโพสต์ใหม่" หลายคลิป
+// หรือเปิดเครื่องหลังพลาดหลายช่องเวลา คลิปจะทยอยออกทีละคลิป ไม่ขึ้นพร้อมกันรวด
+const MIN_POST_GAP_MS = 30 * 60_000
+
+/** เวลาที่โพสต์สำเร็จล่าสุดของทุกปลายทาง (ms) — ยังไม่เคยโพสต์ = 0 */
+export function lastPostAt(queue) {
+  let last = 0
+  for (const q of queue) {
+    for (const r of Object.values(q.results ?? {})) if (r?.ok && Number(r.at) > last) last = Number(r.at)
+    if (Number(q.postedAt) > last) last = Number(q.postedAt)
+  }
+  return last
+}
 
 export function createPosting({ jobs, enqueue, json, readBody, log, port, token, pipelineBusy = () => false, scheduler = true, deps = {} }) {
   const fb = { info: deps.facebookPageInfo ?? facebookPageInfo, upload: deps.facebookUpload ?? facebookUpload }
@@ -37,6 +51,13 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
   let driveBusy = false
   let ticking = false
   let lastEnroll = 0
+  // สมุดบันทึกห้ามโพสต์ซ้ำ: คลิปที่โพสต์ไปก่อนมีกฎนี้ → เติมจากผลโพสต์ในคิว
+  try {
+    const added = backfillPosted(loadQueue())
+    if (added) log(`โพสต์อัตโนมัติ: บันทึกคลิปที่เคยโพสต์แล้ว ${added} รายการ (กฎห้ามโพสต์ซ้ำในแพลตฟอร์มเดิม)`)
+  } catch (err) {
+    log(`โพสต์อัตโนมัติ: อ่านประวัติการโพสต์ไม่ได้ — ${err.message}`)
+  }
 
   // โปรแกรมถูกปิดกลางการโพสต์ → ไม่รู้ว่าขึ้นไปแล้วหรือยัง ห้ามโพสต์ซ้ำเอง ให้คนดูในเพจก่อนกดลองใหม่
   {
@@ -74,7 +95,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
    */
   function retarget() {
     const data = loadAccounts()
-    saveQueue(loadQueue().map((q) => (q.status === 'review' && !q.targetsEdited ? { ...q, targets: targetsFor(data, q.category) } : q)))
+    saveQueue(loadQueue().map((q) => (q.status === 'review' && !q.targetsEdited ? { ...q, targets: targetsFor(data, q.category, { clip: clipKey(q) }) } : q)))
   }
 
   // ── เข้าคิวเอง ──
@@ -86,10 +107,10 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     const fresh = videosToEnroll(await videosOf(), loadQueue(), settings.enabledAt)
     if (!fresh.length) return
     // ยังไม่รู้หมวด → ไปเฉพาะเพจ/ช่องที่รับทุกหมวด · AI ระบุหมวดตอนตรวจแล้วค่อยเลือกให้ใหม่
-    const targets = targetsFor(loadAccounts(), null)
+    const accounts = loadAccounts()
     const queue = loadQueue()
     for (const v of fresh) {
-      const item = newItem({ ...v, post: readPost(v.slug), targets })
+      const item = newItem({ ...v, post: readPost(v.slug), targets: targetsFor(accounts, null, { clip: clipKey(v) }) })
       note(item, 'คลิปทำเสร็จ เข้าคิวรอตรวจ')
       queue.push(item)
       log(`โพสต์อัตโนมัติ: "${v.title}" เข้าคิวรอตรวจ`)
@@ -109,7 +130,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     const queue = loadQueue()
     let item = queue.find((q) => q.slug === slug && q.file === main.name)
     if (!item) {
-      item = newItem({ slug, file: main.name, title: video.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null) })
+      item = newItem({ slug, file: main.name, title: video.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null, { clip: clipKey({ slug, file: main.name }) }) })
       queue.push(item)
     }
     item.auto = mode
@@ -135,9 +156,9 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           changed = true
         }
       }
-      if (!item.targetsEdited && !item.targets?.length) item.targets = targetsFor(accounts, item.category)
+      if (!item.targetsEdited && !item.targets?.length) item.targets = targetsFor(accounts, item.category, { clip: clipKey(item) })
       if (!item.targets?.length || !item.post?.title) continue // ยังไม่มีเพจ/ช่อง หรือยังไม่มีข้อความโพสต์ → รอ
-      const at = nextFreeSlot(accounts.settings.slots, queue.filter((q) => q.status === 'scheduled').map((q) => q.scheduleAt))
+      const at = nextSlotFor(accounts.settings.slots, queue, item) // ช่องเวลาต่อเพจ: เพจอื่นช่องเดียวกันได้
       if (!at) continue
       item.status = 'scheduled'
       item.scheduleAt = at
@@ -203,7 +224,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         if (item.ai.category && item.categoryBy !== 'manual') {
           item.category = item.ai.category
           item.categoryBy = 'ai'
-          if (item.status === 'review' && !item.targetsEdited) item.targets = targetsFor(accounts, item.category)
+          if (item.status === 'review' && !item.targetsEdited) item.targets = targetsFor(accounts, item.category, { clip: clipKey(item) })
           note(item, `AI ระบุหมวด: ${item.category}`)
         }
       } catch (err) {
@@ -211,7 +232,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
       }
       changed = true
       if (settings.autoApprove && item.status === 'review' && item.ai.status === 'done' && item.ai.verdict === 'pass' && item.targets?.length && item.post?.title) {
-        const at = nextFreeSlot(settings.slots, queue.filter((q) => q.status === 'scheduled').map((q) => q.scheduleAt))
+        const at = nextSlotFor(settings.slots, queue, item)
         if (at) {
           item.status = 'scheduled'
           item.scheduleAt = at
@@ -247,9 +268,18 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     const file = videoPath(item)
     const text = caption(item.post)
     const results = { ...item.results }
+    const blocked = [] // ปลายทางที่ข้ามตามกฎห้ามโพสต์ซ้ำ
     for (const key of item.targets ?? []) {
       if (results[key]?.ok) continue // ขึ้นไปแล้ว (ลองใหม่เฉพาะที่พลาด)
       const { kind, account } = findTarget(accounts, key)
+      // กฎห้ามโพสต์ซ้ำ — ด่านสุดท้ายก่อนอัปโหลด: คลิปนี้ลงแพลตฟอร์มนี้แล้ว (คิวนี้หรือคิวก่อน) = ไม่อัปโหลดเด็ดขาด
+      const p = platformOf(key)
+      const prior = loadPosted()[clipKey(item)]?.[p] ?? Object.entries(results).find(([k, r]) => r?.ok && platformOf(k) === p)?.[1]
+      if (prior) {
+        blocked.push({ key, reason: `ข้าม ${account?.name ?? key}: คลิปนี้ลง ${PLATFORM_NAME[p] ?? p} ไปแล้วที่ ${prior.name ?? prior.key} — ห้ามโพสต์คลิปเดิมซ้ำในแพลตฟอร์มเดิม` })
+        log(`โพสต์อัตโนมัติ: "${item.title}" ${blocked.at(-1).reason}`)
+        continue
+      }
       try {
         if (!account) throw new Error('บัญชีนี้ถูกลบออกไปแล้ว')
         if (!existsSync(file)) throw new Error('ไม่พบไฟล์วิดีโอ')
@@ -262,6 +292,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           out = await yt.upload({ clientId, clientSecret, refreshToken: account.refreshToken, file, title: item.post.title, description: text, tags: item.post.hashtags, privacy: account.privacy ?? 'public' })
         }
         results[key] = { ok: true, ...out, name: account.name, at: Date.now() }
+        recordPosted(clipKey(item), key, { name: account.name, at: results[key].at, url: out.url ?? null, title: item.title })
         log(`โพสต์อัตโนมัติ: "${item.title}" ขึ้น ${account.name} แล้ว ${out.url}`)
       } catch (err) {
         results[key] = { ok: false, error: err.message, name: account?.name ?? key, at: Date.now() }
@@ -270,8 +301,19 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
       mutateItem(id, (it) => { it.results = { ...results } }) // บันทึกทีละปลายทาง — ปิดโปรแกรมกลางทางจะได้ไม่โพสต์ซ้ำที่สำเร็จแล้ว
     }
     return mutateItem(id, (it) => {
-      const failed = (it.targets ?? []).filter((k) => !results[k]?.ok)
+      // ปลายทางที่ข้ามตามกฎ → เอาออกจากรายการ (ไม่นับว่าพลาด) แต่จดไว้ในประวัติ
+      const skip = new Set(blocked.map((b) => b.key))
+      it.targets = (it.targets ?? []).filter((k) => !skip.has(k))
+      for (const b of blocked) note(it, b.reason)
+      const failed = it.targets.filter((k) => !results[k]?.ok)
+      const okAny = Object.values(results).some((r) => r?.ok)
       it.results = results
+      if (!okAny && !failed.length && blocked.length) {
+        // ทุกปลายทางโดนกฎ — ไม่มีอะไรขึ้นจากคิวนี้
+        it.status = 'failed'
+        it.error = blocked.map((b) => b.reason).join(' · ')
+        return
+      }
       it.status = failed.length ? 'failed' : 'posted'
       it.postedAt = failed.length ? it.postedAt ?? null : Date.now()
       it.error = failed.length ? failed.map((k) => `${results[k]?.name ?? k}: ${results[k]?.error ?? 'ไม่สำเร็จ'}`).join(' · ') : null
@@ -281,7 +323,9 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
 
   async function postDue() {
     if (uploading) return
-    const [item] = dueItems(loadQueue())
+    const queue = loadQueue()
+    // เว้น 30 นาทีทีละเพจ — เพจอื่นโพสต์คลิปของตัวเองในช่องเวลาเดียวกันได้ (โพสต์พร้อมกันได้แต่คนละคลิป)
+    const [item] = readyItems(queue, MIN_POST_GAP_MS)
     if (!item) return
     uploading = true
     try {
@@ -356,18 +400,26 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     collectChecks()
     const videos = await videosOf()
     const bySlug = new Map(videos.map((v) => [v.slug, v]))
-    const queue = loadQueue().filter((q) => q.status !== 'removed').map((q) => {
+    const postedLog = loadPosted()
+    const raw = loadQueue()
+    const slots = loadAccounts().settings.slots
+    const queue = raw.filter((q) => q.status !== 'removed').map((q) => {
       const v = bySlug.get(q.slug)
       const f = v?.files.find((x) => x.name === q.file)
       // คลิปที่ยังไม่มีข้อความโพสต์ตอนเข้าคิว แต่ตอนนี้มี post.json แล้ว → เติมให้ (ไม่ทับที่ผู้ใช้แก้)
       const post = !q.post?.title && v?.post ? postFromFile(v.post) : q.post
-      return { ...q, post, thumb: v?.thumb ?? null, video: f?.url ?? null, seconds: f?.seconds ?? null, missing: !f }
+      // postedOn = แพลตฟอร์มที่คลิปนี้ลงไปแล้ว (จากสมุดบันทึก) — แผงใช้ล็อกช่องติ๊กของแพลตฟอร์มนั้น
+      // nextSlot = ช่องว่างถัดไปของเพจที่คลิปนี้จะลง (ช่องเวลาต่อเพจ) — ปุ่ม "อนุมัติ · ช่องเวลาถัดไป" ใช้ค่านี้
+      return { ...q, post, thumb: v?.thumb ?? null, video: f?.url ?? null, seconds: f?.seconds ?? null, missing: !f, postedOn: postedLog[clipKey(q)] ?? null, nextSlot: q.status === 'review' ? nextSlotFor(slots, raw, q) : null }
     })
     const inQueue = new Set(queue.map((q) => `${q.slug}/${q.file}`))
     const library = videos
       .map((v) => ({ slug: v.slug, title: v.title, thumb: v.thumb, file: v.files.find((f) => f.main)?.name ?? v.files[0]?.name, updatedAt: v.updatedAt }))
       .filter((v) => v.file && !inQueue.has(`${v.slug}/${v.file}`))
-    return { ...publicAccounts(), queue, library, statusLabels: STATUS, categories: CATEGORIES, uploading, redirectUri, nextSlot: nextFreeSlot(loadAccounts().settings.slots, queue.filter((q) => q.status === 'scheduled').map((q) => q.scheduleAt)) }
+    // ช่องว่างถัดไปของเพจไหนก็ได้ (ช่องเวลาต่อเพจ)
+    const keys = allTargets()
+    const free = (keys.length ? keys : [null]).map((k) => nextFreeSlot(slots, k ? takenFor(raw, [k]) : [])).filter(Boolean)
+    return { ...publicAccounts(), queue, library, statusLabels: STATUS, categories: CATEGORIES, uploading, redirectUri, nextSlot: free.length ? Math.min(...free) : null }
   }
 
   function oauthPage(res, ok, message) {
@@ -528,7 +580,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         const queue = loadQueue().filter((q) => !(q.slug === slug && q.file === file && q.status === 'removed'))
         if (!queue.some((q) => q.slug === slug && q.file === file)) {
           const v = (await videosOf()).find((x) => x.slug === slug)
-          const item = newItem({ slug, file, title: v?.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null) })
+          const item = newItem({ slug, file, title: v?.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null, { clip: clipKey({ slug, file }) }) })
           note(item, 'เพิ่มจากคลังวิดีโอ')
           queue.push(item)
         }
@@ -550,20 +602,36 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           if (body.category !== undefined) {
             it.category = CATEGORIES.includes(body.category) ? body.category : null
             it.categoryBy = it.category ? 'manual' : null
-            if (!it.targetsEdited) it.targets = targetsFor(loadAccounts(), it.category)
+            if (!it.targetsEdited) it.targets = targetsFor(loadAccounts(), it.category, { clip: clipKey(it) })
           }
           if (Array.isArray(body.targets)) {
             const valid = new Set(allTargets())
-            it.targets = body.targets.filter((k) => valid.has(k))
+            const picked = body.targets.filter((k) => valid.has(k))
+            // กฎห้ามโพสต์ซ้ำ: แพลตฟอร์มละ 1 ปลายทาง · แพลตฟอร์มที่คลิปนี้เคยลงแล้วเลือกไม่ได้
+            const used = loadPosted()[clipKey(it)] ?? {}
+            const posted = picked.filter((k) => used[platformOf(k)] && !it.results?.[k]?.ok)
+            if (posted.length) {
+              const p = platformOf(posted[0])
+              throw new Error(`คลิปนี้เคยโพสต์ลง ${PLATFORM_NAME[p] ?? p} แล้ว (${used[p].name ?? used[p].key}) — ห้ามโพสต์คลิปเดิมซ้ำในแพลตฟอร์มเดิม`)
+            }
+            const perPlatform = new Map()
+            for (const k of picked) perPlatform.set(platformOf(k), (perPlatform.get(platformOf(k)) ?? 0) + 1)
+            const dup = [...perPlatform].find(([, n]) => n > 1)
+            if (dup) throw new Error(`เลือกได้ ${PLATFORM_NAME[dup[0]] ?? dup[0]} เพจ/ช่องเดียวต่อคลิป — คลิปเดียวกันลงหลายเพจผิดกฎชุมชน (คลิปซ้ำ)`)
+            it.targets = picked
             it.targetsEdited = true
           }
           // กลับไปให้ระบบเลือกปลายทางตามหมวด
           if (body.resetTargets) {
             it.targetsEdited = false
-            it.targets = targetsFor(loadAccounts(), it.category)
+            it.targets = targetsFor(loadAccounts(), it.category, { clip: clipKey(it) })
           }
         })
         return json(res, 200, await view()), true
+      }
+      if (path === '/api/posting/reorganize') {
+        const out = reorganize('กดจัดคิวใหม่')
+        return json(res, 200, { ...(await view()), reorganized: out }), true
       }
       if (path === '/api/posting/check') {
         await startCheck(body.id)
@@ -572,13 +640,16 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
       if (path === '/api/posting/approve') {
         const queue = loadQueue()
         const { settings } = loadAccounts()
-        const taken = queue.filter((q) => q.status === 'scheduled' && q.id !== body.id).map((q) => q.scheduleAt)
+        const taken = takenFor(queue, queue.find((q) => q.id === body.id)?.targets, body.id) // ช่องเวลาต่อเพจ
         const at = body.when === 'now' ? Date.now() : body.when === 'next' ? nextFreeSlot(settings.slots, taken) : Number(body.when)
         if (!Number.isFinite(at) || !at) return json(res, 400, { error: body.when === 'next' ? 'ยังไม่ได้ตั้งช่องเวลาประจำ — ตั้งในแท็บตั้งค่า หรือเลือกวันเวลาเอง' : 'เลือกวันเวลาโพสต์ก่อน' }), true
         if (body.when !== 'now' && at < Date.now() - 60_000) return json(res, 400, { error: 'เวลาที่เลือกผ่านไปแล้ว' }), true
         mutateItem(body.id, (it) => {
           if (!it.post?.title?.trim()) throw new Error('ยังไม่มีชื่อโพสต์ — ใส่ชื่อก่อนอนุมัติ')
-          if (!it.targets?.length) throw new Error('ยังไม่ได้เลือกเพจหรือช่องที่จะโพสต์')
+          if (!it.targets?.length) {
+            const done = Object.keys(loadPosted()[clipKey(it)] ?? {}).map((p) => PLATFORM_NAME[p] ?? p)
+            throw new Error(done.length ? `คลิปนี้ลง ${done.join(' และ ')} ไปแล้ว — ห้ามโพสต์ซ้ำในแพลตฟอร์มเดิม (เหลือเฉพาะแพลตฟอร์มที่ยังไม่เคยลง)` : 'ยังไม่ได้เลือกเพจหรือช่องที่จะโพสต์')
+          }
           if (it.status === 'posting' || it.status === 'posted') throw new Error('คลิปนี้โพสต์ไปแล้ว')
           it.status = 'scheduled'
           it.scheduleAt = at
@@ -643,5 +714,38 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     }
   }
 
-  return { handle, busy: () => uploading || driveBusy, tick, syncDrive, enqueueAuto }
+  /**
+   * จัดคิวใหม่ตามช่องเวลาต่อเพจ (เลือกเพจใหม่ให้กระจาย · ลงช่องว่างแรกของแต่ละเพจ) — คลิปที่ติ๊กเพจเอง/เลือกเวลาเองไม่แตะ
+   * ไม่ทำระหว่างกำลังโพสต์ (คิวกำลังเปลี่ยน)
+   */
+  function reorganize(reason) {
+    if (uploading) throw new Error('กำลังโพสต์อยู่ — รอโพสต์เสร็จแล้วค่อยจัดคิวใหม่')
+    const before = loadQueue()
+    const { queue, retargeted, rescheduled } = reorganizeQueue(before, loadAccounts())
+    const accounts = loadAccounts()
+    const name = (k) => findTarget(accounts, k).account?.name ?? k
+    for (const q of queue) {
+      const old = before.find((x) => x.id === q.id)
+      const moved = old && (old.targets ?? []).join() !== q.targets.join()
+      const timed = old && old.scheduleAt !== q.scheduleAt
+      if (moved || timed) note(q, `จัดคิวใหม่ (${reason}): ${moved ? `ลง ${q.targets.map(name).join(', ') || '—'}` : ''}${moved && timed ? ' · ' : ''}${timed ? `เวลา ${new Date(q.scheduleAt).toLocaleString('th-TH')}` : ''}`)
+    }
+    saveQueue(queue)
+    log(`โพสต์อัตโนมัติ: จัดคิวใหม่ (${reason}) — เปลี่ยนเพจ ${retargeted} คลิป · เปลี่ยนเวลา ${rescheduled} คลิป`)
+    return { retargeted, rescheduled }
+  }
+  // รุ่นที่เปลี่ยนเป็นช่องเวลาต่อเพจ: จัดคิวเดิมใหม่ครั้งเดียวตอนเปิดโปรแกรม
+  // (เฉพาะตอนมีแพลตฟอร์มที่มีหลายเพจ — เพจเดียวไม่มีอะไรให้กระจาย)
+  if (!loadAccounts().settings.perPageQueueAt) {
+    try {
+      if (multiAccountPlatforms(loadAccounts()).size) {
+        reorganize('เปลี่ยนเป็นช่องเวลาต่อเพจ')
+        updateAccounts((a) => { a.settings.perPageQueueAt = Date.now() }) // จดเฉพาะตอนจัดจริง — เพิ่มเพจที่สองทีหลังจะได้จัดให้ตอนเปิดครั้งถัดไป
+      }
+    } catch (err) {
+      log(`โพสต์อัตโนมัติ: จัดคิวใหม่ไม่ได้ — ${err.message}`)
+    }
+  }
+
+  return { handle, busy: () => uploading || driveBusy, tick, syncDrive, enqueueAuto, reorganize }
 }

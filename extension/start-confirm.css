@@ -1,0 +1,17 @@
+/* หน้าสรุปก่อนเริ่มงาน — ขึ้นตอนกด ▶ ทำคลิปอัตโนมัติ / เริ่มผลิต ต้องกดยืนยันก่อนสั่งงานจริง */
+#startConfirm { width: min(400px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, .35); }
+#startConfirm::backdrop { background: rgba(8, 24, 28, .55); }
+#startConfirm .scBody { display: grid; gap: 12px; padding: 16px; margin: 0; }
+#startConfirm h2 { margin: 0; font-size: 17px; }
+#startConfirm .scIntro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+#startConfirm dl { display: grid; grid-template-columns: minmax(84px, auto) 1fr; gap: 0; margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+#startConfirm dt, #startConfirm dd { margin: 0; padding: 8px 10px; font-size: 13px; line-height: 1.5; }
+#startConfirm dt { color: var(--muted); }
+#startConfirm dd { font-weight: 600; overflow-wrap: anywhere; }
+#startConfirm dt:not(:first-of-type), #startConfirm dd:not(:first-of-type) { border-top: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+#startConfirm dd small { display: block; font-weight: 400; color: var(--muted); }
+#startConfirm .scWarn { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.5; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+#startConfirm .scWarn:empty { display: none; }
+#startConfirm .scActions { display: flex; gap: 8px; }
+#startConfirm .scActions button { min-height: 44px; }
+#startConfirm .scActions .primary { flex: 1; }

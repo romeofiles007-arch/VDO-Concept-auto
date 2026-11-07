@@ -123,7 +123,7 @@ export function scoredTopicsPrompt(blueprint, { titleLanguage = 'th', minutes = 
 ═══════════════════════════════════════
 ทำ STAGE 1 ตามเอกสารข้างบน แต่ใช้ตารางด้านล่างแทนตารางเดิม เพื่อให้คะแนนแต่ละหัวข้อ
 
-เสนอ 5 หัวข้อ viral ที่เล่าเป็นคลิปการ์ตูน 2D doodle ยาวประมาณ ${minutes} นาทีได้ดี
+เสนอ 5 หัวข้อ viral ที่เล่าเป็นคลิปการ์ตูน 2D doodle ยาวประมาณ ${lengthLabel(minutes)}ได้ดี
 **ชื่อหัวข้อทั้ง 5 ต้องเป็น${title.name}เท่านั้น**
 ${genreRule(genre)}
 ใช้มุมเล่าข้อละแบบ (ห้ามซ้ำกัน): ${pickAngles(5).map((a, i) => `${i + 1}) ${a}`).join(' · ')}
@@ -169,6 +169,15 @@ export function parseScoredTopics(text) {
   return rows.sort((a, b) => b.score - a.score)
 }
 
+/** ความยาวคลิปสำหรับคนอ่าน — 0.5 → "30 วินาที" · 1.5 → "1 นาที 30 วินาที" · 2 → "2 นาที" */
+export function lengthLabel(minutes) {
+  const sec = Math.round(Number(minutes) * 60)
+  if (!(sec > 0)) return `${minutes} นาที`
+  if (sec < 60) return `${sec} วินาที`
+  const m = Math.floor(sec / 60)
+  return sec % 60 ? `${m} นาที ${sec % 60} วินาที` : `${m} นาที`
+}
+
 export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes = 10, wordsPerMinute = 150 } = {}) {
   const words = Math.round(targetMinutes * wordsPerMinute)
   const vo = lang(language)
@@ -182,7 +191,7 @@ export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes 
 **ภาษาของ narration: ${vo.name}** — เขียนทั้งเรื่องเป็นภาษานี้ภาษาเดียว
 (ชื่อเรื่องเป็นคนละภาษากับ narration ได้ ไม่ต้องแปลชื่อเรื่อง)
 
-ความยาวเป้าหมาย ${targetMinutes} นาที ≈ ${language === 'zh' ? Math.round(words * HAN_CHARS_PER_WORD) : words} ${vo.unit}${language === 'zh' ? `\n\n${ZH_RULES}` : ''}
+ความยาวเป้าหมาย ${lengthLabel(targetMinutes)} ≈ ${language === 'zh' ? Math.round(words * HAN_CHARS_PER_WORD) : words} ${vo.unit}${language === 'zh' ? `\n\n${ZH_RULES}` : ''}
 
 ข้อกำหนดของ output — สำคัญมาก อ่านให้ครบ:
 - ตอบเป็น narration ล้วนในแชตโดยตรง อย่าสร้างไฟล์ให้ดาวน์โหลด
