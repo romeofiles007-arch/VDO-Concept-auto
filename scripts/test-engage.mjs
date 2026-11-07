@@ -36,6 +36,9 @@ test('กล่องตั้งค่าคลิปมีสวิตช์�
   const js = readFileSync(join(ROOT, 'extension', 'sidepanel.js'), 'utf8')
   const ui = readFileSync(join(ROOT, 'bridge', 'ui.js'), 'utf8')
   assert.match(html, /id="clipEngage"/)
+  // อยู่ในช่องนักเขียนบท (หัวข้อและบท) ไม่ใช่กล่อง Google Flow — ผู้ใช้หาไม่เจอเมื่ออยู่ที่ Flow
+  const at = html.indexOf('id="autoTopicBlock"'), en = html.indexOf('id="clipEngage"'), vo = html.indexOf('id="voiceSettingsBox"')
+  assert.ok(at > 0 && at < en && en < vo, 'สวิตช์ชวนคุยต้องอยู่ในช่องนักเขียนบท')
   assert.match(js, /saveClipSettings\(\{ engage: b\.dataset\.value \}\)/)
   assert.match(js, /engage: clip\?\.engage !== 'off'/)
   assert.match(ui, /c\.script\.engage = body\.engage === 'on'/)

@@ -410,6 +410,10 @@
     <label class="pick" id="autoTitleBox">หัวข้อคลิป (แก้ได้)
       <input id="autoTitle" maxlength="200" placeholder="เช่น ถ้าคุณตกลงไปในหลุมดำ จะเกิดอะไรขึ้น" autocomplete="off" />
     </label>
+    <div class="pick" hidden>ชวนคุยท้ายคลิป
+      <div class="seg" id="clipEngage" role="group" aria-label="ชวนคุยท้ายคลิป"></div>
+      <span class="hint" style="margin:2px 0 0">ปิดท้ายบทด้วยคำถามให้คนดูตอบในคอมเมนต์ เช่น "ถ้าเป็นคุณ จะทำอย่างไร?" · ใช้กับบทที่เขียนหลังจากนี้</span>
+    </div>
     </div>
     <!-- กล่องโลมากล่องเดียว: ภาษา ความยาว เสียง อารมณ์ ความเร็ว (เดิมแยก "ภาษาและความยาว" ไว้อีกกล่อง ผู้ใช้เห็นว่าซ้ำ) -->
     <details class="clipSettings agentSetting agentBlock voiceSettings" id="voiceSettingsBox" data-agent="voice" data-agent-label="เสียงพากย์" open>
@@ -488,10 +492,6 @@
       </label>
       <div class="pick">ภาพเคลื่อนไหว (ซูม/เลื่อนกล้อง ไม่ใช้ AI)
         <div class="seg" id="clipMotion" role="group" aria-label="ภาพเคลื่อนไหว"></div>
-      </div>
-      <div class="pick" hidden>ชวนคุยท้ายคลิป
-        <div class="seg" id="clipEngage" role="group" aria-label="ชวนคุยท้ายคลิป"></div>
-        <span class="hint" style="margin:2px 0 0">ปิดท้ายบทด้วยคำถามให้คนดูตอบในคอมเมนต์ เช่น "ถ้าเป็นคุณ จะทำอย่างไร?" · ใช้กับบทที่เขียนหลังจากนี้</span>
       </div>
       <div class="pick">ช่วงเงียบระหว่างประโยค
         <div class="seg" id="clipPause" role="group" aria-label="ช่วงเงียบ"></div>
