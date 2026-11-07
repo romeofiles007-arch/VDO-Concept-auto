@@ -839,6 +839,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             // ลายเส้น — ใช้กับคลิปใหม่ (คลิปเดิมจำแบบที่ใช้ไว้ใน projects/<slug>/art_style.json)
             if (ART_STYLES[body.artStyle]) c.art = { ...(c.art ?? {}), style: body.artStyle }
             if (MOTION_PRESETS[body.motion]) c.render.motion = body.motion
+            // ชวนคุยท้ายคลิป: 'on' (ค่าเริ่มต้น) | 'off' — ใช้กับบทที่เขียนหลังจากนี้
+            if (['on', 'off'].includes(body.engage)) c.script.engage = body.engage === 'on'
             // ตัวหนังสือในภาพช็อต: 'off' = ไม่มี (ค่าเริ่มต้น) · 'on' = มีได้ — ใช้กับ prompt ภาพที่สร้างหลังจากนี้
             // ความยาวคลิป (นาที · 0.5 = 30 วินาที) — ตั้งเวลาผลิตอ่านค่านี้ทุกคลิป แผงข้างจึงต้องส่งมาเก็บไว้ที่นี่
             if (body.minutes !== undefined && Number(body.minutes) >= 0.5 && Number(body.minutes) <= 60) c.script.targetMinutes = Number(body.minutes)
@@ -877,6 +879,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           subtitles: SUBTITLE_STYLES[c.render.subtitles?.style] ? c.render.subtitles.style : 'off',
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
+          engage: c.script.engage === false ? 'off' : 'on',
           imageText: noTextOn(c) ? 'off' : 'on',
           minutes: c.script.targetMinutes,
           language: c.script.language,
@@ -891,6 +894,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             aiClips: aiCoverageOptions,
             kieTier: Object.entries(KIE_TIERS).map(([id, t]) => ({ id, label: t.label, name: t.name, credits: t.credits, detail: t.detail })),
             motion: Object.entries(MOTION_PRESETS).map(([id, m]) => ({ id, label: m.label })),
+            engage: [{ id: 'on', label: 'ชวนคุย' }, { id: 'off', label: 'ไม่ชวน' }],
             imageText: [{ id: 'off', label: 'ไม่มี' }, { id: 'on', label: 'มีได้' }],
             subtitles: Object.entries(SUBTITLE_STYLES).map(([id, s]) => ({ id, label: s.label })),
             pause: Object.entries(PAUSE_PRESETS).map(([id, p]) => ({ id, label: p.label })),

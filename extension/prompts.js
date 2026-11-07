@@ -178,7 +178,7 @@ export function lengthLabel(minutes) {
   return sec % 60 ? `${m} นาที ${sec % 60} วินาที` : `${m} นาที`
 }
 
-export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes = 10, wordsPerMinute = 150 } = {}) {
+export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes = 10, wordsPerMinute = 150, engage = true } = {}) {
   const words = Math.round(targetMinutes * wordsPerMinute)
   const vo = lang(language)
   return `${blueprint}
@@ -200,7 +200,7 @@ export function scriptPrompt(blueprint, title, { language = 'th', targetMinutes 
 - 1 บรรทัด = 1 ช่วงลมหายใจ (ประโยคสั้น 6-14 คำ)
 - ใช้ ... แทนช่วงพักสั้น, เว้นบรรทัดว่างแทนการขึ้นบทใหม่
 - ห้ามใส่ [pause] marker ใดๆ
-- ${vo.person}`
+- ${vo.person}${engage ? `\n${engageRule(language)}` : ''}`
 }
 
 /** พากย์จีน (zh) */
@@ -210,6 +210,22 @@ const ZH_RULES = `**พากย์จีน**
 - เขียน narration เป็นภาษาจีนกลางอักษรตัวย่อ (简体中文) ทั้งบท ให้เป็นจีนที่เป็นธรรมชาติ
 - ห้ามมีพินอิน ห้ามมีคำแปลไทยหรือวงเล็บ · ตัวเลขเขียนเป็นอักษรจีน
 - บรรทัดสั้น 6–14 字 หนึ่งบรรทัดหนึ่งความคิด ใช้เครื่องหมายวรรคตอนจีน (，。？！) ได้`
+
+/** ตัดคำนำ/คำปิดท้าย/markdown ที่โมเดลชอบแถมมา ให้เหลือ narration ล้วนตาม OUTPUT 2 */
+/**
+ * ชวนคุยท้ายคลิป — ผู้ใช้ (8 พ.ย. 2026): "มีแต่คนดู ไม่มีใครตอบอะไรเลย" · ปิดได้ในกล่องตั้งค่าคลิป (script.engage = false)
+ * คำถามต้องเกี่ยวกับเรื่องของคลิปนี้ ถามความเห็นหรือประสบการณ์ ให้คนดูอยากพิมพ์ตอบ
+ */
+export function engageRule(language = 'th') {
+  const examples = {
+    th: '"ถ้าเป็นคุณ จะทำอย่างไร?" · "ใครเคยเจอเหตุการณ์แบบนี้บ้าง? เล่าให้ฟังในคอมเมนต์หน่อย"',
+    en: '"What would you do?" · "Has this ever happened to you? Tell us in the comments."',
+    zh: '"如果是你，你会怎么做？" · "你遇到过这种事吗？在评论区说说吧。"',
+  }
+  return `- ปิดท้ายบทด้วยประโยคชวนคุย 1–2 บรรทัด ให้คนดูอยากพิมพ์ตอบในคอมเมนต์ — ถามความเห็นหรือประสบการณ์ที่เกี่ยวกับเรื่องนี้ตรงๆ เช่น ${examples[language] ?? examples.th}
+  · ใช้ภาษาของ narration · เปลี่ยนคำถามให้เข้ากับเรื่อง ไม่ต้องใช้ตัวอย่างตรงตัว · น้ำเสียงเข้ากับคลิป (สุภาพ ไม่เร่งเร้า)
+  · ข้อนี้มีผลเหนือข้อ "ไม่ถามคนดู" หรือ "ห้ามมีคำปิดท้าย" ด้านบน เฉพาะประโยคชวนคุยท้ายบทนี้ · ห้ามขอไลก์/กดติดตาม/แชร์`
+}
 
 /** ตัดคำนำ/คำปิดท้าย/markdown ที่โมเดลชอบแถมมา ให้เหลือ narration ล้วนตาม OUTPUT 2 */
 export function cleanScript(text) {

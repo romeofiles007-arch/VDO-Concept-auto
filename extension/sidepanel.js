@@ -209,7 +209,7 @@ async function selectTopic(t) {
 $('askScript').addEventListener('click', async () => {
   $('scriptRawBox').hidden = true
   S.minutes = readLength('minutes', 60)
-  const opts = { language: S.language, targetMinutes: S.minutes, wordsPerMinute: WORDS_PER_MINUTE }
+  const opts = { language: S.language, targetMinutes: S.minutes, wordsPerMinute: WORDS_PER_MINUTE, engage: clip?.engage !== 'off' }
   try {
     const text = await withBusy('scriptStatus', 'ChatGPT กำลังเขียนบท (บทยาว ใช้เวลาหลายนาที)', async () =>
       askChatGPT(scriptPrompt(await blueprint(), S.selected.title, opts)),
@@ -1656,6 +1656,18 @@ function renderClipSettings() {
     }
   }
   for (const b of motion.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.motion))
+  // ชวนคุยท้ายคลิป — โปรแกรมในเครื่องรุ่นเก่าไม่ส่งมา → ซ่อน
+  const engage = $('clipEngage')
+  const engageOptions = clip.options.engage ?? []
+  engage.parentElement.hidden = !engageOptions.length
+  if (!engage.childElementCount) {
+    for (const o of engageOptions) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      engage.append(b)
+    }
+  }
+  for (const b of engage.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === clip.engage))
   // ตัวหนังสือในภาพ — โปรแกรมในเครื่องรุ่นเก่าไม่ส่งมา → ซ่อน
   const imageText = $('clipImageText')
   const imageTextOptions = clip.options.imageText ?? []
@@ -1747,6 +1759,10 @@ $('clipOrientation').addEventListener('click', (e) => {
 $('clipPause').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (b && !localBusy()) saveClipSettings({ pause: b.dataset.value })
+})
+$('clipEngage').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !localBusy()) saveClipSettings({ engage: b.dataset.value })
 })
 $('clipMotion').addEventListener('click', (e) => {
   const b = e.target.closest('button')
