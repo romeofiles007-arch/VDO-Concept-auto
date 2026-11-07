@@ -326,23 +326,54 @@ export function driveToTrash(queue) {
 }
 
 /** คลิปที่ถึงเวลาโพสต์ — เรียงตามเวลา */
+// ── เวลาต่อปลายทาง (ผู้ใช้ 8 พ.ย. 2026: "15:00 ทั้ง 2 เพจแต่คนละคลิป" · TikTok แยกเวลาเอง) ─────────
+// item.targetAt = { "<key>": ms } — แต่ละปลายทางของคลิปลงตามช่องว่างของตัวเอง (FB สองเพจช่องเดียวกันได้ · TikTok ตามช่องของ TikTok)
+// ไม่มี targetAt = ทุกปลายทางใช้ scheduleAt ของคลิป (แบบเดิม) · scheduleAt = เวลาเร็วสุดของปลายทางที่ยังไม่โพสต์ (ใช้เรียง/แสดง)
+
+/** เวลาโพสต์ของปลายทางนี้ในคลิปนี้ */
+export const timeFor = (item, key) => item?.targetAt?.[key] ?? item?.scheduleAt ?? null
+
+/** ปลายทางที่ยังไม่ได้โพสต์และถึงเวลาแล้ว */
+export const dueTargets = (item, now = Date.now()) => (item?.targets ?? []).filter((k) => !item.results?.[k]?.ok && timeFor(item, k) && timeFor(item, k) <= now)
+
+/** ตั้งเวลาต่อปลายทาง (null = ล้างเวลา) แล้วให้ scheduleAt = เวลาเร็วสุดของปลายทางที่ยังไม่โพสต์ */
+export function setTargetTimes(item, times) {
+  if (!times) {
+    item.targetAt = null
+    item.scheduleAt = null
+    return item
+  }
+  item.targetAt = { ...times }
+  const left = (item.targets ?? []).filter((k) => !item.results?.[k]?.ok).map((k) => timeFor(item, k)).filter(Boolean)
+  item.scheduleAt = left.length ? Math.min(...left) : Math.min(...Object.values(times))
+  return item
+}
+
+/** คลิปที่มีปลายทางถึงเวลาแล้ว (เรียงตามเวลาที่ถึงก่อน) — คลิปที่ไม่มีปลายทางเลยแต่ถึงเวลา ก็ส่งให้ postItem แจ้งว่าโพสต์ไม่ได้ */
 export function dueItems(queue, now = Date.now()) {
-  return queue.filter((q) => q.status === 'scheduled' && q.scheduleAt && q.scheduleAt <= now).sort((a, b) => a.scheduleAt - b.scheduleAt)
+  const first = (q) => {
+    const t = dueTargets(q, now).map((k) => timeFor(q, k))
+    return t.length ? Math.min(...t) : q.scheduleAt
+  }
+  const due = (q) => q.status === 'scheduled' && (dueTargets(q, now).length > 0 || (!q.targets?.length && q.scheduleAt && q.scheduleAt <= now))
+  return queue.filter(due).sort((a, b) => first(a) - first(b))
 }
 
 // ── ช่องเวลาต่อเพจ (ผู้ใช้ 7 พ.ย. 2026: "โพสต์พร้อมกันได้แต่คนละคลิป") ───────────
 // ช่องเวลาประจำวันชุดเดียวกัน แต่แต่ละเพจ/ช่องมีที่ว่างของตัวเอง: 12:00 เพจ A ลงคลิป 1 · เพจ B ลงคลิป 2 พร้อมกันได้
-// คลิปเดียวกันไปหลายแพลตฟอร์ม (FB + TikTok) ต้องได้ช่องที่ว่างพร้อมกันทุกปลายทางของคลิป
 
 /** สถานะที่ยังจองเพจไว้ (รอตรวจ/ตั้งเวลา/กำลังโพสต์) — โพสต์ไม่สำเร็จไม่นับ: ค้างรอคนกดลองใหม่ ไม่ได้ออกตามช่องเวลา (8 พ.ย. 2026 ใจใสมีค้าง 4 คลิป ทำให้ไม่ได้คลิปใหม่) */
 export const PENDING = new Set(['review', 'scheduled', 'posting'])
 
-/** เวลาที่ถูกจองแล้วของปลายทางเหล่านี้ — เพจอื่นใช้เวลาเดียวกันได้ */
+/** เวลาที่ถูกจองแล้วของปลายทางเหล่านี้ (ตามเวลาของปลายทางนั้นในแต่ละคลิป) — เพจอื่นใช้เวลาเดียวกันได้ */
 export function takenFor(queue, targets, excludeId = null) {
   const keys = new Set(targets ?? [])
-  return queue
-    .filter((q) => q.status === 'scheduled' && q.id !== excludeId && q.scheduleAt && (q.targets ?? []).some((k) => keys.has(k)))
-    .map((q) => q.scheduleAt)
+  const out = []
+  for (const q of queue) {
+    if (q.status !== 'scheduled' || q.id === excludeId) continue
+    for (const k of q.targets ?? []) if (keys.has(k) && !q.results?.[k]?.ok && timeFor(q, k)) out.push(timeFor(q, k))
+  }
+  return out
 }
 
 /** ช่องเวลาว่างถัดไปของคลิปนี้ (ว่างพร้อมกันทุกปลายทางของคลิป) */
@@ -351,15 +382,27 @@ export const nextSlotFor = (slots, queue, item, now = Date.now()) => nextFreeSlo
 /**
  * เวลาโพสต์ประจำวันของคลิป — ตามปลายทางแรกของคลิป (Facebook ก่อน แล้ว YouTube / TikTok)
  * เพจที่ตั้งเวลาเอง (account.slots) ใช้ของตัวเอง · ไม่ได้ตั้ง = เวลากลาง (settings.slots)
- * คลิปเดียวที่ลงหลายแพลตฟอร์มออกพร้อมกันตามเวลาของปลายทางแรก และต้องว่างพร้อมกันทุกปลายทาง
  */
 export function slotsFor(data, targets) {
   const own = cleanSlots(findTarget(data, (targets ?? [])[0]).account?.slots ?? [])
   return own.length ? own : cleanSlots(data.settings?.slots ?? [])
 }
 
-/** ช่องเวลาว่างถัดไปของคลิปนี้ ตามเวลาของเพจที่คลิปจะลง */
+/** ช่องเวลาว่างถัดไปของคลิปนี้ เมื่อทุกปลายทางออกพร้อมกัน (แบบเดิม — การ์ตูน Auto) */
 export const nextSlotForItem = (data, queue, item, now = Date.now()) => nextFreeSlot(slotsFor(data, item?.targets), takenFor(queue, item?.targets, item?.id), now)
+
+/** เวลาต่อปลายทางของคลิป: แต่ละปลายทางลงช่องว่างแรกของตัวเอง · ปลายทางไหนไม่มีช่องว่าง = null ทั้งคลิป */
+export function scheduleTargets(data, queue, item, now = Date.now()) {
+  const keys = (item?.targets ?? []).filter((k) => !item.results?.[k]?.ok)
+  if (!keys.length) return null
+  const out = {}
+  for (const k of keys) {
+    const at = nextFreeSlot(slotsFor(data, [k]), takenFor(queue, [k], item?.id), now)
+    if (!at) return null
+    out[k] = at
+  }
+  return out
+}
 
 /** เวลาโพสต์สำเร็จล่าสุดของปลายทางนี้ (ms) — ใช้เว้นระยะทีละเพจ ไม่ใช่รวมทุกเพจ */
 export function lastPostAtFor(queue, key) {
@@ -371,9 +414,9 @@ export function lastPostAtFor(queue, key) {
   return last
 }
 
-/** คลิปที่ถึงเวลาและทุกปลายทางของคลิปพ้นช่วงเว้นแล้ว — เพจอื่นไม่ต้องรอเพจที่เพิ่งโพสต์ */
+/** คลิปที่ถึงเวลาและปลายทางที่ถึงเวลาทุกปลายทางพ้นช่วงเว้นแล้ว — เพจอื่นไม่ต้องรอเพจที่เพิ่งโพสต์ */
 export function readyItems(queue, gapMs, now = Date.now()) {
-  return dueItems(queue, now).filter((it) => (it.targets ?? []).every((k) => now - lastPostAtFor(queue, k) >= gapMs))
+  return dueItems(queue, now).filter((it) => dueTargets(it, now).every((k) => now - lastPostAtFor(queue, k) >= gapMs))
 }
 
 /** แพลตฟอร์มที่มีหลายเพจ/ช่อง/บัญชี (มีเรื่องให้กระจายคลิป) เช่น Set{'fb'} */
@@ -385,50 +428,64 @@ export function multiAccountPlatforms(data) {
 
 /**
  * จัดคิวใหม่ตามช่องเวลาต่อเพจ — คืนคิวใหม่ (ไม่บันทึกเอง) และสรุปสิ่งที่เปลี่ยน
- *   1) คลิปที่ระบบเลือกเพจให้ (ไม่ได้ติ๊กเอง) ยังไม่โพสต์ → เลือกเพจใหม่ให้กระจายเท่าๆ กัน เฉพาะแพลตฟอร์มที่มีหลายเพจ
- *      (แพลตฟอร์มละ 1 เพจ ไม่ซ้ำแพลตฟอร์มที่เคยลง) · ปลายทางของแพลตฟอร์มที่มีบัญชีเดียวคงไว้ตามเดิม
- *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกของเพจนั้นใหม่ (ตามเวลาของเพจนั้น · เพจอื่นช่องเดียวกันได้)
- *      เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่องประจำวัน) ไม่แตะ
+ *   1) คลิปที่ระบบเลือกเพจให้ (ไม่ได้ติ๊กเอง) ยังไม่โพสต์ที่ไหนเลย → เลือกเพจใหม่ให้กระจาย เฉพาะแพลตฟอร์มที่มีหลายเพจ
+ *      (แพลตฟอร์มละ 1 เพจ ไม่ซ้ำแพลตฟอร์มที่เคยลง · ได้ครบทุกแพลตฟอร์มที่รับหมวดของคลิป)
+ *      คลิปที่ขึ้นบางปลายทางไปแล้ว (เช่น FB ขึ้นแล้ว รอ TikTok) ไม่ย้ายเพจเด็ดขาด
+ *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกใหม่ · เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่องประจำวัน) ไม่แตะ
+ *      perTarget: true = แต่ละปลายทางลงช่องว่างของตัวเอง (ธรรมะ Auto) · false = ทุกปลายทางออกพร้อมกัน (การ์ตูน Auto)
  *   retarget: false = จัดเวลาอย่างเดียว ไม่ย้ายคลิปข้ามเพจ (ใช้ตอนเปลี่ยนเวลาของเพจ)
  *   before = การตั้งค่าก่อนเปลี่ยนเวลา — ใช้ดูว่าคลิปไหนตั้งตามช่องเดิม (คลิปที่เวลาตรงช่องเก่าต้องย้ายตามช่องใหม่)
  */
-export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now = Date.now(), retarget = true, before = null } = {}) {
+export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now = Date.now(), retarget = true, before = null, perTarget = false } = {}) {
   if (slots) data = { ...data, settings: { ...data.settings, slots } }
   const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
-  // ตรงช่องประจำวันของเพจนั้น (ทั้งก่อนและหลังเปลี่ยน) หรือเวลากลาง = ระบบตั้งให้ ย้ายได้
+  const keyLists = (d, keys) => [...keys.map((k) => slotsFor(d, [k])), cleanSlots(d.settings?.slots ?? [])]
+  // ตรงช่องประจำวันของปลายทางนั้น (ทั้งก่อนและหลังเปลี่ยน) หรือเวลากลาง = ระบบตั้งให้ ย้ายได้
   const onSlot = (q) => {
-    const old = queue.find((x) => x.id === q.id)?.targets ?? q.targets
-    const lists = [slotsFor(data, old), cleanSlots(data.settings?.slots ?? [])]
-    if (before) lists.push(slotsFor(before, old), cleanSlots(before.settings?.slots ?? []))
-    return lists.some((l) => l.includes(hhmm(q.scheduleAt)))
+    const old = queue.find((x) => x.id === q.id) ?? q
+    const keys = old.targets ?? []
+    const lists = [...keyLists(data, keys), ...(before ? keyLists(before, keys) : [])]
+    const times = old.targetAt ? Object.values(old.targetAt) : [old.scheduleAt]
+    return times.filter(Boolean).every((t) => lists.some((l) => l.includes(hhmm(t))))
   }
-  const work = queue.map((q) => ({ ...q, targets: [...(q.targets ?? [])] }))
+  const posted1 = (q) => Object.values(q.results ?? {}).some((r) => r?.ok)
+  const work = queue.map((q) => ({ ...q, targets: [...(q.targets ?? [])], ...(q.targetAt && { targetAt: { ...q.targetAt } }) }))
   const order = (q) => [q.status === 'scheduled' ? 0 : 1, q.scheduleAt ?? q.addedAt ?? 0]
   const sorted = work.filter((q) => ['review', 'scheduled'].includes(q.status)).sort((a, b) => { const x = order(a), y = order(b); return x[0] - y[0] || x[1] - y[1] })
   let retargeted = 0, rescheduled = 0
   // 1) เลือกเพจใหม่ทีละคลิป โดยนับคลิปที่จัดไปแล้วในรอบนี้ (เริ่มจากคิวที่ยังไม่มีเพจของคลิปที่จะจัด)
   const multi = multiAccountPlatforms(data)
-  const movable = retarget && multi.size ? sorted.filter((q) => !q.targetsEdited) : []
-  const keep = new Map(movable.map((q) => [q.id, q.targets.filter((k) => !multi.has(platformOf(k)))]))
-  for (const q of movable) q.targets = keep.get(q.id)
+  const movable = retarget && multi.size ? sorted.filter((q) => !q.targetsEdited && !posted1(q)) : []
+  // ล้างปลายทางของคลิปที่จะจัดก่อน แล้วเลือกใหม่ทีละคลิป — ได้ครบทุกแพลตฟอร์มตามหมวด (เดิมเก็บแพลตฟอร์มบัญชีเดียวไว้ตามเดิม
+  // คลิปที่ยังไม่มีปลายทางเลยจึงไม่ได้ TikTok — 8 พ.ย. 2026)
+  for (const q of movable) q.targets = []
   for (const q of movable) {
-    const spread = targetsFor(data, q.category ?? null, { clip: clipKey(q), posted, queue: work }).filter((k) => multi.has(platformOf(k)))
-    const next = [...spread, ...keep.get(q.id)]
+    const next = targetsFor(data, q.category ?? null, { clip: clipKey(q), posted, queue: work })
     const old = queue.find((x) => x.id === q.id)?.targets ?? []
     if ([...next].sort().join() !== [...old].sort().join()) retargeted++
     q.targets = next
   }
-  // 2) จัดเวลาใหม่: ปลดช่องประจำวันของทุกคลิปที่ตั้งเวลาไว้ก่อน แล้วลงช่องว่างแรกของเพจนั้นตามลำดับเดิม
-  // เปลี่ยนเวลา (มี before, ไม่ย้ายข้ามเพจ) → แตะเฉพาะคลิปของเพจที่เวลาเปลี่ยนจริง เพจอื่นไม่ขยับ
-  const changed = (q) => !before || retarget || slotsFor(before, q.targets).join() !== slotsFor(data, q.targets).join()
+  // 2) จัดเวลาใหม่: ปลดช่องประจำวันของทุกคลิปที่ตั้งเวลาไว้ก่อน แล้วลงช่องว่างแรกตามลำดับเดิม
+  // เปลี่ยนเวลา (มี before, ไม่ย้ายข้ามเพจ) → แตะเฉพาะคลิปที่ปลายทางมีเวลาเปลี่ยนจริง เพจอื่นไม่ขยับ
+  const changed = (q) => !before || retarget || (q.targets ?? []).some((k) => slotsFor(before, [k]).join() !== slotsFor(data, [k]).join())
   const auto = sorted.filter((q) => q.status === 'scheduled' && q.scheduleAt && onSlot(q) && changed(q))
-  const prevAt = new Map(auto.map((q) => [q.id, q.scheduleAt]))
-  for (const q of auto) q.scheduleAt = null
+  const prev = new Map(auto.map((q) => [q.id, JSON.stringify([q.scheduleAt, q.targetAt ?? null])]))
+  const prevItem = new Map(auto.map((q) => [q.id, { scheduleAt: q.scheduleAt, targetAt: q.targetAt ?? null }]))
   for (const q of auto) {
-    const at = nextSlotForItem(data, work, q, now)
-    if (!at) { q.scheduleAt = prevAt.get(q.id); continue }
-    q.scheduleAt = at
-    if (at !== prevAt.get(q.id)) rescheduled++
+    q.scheduleAt = null
+    if (q.targetAt) q.targetAt = Object.fromEntries(Object.entries(q.targetAt).filter(([k]) => q.results?.[k]?.ok))
+  }
+  for (const q of auto) {
+    if (perTarget) {
+      const times = scheduleTargets(data, work, q, now)
+      if (!times) { Object.assign(q, prevItem.get(q.id)); continue }
+      setTargetTimes(q, times)
+    } else {
+      const at = nextSlotForItem(data, work, q, now)
+      if (!at) { Object.assign(q, prevItem.get(q.id)); continue }
+      q.scheduleAt = at
+    }
+    if (JSON.stringify([q.scheduleAt, q.targetAt ?? null]) !== prev.get(q.id)) rescheduled++
   }
   return { queue: work, retargeted, rescheduled }
 }

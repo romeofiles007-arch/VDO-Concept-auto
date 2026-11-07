@@ -360,14 +360,8 @@ try {
     const before = uploads.filter((u) => u.kind === 'fb').length
     await call('/api/posting/retry', { id })
     await posting.tick()
-    let v = await call('/api/posting')
-    assert.equal(v.queue[0].status, 'scheduled', 'เพิ่งโพสต์ Facebook ไป → รอให้ครบ 30 นาทีก่อน ไม่โพสต์รัว')
-    // จำลองว่าโพสต์ล่าสุดผ่านไป 31 นาทีแล้ว
-    const queue = P.loadQueue()
-    for (const q of queue) for (const r of Object.values(q.results ?? {})) if (r?.ok) r.at = Date.now() - 31 * 60_000
-    P.saveQueue(queue)
-    await posting.tick()
-    v = await call('/api/posting')
+    // เว้น 30 นาทีนับทีละปลายทาง — ที่ต้องลองใหม่คือ YouTube ซึ่งยังไม่ได้เพิ่งโพสต์ จึงออกได้เลย (Facebook ที่เพิ่งขึ้นไม่ถูกส่งซ้ำ)
+    const v = await call('/api/posting')
     assert.equal(v.queue[0].status, 'posted')
     assert.equal(uploads.filter((u) => u.kind === 'fb').length, before, 'Facebook ต้องไม่ถูกโพสต์ซ้ำ')
     assert.ok(Object.values(v.queue[0].results).every((r) => r.ok && r.url))
