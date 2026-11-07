@@ -66,6 +66,7 @@ export function initPosting({ api, localApp }) {
   let busy = false
   const openVideos = new Set() // id ของคลิปที่กางดูวิดีโอไว้ — คงไว้ข้ามการวาดใหม่
   const openCats = new Set() // บัญชีที่กางรายการหมวดไว้
+  const openSlots = new Set() // บัญชีที่กางเวลาโพสต์ของเพจไว้
   const catTimers = new Map()
   const drafts = new Map() // id → {title, description, hashtags} ที่พิมพ์ค้างยังไม่บันทึก
   const saveTimers = new Map()
@@ -482,30 +483,55 @@ export function initPosting({ api, localApp }) {
     return d
   }
 
-  function renderSettings() {
-    const s = data.settings
-    const toggle = (key, label, help, checked) => el('label', { className: 'pSwitch' },
-      el('input', { type: 'checkbox', checked, on: { change: (e) => call('/api/posting/settings', { [key]: e.target.checked }, 'บันทึกแล้ว').catch(() => {}) } }),
-      el('span', {}, label, el('small', {}, help)))
-    // ช่องเวลาประจำวัน: ตาราง เลือกเวลา/ลบ/เพิ่ม แล้วบันทึกเองทันที (bridge เรียงและตัดตัวซ้ำให้)
-    const list = s.slots ?? []
-    const saveSlots = (next, ok) => call('/api/posting/settings', { slots: next }, ok).catch(() => {})
-    const slotTable = el('div', { className: 'pSlotBox' },
-      el('div', { className: 'pSlotHead' }, 'เวลาโพสต์ประจำวัน', el('small', {}, 'โพสต์ทุกวันตามเวลาเหล่านี้ · แก้แล้วบันทึกเอง · แต่ละโพสต์ห่างกันอย่างน้อย 30 นาที')),
+  /** ตารางเวลาโพสต์ประจำวัน: เลือกเวลา/ลบ/เพิ่ม แล้วบันทึกเองทันที (bridge เรียงและตัดตัวซ้ำให้) · ต้องเหลืออย่างน้อย 1 เวลา */
+  function slotEditor(list, saveSlots, { head, help, label = '' }) {
+    return el('div', { className: 'pSlotBox' },
+      el('div', { className: 'pSlotHead' }, head, el('small', {}, help)),
       el('ol', { className: 'pSlots' }, list.map((t, i) => el('li', {},
         el('span', { className: 'pSlotN' }, `ช่อง ${i + 1}`),
         el('input', {
-          type: 'time', value: t, step: 300, required: true, 'aria-label': `เวลาช่อง ${i + 1}`,
+          type: 'time', value: t, step: 300, required: true, 'aria-label': `เวลาช่อง ${i + 1}${label}`,
           on: { change: (e) => { if (e.target.value) saveSlots(list.map((x, j) => (j === i ? e.target.value : x)), `เปลี่ยนเป็น ${e.target.value} น. แล้ว`) } },
         }),
         el('button', {
-          type: 'button', className: 'ghost pSlotDel', 'aria-label': `ลบเวลา ${t}`, title: list.length <= 1 ? 'ต้องมีอย่างน้อย 1 เวลา' : `ลบเวลา ${t}`,
+          type: 'button', className: 'ghost pSlotDel', 'aria-label': `ลบเวลา ${t}${label}`, title: list.length <= 1 ? 'ต้องมีอย่างน้อย 1 เวลา' : `ลบเวลา ${t}`,
           disabled: list.length <= 1,
           on: { click: () => saveSlots(list.filter((_, j) => j !== i), `ลบเวลา ${t} แล้ว`) },
         }, '✕'),
       ))),
       el('button', { type: 'button', className: 'ghost', on: { click: () => { const t = suggestSlot(list); saveSlots([...list, t], `เพิ่มเวลา ${t} น. แล้ว — แตะที่เวลาเพื่อเปลี่ยนได้`) } } }, '＋ เพิ่มเวลา'),
     )
+  }
+
+  /** ⏰ เวลาโพสต์ของเพจ/ช่องนี้ — ใช้เวลากลาง หรือตั้งเองต่างจากเพจอื่น (ผู้ใช้: ตั้งค่าแต่ละเพจต่างกันได้) */
+  function accountSlots(kind, a) {
+    const key = `slots:${kind}:${a.id}`
+    const own = a.slots ?? []
+    const global = data.settings.slots ?? []
+    const save = (next, ok) => call('/api/posting/account/slots', { kind, id: a.id, slots: next }, ok).catch(() => {})
+    const d = el('details', { className: 'pCats pAcctSlots', open: openSlots.has(key) },
+      el('summary', {}, own.length ? `⏰ เวลาของเพจนี้: ${own.join(', ')}` : `⏰ ใช้เวลากลาง: ${global.join(', ') || 'ยังไม่ได้ตั้ง'}`),
+      own.length
+        ? el('div', { className: 'pAcctSlotsBody' },
+          slotEditor(own, save, { head: `เวลาโพสต์ของ ${a.name}`, help: 'เพจนี้ลงคลิปตามเวลาเหล่านี้แทนเวลากลาง · คลิปที่ตั้งเวลาไว้แล้วย้ายตามให้เอง', label: ` ของ ${a.name}` }),
+          el('button', { type: 'button', className: 'linkBtn', on: { click: () => save([], `${a.name} กลับไปใช้เวลากลางแล้ว`) } }, 'กลับไปใช้เวลากลาง'))
+        : el('button', { type: 'button', className: 'ghost', on: { click: () => { openSlots.add(key); save(global.length ? [...global] : ['12:00'], `ตั้งเวลาของ ${a.name} เองแล้ว — แก้เวลาได้เลย`) } } }, 'ตั้งเวลาของเพจนี้เอง'),
+    )
+    d.addEventListener('toggle', () => (d.open ? openSlots.add(key) : openSlots.delete(key)))
+    return d
+  }
+
+  function renderSettings() {
+    const s = data.settings
+    const toggle = (key, label, help, checked) => el('label', { className: 'pSwitch' },
+      el('input', { type: 'checkbox', checked, on: { change: (e) => call('/api/posting/settings', { [key]: e.target.checked }, 'บันทึกแล้ว').catch(() => {}) } }),
+      el('span', {}, label, el('small', {}, help)))
+    // ช่องเวลาประจำวัน: ตาราง เลือกเวลา/ลบ/เพิ่ม แล้วบันทึกเองทันที (bridge เรียงและตัดตัวซ้ำให้)
+    const saveSlots = (next, ok) => call('/api/posting/settings', { slots: next }, ok).catch(() => {})
+    const slotTable = slotEditor(s.slots ?? [], saveSlots, {
+      head: 'เวลาโพสต์กลาง (ทุกเพจ)',
+      help: 'เพจที่ไม่ได้ตั้งเวลาเองใช้เวลานี้ · ตั้งเวลาเฉพาะเพจได้ที่การ์ดของเพจด้านล่าง · เวลาเดียวกันทุกเพจลงคนละคลิป · แต่ละเพจเว้นอย่างน้อย 30 นาที',
+    })
 
     const mode = el('section', { className: 'pBox', 'aria-label': 'การทำงาน' },
       el('h3', {}, 'การทำงาน'),
@@ -526,7 +552,7 @@ export function initPosting({ api, localApp }) {
         ? el('ul', { className: 'pAccounts' }, data.facebook.map((a) => el('li', {},
           pageAvatar(a), el('strong', {}, a.name), el('span', { className: 'pMeta' }, `ID ${a.pageId} · โทเค็น ${a.token}`),
           el('button', { type: 'button', className: 'ghost', on: { click: () => { if (confirm(`ลบเพจ "${a.name}" ออกจากโหมดโพสต์? (โทเค็นจะถูกลบจากเครื่องนี้)`)) call('/api/posting/facebook/remove', { id: a.id }, 'ลบเพจแล้ว').catch(() => {}) } } }, 'ลบ'),
-          catPicker('facebook', a))))
+          catPicker('facebook', a), accountSlots('facebook', a))))
         : el('p', { className: 'hint' }, 'ยังไม่มีเพจ'),
       el('div', { className: 'pGrid2' },
         el('label', { className: 'pField' }, 'Page ID', pageId),
@@ -566,7 +592,7 @@ export function initPosting({ api, localApp }) {
           }, [['public', 'สาธารณะ'], ['unlisted', 'ไม่เป็นสาธารณะ'], ['private', 'ส่วนตัว']].map(([v, t]) => el('option', { value: v, selected: a.privacy === v }, t))),
           a.connected ? null : el('span', { className: 'pBadge bad' }, 'ต้องเชื่อมต่อใหม่'),
           el('button', { type: 'button', className: 'ghost', on: { click: () => { if (confirm(`ลบช่อง "${a.name}" ออกจากโหมดโพสต์?`)) call('/api/posting/youtube/remove', { id: a.id }, 'ลบช่องแล้ว').catch(() => {}) } } }, 'ลบ'),
-          catPicker('youtube', a))))
+          catPicker('youtube', a), accountSlots('youtube', a))))
         : el('p', { className: 'hint' }, 'ยังไม่มีช่อง'),
       el('button', {
         type: 'button', className: 'primary', disabled: !g.ready,

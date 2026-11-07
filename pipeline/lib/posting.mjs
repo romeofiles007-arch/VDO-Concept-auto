@@ -344,6 +344,19 @@ export function takenFor(queue, targets, excludeId = null) {
 /** ช่องเวลาว่างถัดไปของคลิปนี้ (ว่างพร้อมกันทุกปลายทางของคลิป) */
 export const nextSlotFor = (slots, queue, item, now = Date.now()) => nextFreeSlot(slots, takenFor(queue, item?.targets, item?.id), now)
 
+/**
+ * เวลาโพสต์ประจำวันของคลิป — ตามปลายทางแรกของคลิป (Facebook ก่อน แล้ว YouTube / TikTok)
+ * เพจที่ตั้งเวลาเอง (account.slots) ใช้ของตัวเอง · ไม่ได้ตั้ง = เวลากลาง (settings.slots)
+ * คลิปเดียวที่ลงหลายแพลตฟอร์มออกพร้อมกันตามเวลาของปลายทางแรก และต้องว่างพร้อมกันทุกปลายทาง
+ */
+export function slotsFor(data, targets) {
+  const own = cleanSlots(findTarget(data, (targets ?? [])[0]).account?.slots ?? [])
+  return own.length ? own : cleanSlots(data.settings?.slots ?? [])
+}
+
+/** ช่องเวลาว่างถัดไปของคลิปนี้ ตามเวลาของเพจที่คลิปจะลง */
+export const nextSlotForItem = (data, queue, item, now = Date.now()) => nextFreeSlot(slotsFor(data, item?.targets), takenFor(queue, item?.targets, item?.id), now)
+
 /** เวลาโพสต์สำเร็จล่าสุดของปลายทางนี้ (ms) — ใช้เว้นระยะทีละเพจ ไม่ใช่รวมทุกเพจ */
 export function lastPostAtFor(queue, key) {
   let last = 0
@@ -370,18 +383,28 @@ export function multiAccountPlatforms(data) {
  * จัดคิวใหม่ตามช่องเวลาต่อเพจ — คืนคิวใหม่ (ไม่บันทึกเอง) และสรุปสิ่งที่เปลี่ยน
  *   1) คลิปที่ระบบเลือกเพจให้ (ไม่ได้ติ๊กเอง) ยังไม่โพสต์ → เลือกเพจใหม่ให้กระจายเท่าๆ กัน เฉพาะแพลตฟอร์มที่มีหลายเพจ
  *      (แพลตฟอร์มละ 1 เพจ ไม่ซ้ำแพลตฟอร์มที่เคยลง) · ปลายทางของแพลตฟอร์มที่มีบัญชีเดียวคงไว้ตามเดิม
- *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกของเพจนั้นใหม่ (เพจอื่นช่องเดียวกันได้) · เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่อง) ไม่แตะ
+ *   2) คลิปที่ตั้งเวลาตามช่องประจำวัน → จัดลงช่องว่างแรกของเพจนั้นใหม่ (ตามเวลาของเพจนั้น · เพจอื่นช่องเดียวกันได้)
+ *      เวลาที่ผู้ใช้เลือกเอง (ไม่ตรงช่องประจำวัน) ไม่แตะ
+ *   retarget: false = จัดเวลาอย่างเดียว ไม่ย้ายคลิปข้ามเพจ (ใช้ตอนเปลี่ยนเวลาของเพจ)
+ *   before = การตั้งค่าก่อนเปลี่ยนเวลา — ใช้ดูว่าคลิปไหนตั้งตามช่องเดิม (คลิปที่เวลาตรงช่องเก่าต้องย้ายตามช่องใหม่)
  */
-export function reorganizeQueue(queue, data, { slots = data.settings?.slots ?? [], posted = loadPosted(), now = Date.now() } = {}) {
-  const list = cleanSlots(slots)
-  const onSlot = (t) => { const d = new Date(t); return list.includes(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`) }
+export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now = Date.now(), retarget = true, before = null } = {}) {
+  if (slots) data = { ...data, settings: { ...data.settings, slots } }
+  const hhmm = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+  // ตรงช่องประจำวันของเพจนั้น (ทั้งก่อนและหลังเปลี่ยน) หรือเวลากลาง = ระบบตั้งให้ ย้ายได้
+  const onSlot = (q) => {
+    const old = queue.find((x) => x.id === q.id)?.targets ?? q.targets
+    const lists = [slotsFor(data, old), cleanSlots(data.settings?.slots ?? [])]
+    if (before) lists.push(slotsFor(before, old), cleanSlots(before.settings?.slots ?? []))
+    return lists.some((l) => l.includes(hhmm(q.scheduleAt)))
+  }
   const work = queue.map((q) => ({ ...q, targets: [...(q.targets ?? [])] }))
   const order = (q) => [q.status === 'scheduled' ? 0 : 1, q.scheduleAt ?? q.addedAt ?? 0]
   const sorted = work.filter((q) => ['review', 'scheduled'].includes(q.status)).sort((a, b) => { const x = order(a), y = order(b); return x[0] - y[0] || x[1] - y[1] })
   let retargeted = 0, rescheduled = 0
   // 1) เลือกเพจใหม่ทีละคลิป โดยนับคลิปที่จัดไปแล้วในรอบนี้ (เริ่มจากคิวที่ยังไม่มีเพจของคลิปที่จะจัด)
   const multi = multiAccountPlatforms(data)
-  const movable = multi.size ? sorted.filter((q) => !q.targetsEdited) : []
+  const movable = retarget && multi.size ? sorted.filter((q) => !q.targetsEdited) : []
   const keep = new Map(movable.map((q) => [q.id, q.targets.filter((k) => !multi.has(platformOf(k)))]))
   for (const q of movable) q.targets = keep.get(q.id)
   for (const q of movable) {
@@ -392,14 +415,16 @@ export function reorganizeQueue(queue, data, { slots = data.settings?.slots ?? [
     q.targets = next
   }
   // 2) จัดเวลาใหม่: ปลดช่องประจำวันของทุกคลิปที่ตั้งเวลาไว้ก่อน แล้วลงช่องว่างแรกของเพจนั้นตามลำดับเดิม
-  const auto = sorted.filter((q) => q.status === 'scheduled' && q.scheduleAt && onSlot(q.scheduleAt))
-  const before = new Map(auto.map((q) => [q.id, q.scheduleAt]))
+  // เปลี่ยนเวลา (มี before, ไม่ย้ายข้ามเพจ) → แตะเฉพาะคลิปของเพจที่เวลาเปลี่ยนจริง เพจอื่นไม่ขยับ
+  const changed = (q) => !before || retarget || slotsFor(before, q.targets).join() !== slotsFor(data, q.targets).join()
+  const auto = sorted.filter((q) => q.status === 'scheduled' && q.scheduleAt && onSlot(q) && changed(q))
+  const prevAt = new Map(auto.map((q) => [q.id, q.scheduleAt]))
   for (const q of auto) q.scheduleAt = null
   for (const q of auto) {
-    const at = nextSlotFor(list, work, q, now)
-    if (!at) { q.scheduleAt = before.get(q.id); continue }
+    const at = nextSlotForItem(data, work, q, now)
+    if (!at) { q.scheduleAt = prevAt.get(q.id); continue }
     q.scheduleAt = at
-    if (at !== before.get(q.id)) rescheduled++
+    if (at !== prevAt.get(q.id)) rescheduled++
   }
   return { queue: work, retargeted, rescheduled }
 }
