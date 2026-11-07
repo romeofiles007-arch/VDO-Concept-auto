@@ -11,7 +11,7 @@
  * snapshot() คืนรูปแบบเดียวกับตัวอัปเดตแบบ git (update.js) — แผงข้างใช้หน้าจอเดิมได้เลย
  */
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { shipsToCustomer, isProtected, isCustomerData, USER_CONFIG, DEFAULT_CONFIG, customerDefaults, installerProblems } from './package-rules.js'
 
@@ -62,7 +62,8 @@ async function recentCommits(repo, branch, fetchFn) {
 
 function untar(zip, dest) {
   // tar.exe ของ Windows 10+ แตก zip ได้ (tar ของ Git Bash แตกไม่ได้ — ระบุตัวของ Windows ตรงๆ)
-  const tar = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+  // Mac: tar ของระบบ (bsdtar) แตก zip ได้เหมือนกัน
+  const tar = process.platform === 'win32' ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : '/usr/bin/tar'
   return new Promise((resolve, reject) => {
     execFile(tar, ['-xf', zip, '-C', dest], { windowsHide: true, timeout: 5 * 60_000 }, (err, _out, stderr) => (err ? reject(new Error(`แตกไฟล์อัปเดตไม่ได้: ${String(stderr || err.message).trim()}`)) : resolve()))
   })
@@ -105,6 +106,8 @@ export function installTree(src, cwd, previousFiles = []) {
     try {
       mkdirSync(dirname(dest), { recursive: true })
       writeFileSync(dest, buf)
+      // Mac: ไฟล์ที่ดับเบิลคลิก/Chrome เรียก (.command, .sh) ต้องรันได้ — writeFileSync สร้างไฟล์ใหม่แบบรันไม่ได้
+      if (process.platform !== 'win32' && /\.(command|sh)$/.test(rel)) chmodSync(dest, 0o755)
       changed.push(rel)
     } catch (err) {
       failed.push(`${rel} (${err.code ?? err.message})`)

@@ -146,6 +146,7 @@ export function renameProject({ slug, title }) {
 export function revealVideo({ slug, file }) {
   const s = assertSlug(slug)
   const target = file ? join(PROJECTS, s, '06_render', assertVideoFile(s, file)) : join(PROJECTS, s)
-  execFile('explorer.exe', file ? [`/select,${target}`] : [target], { windowsHide: false })
+  if (process.platform === 'darwin') execFile('/usr/bin/open', file ? ['-R', target] : [target]) // Finder · -R = เลือกไฟล์ไว้ให้
+  else execFile('explorer.exe', file ? [`/select,${target}`] : [target], { windowsHide: false })
   return { opened: target }
 }

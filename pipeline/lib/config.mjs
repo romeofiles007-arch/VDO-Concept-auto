@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join, dirname, resolve, isAbsolute } from 'node:path'
+import { join, dirname, resolve, isAbsolute, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -10,11 +10,18 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
  * จึงหาเจอโดยลูกค้าไม่ต้องติดตั้งอะไร · เครื่องที่ไม่มี runtime/ (เครื่องพัฒนา) ใช้ของในเครื่องตามเดิม
  */
 export const RUNTIME = join(ROOT, 'runtime')
-for (const dir of ['ffmpeg', 'node']) {
-  const p = join(RUNTIME, dir)
+export const IS_MAC = process.platform === 'darwin'
+{
+  // Mac: node อยู่ใน runtime/node/bin · Chrome เปิด bridge ด้วย PATH สั้น (/usr/bin:/bin:…) จึงต่อโฟลเดอร์ Homebrew ไว้ท้ายด้วย
+  const front = [join(RUNTIME, 'ffmpeg'), join(RUNTIME, 'node'), ...(process.platform === 'win32' ? [] : [join(RUNTIME, 'node', 'bin')])]
+  const back = IS_MAC ? ['/opt/homebrew/bin', '/usr/local/bin'] : []
+  const parts = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
   // ใส่แม้ยังไม่มีโฟลเดอร์ — ตัวติดตั้งอาจดาวน์โหลดมาวางทีหลังขณะ bridge เปิดอยู่ (เครื่องพัฒนาไม่มี runtime/ ก็ไม่มีผล)
-  if (!(process.env.PATH ?? '').split(';').includes(p)) process.env.PATH = `${p};${process.env.PATH ?? ''}`
+  process.env.PATH = [...front.filter((p) => !parts.includes(p)), ...parts, ...back.filter((p) => !parts.includes(p))].join(delimiter)
 }
+
+/** python ใน venv / Python แบบพกพา — Windows: Scripts\python.exe · Mac: bin/python */
+export const venvPython = (dir) => (process.platform === 'win32' ? join(dir, 'Scripts', 'python.exe') : join(dir, 'bin', 'python'))
 
 /**
  * การตั้งค่ามี 2 ไฟล์ในแพ็กเกจลูกค้า:
@@ -54,7 +61,7 @@ export const fromRoot = (p) => (isAbsolute(p) ? p : join(ROOT, p))
 
 /** python ของระบบเสียงในเครื่อง (F5-TTS-THAI, Whisper, Edge TTS) — ติดตั้งด้วย scripts/setup-tts.ps1 */
 export function ttsPython(config = loadConfig()) {
-  return fromRoot(config.tts.myVoice?.python || join(config.tts.pythonVenv ?? 'tts/.venv', 'Scripts', 'python.exe'))
+  return fromRoot(config.tts.myVoice?.python || venvPython(config.tts.pythonVenv ?? 'tts/.venv'))
 }
 
 export const STAGES = {

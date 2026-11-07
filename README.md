@@ -5,7 +5,7 @@
 
 ## ติดตั้ง (เครื่องใหม่)
 
-ต้องมี: Windows 10/11 · Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้ · อินเทอร์เน็ต (ไม่ต้องลง Node.js / ffmpeg / Python เอง)
+ต้องมี: Windows 10/11 (Mac ดูหัวข้อ "ติดตั้งบน Mac" ด้านล่าง) · Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้ · อินเทอร์เน็ต (ไม่ต้องลง Node.js / ffmpeg / Python เอง)
 ถ้าเปิดแอนิเมชันในตั้งค่าม้าน้ำ ให้กรอก Kie API key (มีค่าใช้จ่ายตามจำนวนฉาก) ไม่ต้องล็อกอิน Meta AI
 ถ้าจะใช้เสียงในเครื่อง (เสียงไทย F5-TTS, เทรนเสียงตัวเอง, ถอดเสียง Whisper): การ์ดจอ NVIDIA + Python 3.10 — ติดตั้งทีหลังจากปุ่มในหน้า "ตรวจความพร้อม"
 
@@ -17,6 +17,26 @@
 
 รันซ้ำได้ทุกเมื่อ (ย้ายโฟลเดอร์ / อัปเดต / ซ่อม) · ถอนการเชื่อม Chrome: `node native\install.mjs --uninstall`
 แก้ `native/setup.cs` แล้วต้องคอมไพล์ `setup.exe` ใหม่: `node scripts/build-setup.mjs` (`build-package.mjs` ทำให้เองทุกครั้ง)
+
+### ติดตั้งบน Mac
+
+ZIP เดียวกับ Windows (ปุ่ม Download ZIP ของ GitHub) — ต่างแค่ดับเบิลคลิกไฟล์ `.command` แทน `.bat` / `setup.exe`
+ต้องมี: macOS 11 ขึ้นไป (Apple Silicon หรือ Intel) · Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้ · อินเทอร์เน็ต
+
+1. แตก zip (ดับเบิลคลิกไฟล์ zip) แล้วดับเบิลคลิก `ติดตั้งครั้งแรก.command`
+   - ครั้งแรก macOS จะขึ้นว่าเปิดไม่ได้ เพราะไฟล์มาจากอินเทอร์เน็ต (เหมือน "Windows protected your PC") → กด Done →
+     เปิด System Settings → Privacy & Security → เลื่อนลงล่างสุด กด **Open Anyway** → ใส่รหัสเครื่อง → กด Open
+     ทำครั้งเดียว — ตัวติดตั้งปลดป้ายนี้ให้ทุกไฟล์ในโฟลเดอร์เอง
+   - ถ้า macOS ถามว่า Terminal หรือ Google Chrome ขอเข้าถึงโฟลเดอร์ Downloads / Documents / Desktop → กด Allow
+     (หรือย้ายโฟลเดอร์โปรแกรมไปไว้ในโฟลเดอร์บ้าน เช่น `/Users/<ชื่อ>/CartoonAuto` ก่อนติดตั้ง — จะไม่ถามเลย)
+2. ที่เหลือเหมือน Windows ทุกขั้น: ลง Node.js, ffmpeg, Python + edge-tts ไว้ใน `runtime/` → เชื่อม Chrome →
+   ทดลองเปิดโปรแกรม → สร้างแอป "Cartoon Auto" บนเดสก์ท็อปและใน Applications → เปิด `chrome://extensions` ให้
+   Load unpacked: ในหน้าต่างเลือกโฟลเดอร์ กด Cmd+Shift+G → Cmd+V (คัดลอกที่อยู่ไว้ให้แล้ว) → Enter → Select
+3. ไฟล์ของ Mac: `เปิดโปรแกรม.command` · `ปิดโปรแกรม.command` · `ถอนการติดตั้ง.command` (คู่กับไฟล์ .bat ชื่อเดียวกัน)
+
+ยังไม่รองรับบน Mac: ระบบเสียงในเครื่อง (เสียงไทย F5-TTS / VoxCPM / เทรนเสียง / ถอดเสียง) เพราะต้องใช้การ์ดจอ NVIDIA —
+ใช้เสียง Edge (ฟรี), ElevenLabs หรือ Gemini แทน
+เปิด .command แล้วขึ้นว่า "ไม่มีสิทธิ์" (ZIP ที่ไม่ได้มาจาก GitHub ตรงๆ อาจทำสิทธิ์รันหาย): เปิด Terminal พิมพ์ `bash ` (มีเว้นวรรค) ลากไฟล์ `ติดตั้งครั้งแรก.command` ใส่ แล้ว Enter
 
 ทุกอย่างอยู่ในโฟลเดอร์นี้โฟลเดอร์เดียว ไม่ต้องมีโปรเจกต์อื่น · เสียงที่เทรนไว้อยู่ใน `tts/voices/<ชื่อเสียง>/` (model.pt + คลิปต้นแบบ)
 คัดลอกโฟลเดอร์เสียงไปเครื่องอื่นได้ตรงๆ · เสียงส่วนตัวไม่ถูกแชร์ไปกับ git (`.gitignore`) — คนอื่นใช้เสียง Edge ได้ทันที หรือเทรนเสียงตัวเองในขั้นที่ 3

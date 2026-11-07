@@ -5,3 +5,6 @@
 *.exe binary
 *.ico binary
 *.ps1 text eol=crlf
+# ไฟล์ของ Mac ต้องเป็น LF เสมอ — bash อ่าน CRLF เพี้ยน (ไฟล์ .command / .sh ต้องตั้งให้รันได้ด้วย: git add --chmod=+x)
+*.command text eol=lf
+*.sh text eol=lf

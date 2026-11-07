@@ -10,7 +10,7 @@
  * มีแค่ extension ที่ ID ตรงกับ allowed_origins ใน manifest ของ host เท่านั้นที่เรียกได้
  * (ลงทะเบียนด้วย setup.exe)
  */
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
 import { existsSync, readFileSync, appendFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { join, dirname, resolve } from 'node:path'
@@ -21,6 +21,8 @@ const ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const NODE = realpathSync(process.execPath)
 const ENV_FILE = join(ROOT, '.env')
 const START_TIMEOUT_MS = 20_000
+const MAC = process.platform === 'darwin'
+const STOP_FILE = MAC ? 'ปิดโปรแกรม.command' : 'ปิดโปรแกรม.bat'
 
 // ── โปรโตคอลของ Chrome: ข้อความ = ความยาว 4 ไบต์ (little-endian) + JSON ──
 function send(msg) {
@@ -80,6 +82,19 @@ async function healthy(port) {
  * process ที่ WMI สร้างไม่ได้เป็นลูกของ host จึงรันค้างต่อได้ และซ่อนหน้าต่างได้ (ShowWindow = 0)
  */
 function startBridge() {
+  // Mac: แยก process group ใหม่ (detached) — Chrome ปิด host แล้ว bridge ยังรันต่อ · ไม่มีหน้าต่างให้ซ่อน
+  if (MAC) {
+    return new Promise((resolve) => {
+      try {
+        const proc = spawn(NODE, [join(ROOT, 'bridge', 'server.js')], { cwd: ROOT, detached: true, stdio: 'ignore' })
+        proc.on('error', () => resolve(false))
+        proc.unref()
+        setTimeout(() => resolve(true), 200)
+      } catch {
+        resolve(false)
+      }
+    })
+  }
   const cmd = `"${NODE}" "${join(ROOT, 'bridge', 'server.js')}"`.replace(/'/g, "''")
   const ps = [
     `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }`,
@@ -115,7 +130,19 @@ function powershellOut(script) {
 }
 
 /** process ที่จับพอร์ตนี้อยู่ → { pid, root } (root = โฟลเดอร์ของ bridge นั้น จาก command line) */
+/** Mac: รันคำสั่งระบบ → ข้อความที่พิมพ์ออกมา ('' ถ้าพัง) */
+function sysOut(cmd, args) {
+  return new Promise((resolve) => execFile(cmd, args, { encoding: 'utf8', timeout: 10_000 }, (err, out) => resolve(err ? '' : String(out).trim())))
+}
+
 async function portOwner(port) {
+  if (MAC) {
+    const pid = Number((await sysOut('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'])).split('\n')[0])
+    if (!pid) return null
+    // bridge รันโดยมี cwd = โฟลเดอร์โปรแกรมเสมอ (startBridge / selfupdate) — อ่านจาก cwd แทนการแยก command line ที่อาจมีเว้นวรรค
+    const cwd = (await sysOut('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])).split('\n').find((l) => l.startsWith('n'))?.slice(1) ?? null
+    return { pid, root: cwd && existsSync(join(cwd, 'bridge', 'server.js')) ? cwd : null }
+  }
   const out = await powershellOut([
     `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
     `if ($c) { $p = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $c.OwningProcess); [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$p.ProcessId + [char]9 + [string]$p.CommandLine)) }`,
@@ -148,13 +175,17 @@ async function takeOverPort(port) {
   if (otherToken) {
     const v = await authed(port, '/ext-version', otherToken)
     if (v.status === 200 && v.body?.busy) {
-      return { ok: false, error: `โปรแกรมจากโฟลเดอร์อื่น (${where}) กำลังทำงานอยู่บนพอร์ตเดียวกัน — รอให้เสร็จ หรือกด ปิดโปรแกรม.bat ในโฟลเดอร์นั้น แล้วกดไอคอนอีกครั้ง` }
+      return { ok: false, error: `โปรแกรมจากโฟลเดอร์อื่น (${where}) กำลังทำงานอยู่บนพอร์ตเดียวกัน — รอให้เสร็จ หรือกด ${STOP_FILE} ในโฟลเดอร์นั้น แล้วกดไอคอนอีกครั้ง` }
     }
   }
-  await powershellOut(`Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue`)
+  if (MAC) {
+    try { process.kill(owner.pid, 'SIGTERM') } catch {}
+  } else {
+    await powershellOut(`Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue`)
+  }
   const deadline = Date.now() + 10_000
   while (await healthy(port)) {
-    if (Date.now() > deadline) return { ok: false, error: `ปิดโปรแกรมจากโฟลเดอร์อื่น (${where}) ไม่สำเร็จ — กด ปิดโปรแกรม.bat ในโฟลเดอร์นั้น หรือรีสตาร์ทเครื่อง` }
+    if (Date.now() > deadline) return { ok: false, error: `ปิดโปรแกรมจากโฟลเดอร์อื่น (${where}) ไม่สำเร็จ — กด ${STOP_FILE} ในโฟลเดอร์นั้น หรือรีสตาร์ทเครื่อง` }
     await new Promise((r) => setTimeout(r, 300))
   }
   return { ok: true, replaced: where }
@@ -190,7 +221,7 @@ if (process.argv.includes('--open')) {
     console.error(`เปิดโปรแกรมไม่สำเร็จ: ${r.error}`)
     process.exit(1)
   }
-  spawn('explorer.exe', [r.url], { detached: true, stdio: 'ignore' }).unref()
+  spawn(MAC ? '/usr/bin/open' : 'explorer.exe', [r.url], { detached: true, stdio: 'ignore' }).unref()
   console.log(`เปิดแล้ว: ${r.url}`)
   process.exit(0)
 }

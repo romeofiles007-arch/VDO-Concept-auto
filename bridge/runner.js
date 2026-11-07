@@ -10,6 +10,7 @@ import { ROOT } from '../pipeline/lib/config.mjs'
 
 /** เสียงแจ้งเตือนตอนคลิปเสร็จ — เสียง tada ของ Windows (ไม่มีไฟล์/ไม่ใช่ Windows = เงียบ ไม่ขวางงาน) */
 export function playDoneSound() {
+  if (process.platform === 'darwin') return void spawn('/usr/bin/afplay', ['/System/Library/Sounds/Glass.aiff'], { stdio: 'ignore' }).on('error', () => {})
   if (process.platform !== 'win32') return
   const wav = join(process.env.SystemRoot ?? 'C:\\Windows', 'Media', 'tada.wav')
   spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object Media.SoundPlayer '${wav.replace(/'/g, "''")}').PlaySync()`], { windowsHide: true, stdio: 'ignore' }).on('error', () => {})
@@ -47,7 +48,10 @@ export const STEPS = {
   },
   setupTts: {
     label: 'ติดตั้งระบบเสียง',
-    cmd: () => ['powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join('scripts', 'setup-tts.ps1')]],
+    // ระบบเสียงในเครื่องต้องใช้การ์ดจอ NVIDIA (CUDA) — Mac ไม่มี จึงบอกให้ใช้เสียงออนไลน์แทน
+    cmd: () => process.platform === 'win32'
+      ? ['powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join('scripts', 'setup-tts.ps1')]]
+      : [process.execPath, ['-e', "console.error('ระบบเสียงในเครื่องยังไม่รองรับบน Mac (ต้องใช้การ์ดจอ NVIDIA) — เลือกเสียง Edge, ElevenLabs หรือ Gemini ในขั้นที่ 3 แทน'); process.exit(1)"]],
   },
 }
 
@@ -97,7 +101,8 @@ export function createRunner({ log }) {
     const [bin, args] = def.cmd(slug, opts)
 
     // opts.env: ตัวแปรเฉพาะงานนี้ (ผลิตต่อเนื่องใช้สุ่มลายเส้นต่อคลิป)
-    const proc = spawn(bin, args, { cwd: ROOT, windowsHide: true, env: { ...process.env, FORCE_COLOR: '0', ...(opts?.env ?? {}) } })
+    // Mac/Linux: ให้งานนี้เป็นหัว process group ของตัวเอง — สั่งหยุดแล้วปิดลูกทั้งหมด (python, ขั้นย่อย) ได้ในครั้งเดียว
+    const proc = spawn(bin, args, { cwd: ROOT, windowsHide: true, detached: process.platform !== 'win32', env: { ...process.env, FORCE_COLOR: '0', ...(opts?.env ?? {}) } })
     current = { step, slug, status: 'running', lines: [], exitCode: null, startedAt: Date.now(), endedAt: null, proc }
     const run = current
     log(`เริ่ม ${def.label} (${slug ?? '-'})`)
@@ -126,7 +131,13 @@ export function createRunner({ log }) {
   /** ปิดทั้งต้นไม้ของ process — ขั้น 2 มี python ลูก autopilot มีขั้นย่อยเป็น node ลูก ที่ kill() ธรรมดาไม่โดน */
   function killTree(proc) {
     if (process.platform === 'win32') spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
-    else proc.kill('SIGKILL')
+    else {
+      try {
+        process.kill(-proc.pid, 'SIGKILL') // ทั้ง group
+      } catch {
+        proc.kill('SIGKILL')
+      }
+    }
   }
 
   function stop() {
@@ -143,7 +154,7 @@ export function createRunner({ log }) {
       killTree(run.proc)
       try { process.kill(run.proc.pid, 'SIGKILL') } catch {}
       if (tries < 5) check(tries + 1)
-      else run.lines.push({ text: `⚠️ ปิดโปรแกรมขั้นนี้ไม่ได้ (PID ${run.proc.pid}) — เปิด Task Manager แล้วปิด node.exe ตัวนี้เอง`, at: Date.now() })
+      else run.lines.push({ text: `⚠️ ปิดโปรแกรมขั้นนี้ไม่ได้ (PID ${run.proc.pid}) — ${process.platform === 'darwin' ? 'เปิด Activity Monitor แล้วปิด node ตัวนี้เอง' : 'เปิด Task Manager แล้วปิด node.exe ตัวนี้เอง'}`, at: Date.now() })
     }, 3000)
     check(1)
     return snapshot()

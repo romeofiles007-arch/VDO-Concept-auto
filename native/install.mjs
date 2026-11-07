@@ -23,15 +23,23 @@
  *   --shortcut-dir=X   สร้าง shortcut ไว้ที่โฟลเดอร์ X แทนเดสก์ท็อป/Start menu (ใช้ทดสอบ)
  *   env CARTOON_AUTO_HOST=ชื่อ   ลงทะเบียนเป็นชื่อ host อื่น (ใช้ทดสอบโดยไม่ทับตัวจริงของเครื่องนักพัฒนา)
  */
-import { writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync, copyFileSync, rmdirSync, symlinkSync, realpathSync, createWriteStream, lstatSync } from 'node:fs'
+import { writeFileSync, readFileSync, rmSync, existsSync, readdirSync, mkdirSync, copyFileSync, rmdirSync, symlinkSync, realpathSync, createWriteStream, lstatSync, chmodSync, renameSync, readlinkSync, cpSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { join, dirname, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+
+/**
+ * Mac ใช้ตัวติดตั้งไฟล์นี้ตัวเดียวกัน — ติดตั้งครั้งแรก.command → native/bootstrap.sh หา/ลง Node.js → ไฟล์นี้
+ * ขั้นเหมือน Windows ทุกข้อ ต่างแค่วิธีทำ: ลงทะเบียน Chrome ด้วยไฟล์ JSON แทน registry · shortcut เป็น .app แทน .lnk
+ * ป๊อปอัปด้วย osascript แทน PowerShell · ffmpeg / Python รุ่น macOS (Apple Silicon หรือ Intel ตามเครื่อง)
+ */
+const MAC = process.platform === 'darwin'
+const SETUP = MAC ? 'ติดตั้งครั้งแรก.command' : 'setup.exe'
 
 const HOST = process.env.CARTOON_AUTO_HOST || 'com.cartoon_auto.bridge'
 const DIR = dirname(fileURLToPath(import.meta.url))
@@ -42,8 +50,14 @@ const REG_KEYS = [
   `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST}`,
   `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST}`,
 ]
+// Mac: Chrome / Edge หา native host จากไฟล์ JSON ในโฟลเดอร์เหล่านี้ (ของผู้ใช้คนนี้ ไม่ต้องใช้ admin)
+const APP_SUPPORT = join(homedir(), 'Library', 'Application Support')
+const MAC_HOST_DIRS = [
+  { name: 'Chrome', app: join(APP_SUPPORT, 'Google', 'Chrome'), dir: join(APP_SUPPORT, 'Google', 'Chrome', 'NativeMessagingHosts') },
+  { name: 'Edge', app: join(APP_SUPPORT, 'Microsoft Edge'), dir: join(APP_SUPPORT, 'Microsoft Edge', 'NativeMessagingHosts') },
+]
 const manifestFile = join(DIR, `${HOST}.json`)
-const batFile = join(DIR, 'host.bat')
+const batFile = join(DIR, MAC ? 'host.sh' : 'host.bat')
 const SHORTCUT_NAME = 'Cartoon Auto.lnk'
 
 const args = process.argv.slice(2)
@@ -109,6 +123,7 @@ async function fetchText(url) {
 /** แตก zip — tar.exe มีใน Windows 10 1803 ขึ้นไป ไม่มีจึงใช้ PowerShell */
 function unzip(zip, dest) {
   mkdirSync(dest, { recursive: true })
+  if (MAC) return execFileSync('/usr/bin/unzip', ['-q', '-o', zip, '-d', dest], { stdio: 'ignore' })
   try {
     execFileSync('tar.exe', ['-xf', zip, '-C', dest], { stdio: 'ignore', windowsHide: true })
   } catch {
@@ -168,7 +183,63 @@ async function* ffmpegSources() {
   yield { url, sha256 }
 }
 
+// ── Mac ──
+// Chrome เปิด bridge ด้วย PATH แบบสั้น (/usr/bin:/bin:…) ที่ไม่มี Homebrew — pipeline/lib/config.mjs ใส่โฟลเดอร์ Homebrew ให้
+const MAC_ARCH = process.arch === 'arm64' ? 'arm64' : 'x64'
+const BREW_DIRS = ['/opt/homebrew/bin', '/usr/local/bin']
+const brewBin = (name) => BREW_DIRS.map((d) => join(d, name)).find((p) => existsSync(p)) ?? null
+
+/** ไฟล์ที่ดาวน์โหลดมาเองต้องรันได้: chmod +x · Apple Silicon ไม่ยอมรันโปรแกรมที่ไม่มีลายเซ็น → เซ็นแบบ ad-hoc ให้ */
+function makeRunnable(file) {
+  chmodSync(file, 0o755)
+  try { execFileSync('/usr/bin/xattr', ['-d', 'com.apple.quarantine', file], { stdio: 'ignore' }) } catch {}
+  if (probe(file, ['-version'])) return true
+  try { execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', file], { stdio: 'ignore', timeout: 60_000 }) } catch {}
+  return !!probe(file, ['-version'])
+}
+
+/**
+ * ffmpeg สำหรับ macOS — build แบบ static ของ ffmpeg.martin-riedl.de (มีทั้ง Apple Silicon และ Intel พร้อม SHA256)
+ * หน้าแรกของเว็บมีลิงก์รุ่น release ล่าสุด: /download/macos/<arm64|amd64>/<เวลา>_<รุ่น>/ffmpeg.zip
+ * รุ่น snapshot (ชื่อขึ้นต้น N-) ไม่เอา
+ */
+async function ensureFfmpegMac() {
+  const local = join(RUNTIME, 'ffmpeg')
+  const works = () => probe(join(local, 'ffmpeg'), ['-version']) && probe(join(local, 'ffprobe'), ['-version'])
+  if (works()) return report('ffmpeg', true, 'มีอยู่ใน runtime/ffmpeg แล้ว')
+  if (brewBin('ffmpeg') && brewBin('ffprobe') && probe(brewBin('ffmpeg'), ['-version'])) return report('ffmpeg', true, `ใช้ตัวที่ลงไว้ในเครื่อง (${dirname(brewBin('ffmpeg'))})`)
+  if (noDownload) return report('ffmpeg', false, 'ไม่พบในเครื่อง', 'รันตัวติดตั้งอีกครั้งโดยต่ออินเทอร์เน็ต')
+  try {
+    const site = 'https://ffmpeg.martin-riedl.de'
+    const arch = MAC_ARCH === 'arm64' ? 'arm64' : 'amd64'
+    const page = await fetchText(`${site}/`)
+    const builds = [...page.matchAll(new RegExp(`/download/macos/${arch}/(\\d+)_(\\d[\\d.]*)/ffmpeg\\.zip"`, 'g'))].map((m) => ({ ts: Number(m[1]), dir: `${site}/download/macos/${arch}/${m[1]}_${m[2]}` }))
+    const latest = builds.sort((a, b) => b.ts - a.ts)[0]
+    if (!latest) throw new Error('หาไฟล์ ffmpeg สำหรับ Mac ไม่เจอ')
+    console.log('    ดาวน์โหลด ffmpeg + ffprobe (~60 MB) — ครั้งแรกครั้งเดียว')
+    await withTemp(async (tmp) => {
+      mkdirSync(local, { recursive: true })
+      for (const name of ['ffmpeg', 'ffprobe']) {
+        const zip = join(tmp, `${name}.zip`)
+        const sha256 = (await fetchText(`${latest.dir}/${name}.zip.sha256`)).trim().split(/\s+/)[0].toLowerCase()
+        const got = await download(`${latest.dir}/${name}.zip`, zip, name)
+        if (got !== sha256) throw new Error(`ไฟล์ ${name} ที่ดาวน์โหลดเสีย (SHA256 ไม่ตรง) — ลองใหม่อีกครั้ง`)
+        unzip(zip, join(tmp, name))
+        const bin = findFile(join(tmp, name), name)
+        if (!bin) throw new Error(`แตกไฟล์แล้วไม่พบ ${name}`)
+        copyFileSync(bin, join(local, name))
+        if (!makeRunnable(join(local, name))) throw new Error(`ดาวน์โหลด ${name} แล้วแต่รันไม่ได้`)
+      }
+    })
+    if (works()) return report('ffmpeg', true, 'ดาวน์โหลดมาไว้ใน runtime/ffmpeg')
+    report('ffmpeg', false, 'ดาวน์โหลดแล้วแต่รันไม่ได้', `ดับเบิลคลิก ${SETUP} อีกครั้ง`)
+  } catch (err) {
+    report('ffmpeg', false, err.message, `ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ${SETUP} อีกครั้ง`)
+  }
+}
+
 async function ensureFfmpeg() {
+  if (MAC) return ensureFfmpegMac()
   const local = join(RUNTIME, 'ffmpeg')
   const works = () => probe(join(local, 'ffmpeg.exe'), ['-version']) && probe(join(local, 'ffprobe.exe'), ['-version'])
   if (works()) return report('ffmpeg', true, 'แถมมากับแพ็กเกจ')
@@ -203,7 +274,7 @@ async function ensureFfmpeg() {
   } catch (err) {
     lastError = err
   }
-  report('ffmpeg', false, lastError?.message ?? 'ดาวน์โหลดไม่สำเร็จ', /รันไม่ได้/.test(lastError?.message ?? '') ? 'โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\ffmpeg\\ffmpeg.exe' : 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง')
+  report('ffmpeg', false, lastError?.message ?? 'ดาวน์โหลดไม่สำเร็จ', /รันไม่ได้/.test(lastError?.message ?? '') ? 'โปรแกรมป้องกันไวรัสอาจบล็อก runtime\\ffmpeg\\ffmpeg.exe' : `ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ${SETUP} อีกครั้ง`)
 }
 
 // ════════════════════════ 2. Python + edge-tts (เสียง Edge) ════════════════════════
@@ -223,7 +294,56 @@ const hasEdgeTts = (python) => {
   }
 }
 
+/**
+ * Mac ไม่มี Python มาให้ (/usr/bin/python3 เป็นแค่ตัวชวนลง Xcode) → ใช้ Python แบบพกพาของ python-build-standalone
+ * (ชุดเดียวกับที่ uv ใช้ · มี pip ในตัว · ตรวจ SHA256 จากไฟล์ SHA256SUMS ของ release) วางที่ runtime/python
+ */
+async function ensureEdgeTtsMac() {
+  const label = 'เสียงพากย์ Edge (ไทย/อังกฤษ)'
+  const venv = join(ROOT, 'tts', '.venv', 'bin', 'python')
+  const py = join(RUNTIME, 'python')
+  const python = join(py, 'bin', 'python3')
+  if (existsSync(venv) && hasEdgeTts(venv)) return report(label, true, 'ใช้ระบบเสียงในเครื่อง (tts/.venv)')
+  if (existsSync(python) && hasEdgeTts(python)) return report(label, true, 'มีอยู่ใน runtime/python แล้ว')
+  if (noDownload) return report(label, false, 'ยังไม่มี Python + edge-tts', 'รันตัวติดตั้งอีกครั้งโดยต่ออินเทอร์เน็ต')
+  try {
+    if (!existsSync(python)) {
+      const base = 'https://github.com/astral-sh/python-build-standalone/releases'
+      const target = MAC_ARCH === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
+      const sums = (await fetchText(`${base}/latest/download/SHA256SUMS`)).split(/\r?\n/).map((l) => l.trim().split(/\s+/))
+      const re = new RegExp(`^cpython-3\\.11\\.(\\d+)\\+(\\d+)-${target}-install_only\\.tar\\.gz$`)
+      const pick = sums.filter(([h, n]) => /^[0-9a-f]{64}$/i.test(h) && re.test(n ?? '')).sort(([, a], [, b]) => Number(re.exec(b)[1]) - Number(re.exec(a)[1]))[0]
+      if (!pick) throw new Error('หาไฟล์ Python สำหรับ Mac ไม่เจอ')
+      const [sha256, name] = pick
+      const tag = re.exec(name)[2]
+      console.log(`    ดาวน์โหลด Python 3.11 + edge-tts (~20 MB) — ครั้งแรกครั้งเดียว`)
+      await withTemp(async (tmp) => {
+        const tgz = join(tmp, 'python.tar.gz')
+        const got = await download(`${base}/download/${tag}/${encodeURIComponent(name)}`, tgz, 'Python')
+        if (got !== sha256.toLowerCase()) throw new Error('ไฟล์ Python ที่ดาวน์โหลดเสีย (SHA256 ไม่ตรง) — ลองใหม่อีกครั้ง')
+        execFileSync('/usr/bin/tar', ['-xzf', tgz, '-C', tmp], { stdio: 'ignore' })
+        if (!existsSync(join(tmp, 'python', 'bin', 'python3'))) throw new Error('แตกไฟล์แล้วไม่พบ python3')
+        rmSync(py, { recursive: true, force: true })
+        mkdirSync(RUNTIME, { recursive: true })
+        // คนละไดรฟ์ (โฟลเดอร์โปรแกรมอยู่บนไดรฟ์นอก) ย้ายไม่ได้ → คัดลอก (เก็บ symlink ใน bin/ ไว้ตามเดิม)
+        try {
+          renameSync(join(tmp, 'python'), py)
+        } catch {
+          cpSync(join(tmp, 'python'), py, { recursive: true, verbatimSymlinks: true })
+        }
+      })
+    }
+    execFileSync(python, ['-m', 'pip', 'install', '-q', '--no-warn-script-location', 'edge-tts'], { env: pyEnv(), timeout: 10 * 60_000, stdio: ['ignore', 'ignore', 'pipe'] })
+    const ok = hasEdgeTts(python)
+    report(label, ok, ok ? 'ลง Python + edge-tts ไว้ใน runtime/python' : 'ลงแล้วแต่ import edge_tts ไม่ได้', `ดับเบิลคลิก ${SETUP} อีกครั้ง`)
+  } catch (err) {
+    const why = String(err.stderr ?? '').trim().split(/\r?\n/).pop() || err.message
+    report(label, false, why, `ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ${SETUP} อีกครั้ง (หรือเลือกเสียง ElevenLabs/Gemini ในแผงข้างแทน)`)
+  }
+}
+
 async function ensureEdgeTts() {
+  if (MAC) return ensureEdgeTtsMac()
   // ลำดับเดียวกับ edgePython() ใน pipeline/lib/cloud_tts.mjs
   const venv = join(ROOT, 'tts', '.venv', 'Scripts', 'python.exe')
   const bundled = join(RUNTIME, 'python', 'python.exe')
@@ -258,10 +378,10 @@ async function ensureEdgeTts() {
     }
     run(['-m', 'pip', 'install', '-q', '--no-warn-script-location', 'edge-tts'])
     const ok = hasEdgeTts(python)
-    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', ok, ok ? 'ลง Python + edge-tts ไว้ใน runtime\\python' : 'ลงแล้วแต่ import edge_tts ไม่ได้', 'ดับเบิลคลิก setup.exe อีกครั้ง')
+    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', ok, ok ? 'ลง Python + edge-tts ไว้ใน runtime\\python' : 'ลงแล้วแต่ import edge_tts ไม่ได้', `ดับเบิลคลิก ${SETUP} อีกครั้ง`)
   } catch (err) {
     const why = String(err.stderr ?? '').trim().split(/\r?\n/).pop() || err.message
-    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', false, why, 'ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก setup.exe อีกครั้ง (หรือเลือกเสียง ElevenLabs/Gemini ในแผงข้างแทน)')
+    report('เสียงพากย์ Edge (ไทย/อังกฤษ)', false, why, `ตรวจอินเทอร์เน็ตแล้วดับเบิลคลิก ${SETUP} อีกครั้ง (หรือเลือกเสียง ElevenLabs/Gemini ในแผงข้างแทน)`)
   }
 }
 
@@ -292,7 +412,7 @@ function ensureUsableSettings() {
   try {
     config = JSON.parse(readFileSync(file, 'utf8'))
   } catch {
-    return report('การตั้งค่า', false, 'อ่าน config\\project.config.json ไม่ได้', 'ลบไฟล์นั้นทิ้งแล้วดับเบิลคลิก setup.exe อีกครั้ง (ระบบใช้ค่าเริ่มต้นแทน)')
+    return report('การตั้งค่า', false, 'อ่าน config\\project.config.json ไม่ได้', `ลบไฟล์นั้นทิ้งแล้วดับเบิลคลิก ${SETUP} อีกครั้ง (ระบบใช้ค่าเริ่มต้นแทน)`)
   }
   const keys = envKeys()
   const changes = []
@@ -357,7 +477,40 @@ function hostDir() {
   }
 }
 
+/** Mac: host.sh — Chrome รันไฟล์นี้ตรงๆ (ไม่ผ่าน shell ของผู้ใช้ · PATH สั้น) จึงอ้าง node ด้วย path เต็มเสมอ */
+function writeHostFilesMac() {
+  writeFileSync(batFile, [
+    '#!/bin/sh',
+    '# เขียนโดย native/install.mjs — Chrome เรียกไฟล์นี้เมื่อกดไอคอน extension',
+    'DIR="$(cd "$(dirname "$0")" && pwd)"',
+    'if [ -x "$DIR/../runtime/node/bin/node" ]; then exec "$DIR/../runtime/node/bin/node" "$DIR/host.mjs" "$@"; fi',
+    `exec "${process.execPath.replace(/(["\\$`])/g, '\\$1')}" "$DIR/host.mjs" "$@"`,
+    '',
+  ].join('\n'))
+  chmodSync(batFile, 0o755)
+  writeFileSync(manifestFile, JSON.stringify(macManifest(), null, 2))
+  return batFile
+}
+
+const macManifest = () => ({
+  name: HOST,
+  description: 'Cartoon Auto — เปิดโปรแกรมเมื่อกดไอคอน extension',
+  path: batFile,
+  type: 'stdio',
+  allowed_origins: [`chrome-extension://${id}/`],
+})
+
+/** วางไฟล์ลงทะเบียนในโฟลเดอร์ของ Chrome (ต้องมี) และ Edge (เฉพาะเครื่องที่มี Edge) */
+function registerMac() {
+  for (const { app, dir, name } of MAC_HOST_DIRS) {
+    if (name !== 'Chrome' && !existsSync(app)) continue
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `${HOST}.json`), JSON.stringify(macManifest(), null, 2))
+  }
+}
+
 function writeHostFiles() {
+  if (MAC) return writeHostFilesMac()
   // Chrome เรียกได้แค่ไฟล์ .exe/.bat — ใช้ node ที่แถม/ดาวน์โหลดไว้ใน runtime ก่อน (อ้างจากที่ตั้งของไฟล์ ย้ายโฟลเดอร์แล้วยังถูก)
   // ไม่มีจึงใช้ path เต็มของ node ที่รันตัวติดตั้งนี้ เพราะ PATH ตอน Chrome เปิดอาจไม่มี node
   writeFileSync(batFile, [
@@ -381,12 +534,18 @@ function writeHostFiles() {
 }
 
 function register() {
+  if (MAC) return registerMac()
   const value = resolve(manifestFile)
   for (const key of REG_KEYS) execFileSync('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], { stdio: 'ignore', windowsHide: true })
 }
 
 /** อ่านค่าที่ Chrome จะอ่านจริงจาก registry (ผ่าน base64 — reg.exe พิมพ์ภาษาไทยเพี้ยน) */
 function readRegistry(key) {
+  if (MAC) {
+    // Mac ไม่มี registry — "ค่าที่ลงทะเบียน" คือไฟล์ JSON ในโฟลเดอร์ของเบราว์เซอร์นั้น (key = ชื่อเบราว์เซอร์)
+    const file = join(MAC_HOST_DIRS.find((d) => d.name === key)?.dir ?? '', `${HOST}.json`)
+    return existsSync(file) ? file : null
+  }
   try {
     const path = `Registry::${key.replace(/^HKCU/, 'HKEY_CURRENT_USER')}`
     const out = powershell(`$v = (Get-Item -LiteralPath ${psText(path)}).GetValue(''); [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$v))`)
@@ -400,7 +559,10 @@ function readRegistry(key) {
 function callHostLikeChrome(hostPath) {
   return new Promise((done) => {
     const line = `/d /c "${hostPath}" --parent-window=0 chrome-extension://${id}/`
-    const proc = spawn(process.env.ComSpec || 'cmd.exe', [line], { windowsVerbatimArguments: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    // Mac: Chrome รัน host ตรงๆ ส่งแค่ origin ของ extension เป็นอาร์กิวเมนต์
+    const proc = MAC
+      ? spawn(hostPath, [`chrome-extension://${id}/`], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: homedir() } })
+      : spawn(process.env.ComSpec || 'cmd.exe', [line], { windowsVerbatimArguments: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let out = Buffer.alloc(0)
     let err = ''
     const timer = setTimeout(() => {
@@ -433,8 +595,8 @@ function callHostLikeChrome(hostPath) {
 
 /** ตรวจทั้งเส้นทางที่ Chrome ใช้ → { ok, info?, problem? } */
 async function verifyHost() {
-  const manifestPath = readRegistry(REG_KEYS[0])
-  if (!manifestPath) return { ok: false, problem: 'ไม่พบการลงทะเบียนใน registry ของ Chrome' }
+  const manifestPath = readRegistry(MAC ? 'Chrome' : REG_KEYS[0])
+  if (!manifestPath) return { ok: false, problem: MAC ? 'ไม่พบไฟล์ลงทะเบียนในโฟลเดอร์ของ Chrome' : 'ไม่พบการลงทะเบียนใน registry ของ Chrome' }
   let manifest
   try {
     manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -460,7 +622,82 @@ async function machineChecklist(info) {
 }
 
 // ════════════════════════ 4. shortcut ════════════════════════
+// Mac: shortcut = แอปเล็กๆ "Cartoon Auto.app" ใน ~/Applications (ค้นใน Spotlight / Launchpad ได้) + ลิงก์บนเดสก์ท็อป
+// ข้างในแค่เรียก native/host.sh --open แบบเดียวกับ เปิดโปรแกรม.command แต่ไม่มีหน้าต่าง Terminal โผล่
+// สร้างในเครื่องเอง (ไม่ได้ดาวน์โหลด) → macOS ไม่ติดป้ายกักกัน เปิดได้ทันที
+const APP_NAME = `${SHORTCUT_NAME.replace(/\.lnk$/i, '')}.app`
+const macShortcutDirs = () => option('--shortcut-dir') ? { apps: resolve(option('--shortcut-dir')), desktop: null } : { apps: join(homedir(), 'Applications'), desktop: join(homedir(), 'Desktop') }
+
+function createShortcutsMac() {
+  const { apps, desktop } = macShortcutDirs()
+  const app = join(apps, APP_NAME)
+  rmSync(app, { recursive: true, force: true })
+  mkdirSync(join(app, 'Contents', 'MacOS'), { recursive: true })
+  mkdirSync(join(app, 'Contents', 'Resources'), { recursive: true })
+  const q = (s) => s.replace(/(["\\$`])/g, '\\$1')
+  writeFileSync(join(app, 'Contents', 'MacOS', 'launcher'), [
+    '#!/bin/sh',
+    `# ${ROOT}`,
+    `exec "${q(batFile)}" --open`,
+    '',
+  ].join('\n'))
+  chmodSync(join(app, 'Contents', 'MacOS', 'launcher'), 0o755)
+  // ไอคอน: แปลง PNG ของ extension เป็น .icns ด้วยเครื่องมือที่มีใน macOS (sips + iconutil) — ไม่ได้ก็ใช้ไอคอนปกติ
+  let icon = false
+  const png = join(EXTENSION_DIR, 'icons', 'icon-128.png')
+  if (existsSync(png)) {
+    try {
+      withTempSync((tmp) => {
+        const set = join(tmp, 'icon.iconset')
+        mkdirSync(set)
+        for (const size of [16, 32, 64, 128, 256, 512]) execFileSync('/usr/bin/sips', ['-z', String(size), String(size), png, '--out', join(set, `icon_${size}x${size}.png`)], { stdio: 'ignore' })
+        execFileSync('/usr/bin/iconutil', ['-c', 'icns', set, '-o', join(app, 'Contents', 'Resources', 'icon.icns')], { stdio: 'ignore' })
+      })
+      icon = true
+    } catch {}
+  }
+  const xml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  writeFileSync(join(app, 'Contents', 'Info.plist'), [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0"><dict>',
+    `  <key>CFBundleName</key><string>${xml(APP_NAME.replace(/\.app$/, ''))}</string>`,
+    '  <key>CFBundleExecutable</key><string>launcher</string>',
+    `  <key>CFBundleIdentifier</key><string>com.cartoon-auto.launcher</string>`,
+    '  <key>CFBundlePackageType</key><string>APPL</string>',
+    '  <key>CFBundleVersion</key><string>1</string>',
+    icon ? '  <key>CFBundleIconFile</key><string>icon</string>' : '',
+    '</dict></plist>',
+    '',
+  ].filter(Boolean).join('\n'))
+  if (desktop && existsSync(desktop)) {
+    const link = join(desktop, APP_NAME)
+    try { if (lstatSync(link).isSymbolicLink()) rmSync(link, { force: true }) } catch {}
+    if (!existsSync(link)) symlinkSync(app, link)
+  }
+}
+
+function withTempSync(fn) {
+  const dir = join(tmpdir(), `cartoon-auto-${randomUUID()}`)
+  mkdirSync(dir, { recursive: true })
+  try {
+    return fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/** แอป shortcut ที่สร้างไว้ชี้มาที่โฟลเดอร์นี้ไหม (ดูจากบรรทัดความเห็นใน launcher) */
+const macAppPointsHere = (app) => {
+  try {
+    return readFileSync(join(app, 'Contents', 'MacOS', 'launcher'), 'utf8').split('\n')[1] === `# ${ROOT}`
+  } catch {
+    return false
+  }
+}
+
 function createShortcuts() {
+  if (MAC) return createShortcutsMac()
   const target = join(ROOT, 'เปิดโปรแกรม.bat')
   const icon = join(EXTENSION_DIR, 'icons', 'icon-128.ico')
   const dirs = option('--shortcut-dir') ? `@(${psText(resolve(option('--shortcut-dir')))})` : `@([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))`
@@ -517,7 +754,7 @@ public static class DhammaLnk {
 }`
 
 // ════════════════════════ 5. extension ใน Chrome ════════════════════════
-const chromeData = join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'User Data')
+const chromeData = MAC ? join(APP_SUPPORT, 'Google', 'Chrome') : join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'User Data')
 
 /** หา extension ID นี้ในทุกโปรไฟล์ของ Chrome → { path, disabled } หรือ null */
 function loadedExtension() {
@@ -546,6 +783,8 @@ function samePath(a, b) {
 }
 
 function chromeExe() {
+  // Mac: เรียกตัวโปรแกรมข้างใน .app ตรงๆ — ถ้า Chrome เปิดอยู่แล้ว จะส่งที่อยู่ไปเปิดเป็นแท็บใหม่ในหน้าต่างเดิม
+  if (MAC) return ['/Applications', join(homedir(), 'Applications')].map((d) => join(d, 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome')).find((p) => existsSync(p)) ?? null
   return [
     join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
     join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -555,6 +794,7 @@ function chromeExe() {
 
 function copyToClipboard(text) {
   try {
+    if (MAC) return execFileSync('/usr/bin/pbcopy', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] }), true
     powershell(`Set-Clipboard -Value ${psText(text)}`)
     return true
   } catch {
@@ -565,7 +805,7 @@ function copyToClipboard(text) {
 async function ensureExtension() {
   const label = 'Extension Cartoon Auto ใน Chrome'
   const chrome = chromeExe()
-  if (!chrome) return report(label, false, 'ไม่พบ Google Chrome ในเครื่องนี้', 'ติดตั้ง Chrome จาก https://www.google.com/chrome แล้วดับเบิลคลิก setup.exe อีกครั้ง')
+  if (!chrome) return report(label, false, 'ไม่พบ Google Chrome ในเครื่องนี้', `ติดตั้ง Chrome จาก https://www.google.com/chrome แล้วดับเบิลคลิก ${SETUP} อีกครั้ง`)
 
   let ext = loadedExtension()
   if (ext?.here && !ext.disabled) return report(label, true, 'โหลดไว้แล้ว')
@@ -574,7 +814,9 @@ async function ensureExtension() {
     ? 'เปิดสวิตช์ของ Cartoon Auto Bridge ในหน้า chrome://extensions ให้เป็นสีน้ำเงิน'
     : [
         ext ? `กด "Remove" ที่ Cartoon Auto ตัวเก่า (โหลดจาก ${ext.path}) ก่อน แล้ว` : '',
-        'เปิดสวิตช์ "Developer mode" มุมขวาบน → กด "Load unpacked" → คลิกช่องที่อยู่ด้านบนของหน้าต่างเลือกโฟลเดอร์ กด Ctrl+V แล้ว Enter → กด Select Folder',
+        MAC
+          ? 'เปิดสวิตช์ "Developer mode" มุมขวาบน → กด "Load unpacked" → ในหน้าต่างเลือกโฟลเดอร์ กด Cmd+Shift+G แล้ว Cmd+V แล้ว Enter → กด Select'
+          : 'เปิดสวิตช์ "Developer mode" มุมขวาบน → กด "Load unpacked" → คลิกช่องที่อยู่ด้านบนของหน้าต่างเลือกโฟลเดอร์ กด Ctrl+V แล้ว Enter → กด Select Folder',
       ].join('')
   if (quiet) return report(label, false, ext ? 'โหลดจากโฟลเดอร์อื่น/ถูกปิดอยู่' : 'ยังไม่ได้โหลด', steps)
 
@@ -583,7 +825,7 @@ async function ensureExtension() {
   console.log('')
   console.log('  ขั้นเดียวที่ต้องทำเอง (Chrome ไม่อนุญาตให้โปรแกรมทำแทน) — เปิดหน้า chrome://extensions ให้แล้ว')
   console.log(`  ${steps}`)
-  console.log(copied ? '  (คัดลอกที่อยู่โฟลเดอร์ extension ไว้ให้แล้ว แค่กด Ctrl+V)' : `  โฟลเดอร์: ${EXTENSION_DIR}`)
+  console.log(copied ? `  (คัดลอกที่อยู่โฟลเดอร์ extension ไว้ให้แล้ว แค่กด ${MAC ? 'Cmd+V' : 'Ctrl+V'})` : `  โฟลเดอร์: ${EXTENSION_DIR}`)
   if (noWait) return report(label, false, 'เปิดหน้า chrome://extensions ให้แล้ว รอโหลดใน Chrome', steps)
   console.log('  รอให้โหลดเสร็จ… (ไม่ต้องปิดหน้าต่างนี้ — ตรวจให้เองทุก 3 วินาที นานสุด 10 นาที)')
   const deadline = Date.now() + 10 * 60_000
@@ -600,6 +842,7 @@ function popup(text, icon) {
   // รันผ่าน setup.exe (stdout เป็น pipe ไม่ใช่หน้าต่าง cmd) → หน้าต่าง setup แสดงสรุปเองอยู่แล้ว
   // ป๊อปอัปซ้ำมักถูก Chrome บัง setup จึงค้างที่ "กำลังติดตั้ง..." รอคนกด OK ที่มองไม่เห็น (เจอจริง ต.ค. 2026)
   if (quiet || noWait || !process.stdout.isTTY) return
+  if (MAC) return void macDialog(text, { icon: { Error: 'stop', Warning: 'caution' }[icon] ?? 'note', buttons: ['OK'] })
   try {
     powershell([
       `Add-Type -AssemblyName System.Windows.Forms`,
@@ -610,7 +853,63 @@ function popup(text, icon) {
 }
 
 // ════════════════════════ ถอนการติดตั้ง ════════════════════════
+// ── Mac: ของที่ตัวติดตั้งวางไว้นอกโฟลเดอร์นี้ — ลบเฉพาะที่ชี้มาที่โฟลเดอร์นี้ ──
+function unregisterMac() {
+  const done = []
+  for (const { name, dir } of MAC_HOST_DIRS) {
+    const file = join(dir, `${HOST}.json`)
+    if (!existsSync(file)) { done.push({ name, state: 'none' }); continue }
+    let path = null
+    try { path = JSON.parse(readFileSync(file, 'utf8')).path } catch {}
+    if (path && !pointsHere(path)) { done.push({ name, state: 'other', where: dirname(dirname(path)) }); continue }
+    rmSync(file, { force: true })
+    done.push({ name, state: 'removed' })
+  }
+  return done
+}
+
+function removeShortcutsMac() {
+  let n = 0
+  const { apps, desktop } = macShortcutDirs()
+  const app = join(apps, APP_NAME)
+  if (existsSync(app) && macAppPointsHere(app)) {
+    rmSync(app, { recursive: true, force: true })
+    n++
+  }
+  if (desktop) {
+    const link = join(desktop, APP_NAME)
+    try {
+      if (lstatSync(link).isSymbolicLink() && (readlinkSync(link) === app || !existsSync(link))) {
+        rmSync(link, { force: true })
+        n++
+      }
+    } catch {}
+  }
+  return n
+}
+
+/** ปิด process ของโฟลเดอร์นี้ (node ใน runtime/ หรือที่รัน bridge/server.js ของโฟลเดอร์นี้) ยกเว้นตัวเอง → จำนวนที่ปิด */
+function stopMineMac() {
+  const out = execFileSync('/bin/ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' })
+  let n = 0
+  for (const line of out.split('\n')) {
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line)
+    if (!m || Number(m[1]) === process.pid) continue
+    if (m[2].startsWith(join(RUNTIME, '/')) || m[2].includes(join(ROOT, 'bridge', 'server.js'))) {
+      try { process.kill(Number(m[1]), 'SIGTERM'); n++ } catch {}
+    }
+  }
+  return n
+}
+
 function uninstall() {
+  if (MAC) {
+    unregisterMac()
+    rmSync(manifestFile, { force: true })
+    rmSync(batFile, { force: true })
+    removeShortcutsMac()
+    return console.log('ถอนการลงทะเบียนและลบ shortcut แล้ว (ไฟล์โปรแกรมและงานของคุณยังอยู่ครบ)')
+  }
   for (const key of REG_KEYS) {
     try { execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' }) } catch {}
   }
@@ -645,7 +944,27 @@ const EXT_NAME_EN = ascii(EXT_NAME) ? `"${EXT_NAME}"` : 'the extension of this p
  *   --yes          ไม่ถามยืนยัน · --keep-folder  ไม่ลบโฟลเดอร์ · --quiet  ไม่มีป๊อปอัป (ใช้ทดสอบ)
  * โฟลเดอร์ที่มี .git (โฟลเดอร์พัฒนา) ไม่ถูกลบเด็ดขาด
  */
+/**
+ * Mac: กล่องข้อความด้วย osascript (มีทุกเครื่อง ไม่ต้องขอสิทธิ์) — ข้อความส่งเป็นอาร์กิวเมนต์ ไม่ต้องหนีอักษรพิเศษ
+ * คืนชื่อปุ่มที่กด · กดปุ่มยกเลิก / ปิดกล่อง = null
+ */
+function macDialog(text, { title = 'Cartoon Auto', icon = 'note', buttons = ['OK'], cancel = null } = {}) {
+  const list = `{${buttons.map((_, i) => `item ${i + 3} of argv`).join(', ')}}`
+  const script = [
+    'on run argv',
+    `display dialog (item 1 of argv) with title (item 2 of argv) buttons ${list} default button ${buttons.length}${cancel ? ` cancel button ${buttons.indexOf(cancel) + 1}` : ''} with icon ${icon}`,
+    'return button returned of result',
+    'end run',
+  ]
+  try {
+    return execFileSync('/usr/bin/osascript', [...script.flatMap((l) => ['-e', l]), text, title, ...buttons], { encoding: 'utf8', timeout: 24 * 3600_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return null
+  }
+}
+
 function confirmBox(text) {
+  if (MAC) return macDialog(text, { title: `${PRODUCT} — ถอนการติดตั้ง`, icon: 'caution', buttons: ['ยกเลิก', 'ถอนการติดตั้ง'], cancel: 'ยกเลิก' }) === 'ถอนการติดตั้ง'
   try {
     return powershell([
       `Add-Type -AssemblyName System.Windows.Forms`,
@@ -702,7 +1021,7 @@ async function uninstallFull() {
   say('- Stopping the program...')
   try {
     // ปิดเฉพาะ process ของโฟลเดอร์นี้ (แบบเดียวกับ ปิดโปรแกรม.bat) ยกเว้นตัวเอง — ตัวนี้รันด้วย node ใน runtime\ เหมือนกัน
-    const n = powershell([
+    const n = MAC ? stopMineMac() : powershell([
       `$root = ${psText(ROOT)}`,
       `$mine = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ${process.pid} -and (($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\runtime\\', 'OrdinalIgnoreCase')) -or ($_.CommandLine -and $_.CommandLine.Contains($root + '\\bridge\\server.js'))) })`,
       `$mine | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
@@ -715,7 +1034,10 @@ async function uninstallFull() {
 
   step('ตัดการเชื่อมกับ Chrome / Edge')
   say('- Unlinking from Chrome / Edge...')
-  for (const key of REG_KEYS) {
+  if (MAC) {
+    for (const r of unregisterMac()) report(`ลงทะเบียน ${r.name}`, true, { none: 'ไม่มีอยู่แล้ว', removed: 'ลบแล้ว', other: `ชี้ไปโฟลเดอร์อื่น (${r.where}) — ไม่แตะ` }[r.state])
+  }
+  for (const key of MAC ? [] : REG_KEYS) {
     const target = readRegistry(key)
     const name = key.includes('Google') ? 'Chrome' : 'Edge'
     if (!target) report(`ลงทะเบียน ${name}`, true, 'ไม่มีอยู่แล้ว')
@@ -741,7 +1063,7 @@ async function uninstallFull() {
   step('ลบ shortcut')
   say('- Removing shortcuts...')
   try {
-    const removed = powershell([
+    const removed = MAC ? removeShortcutsMac() : powershell([
       `$root = ${psText(ROOT)}`,
       `$shell = New-Object -ComObject WScript.Shell`,
       `$n = 0`,
@@ -812,7 +1134,7 @@ console.log(`โฟลเดอร์โปรแกรม: ${ROOT}`)
 {
   const inside = (dir, parent) => !!parent && (dir.toLowerCase() + '\\').startsWith(resolve(parent).toLowerCase().replace(/\\?$/, '\\'))
   const temps = [tmpdir(), process.env.TEMP, process.env.TMP, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Temp')]
-  if (temps.some((t) => inside(ROOT, t))) {
+  if (!MAC && temps.some((t) => inside(ROOT, t))) {
     const text = 'ยังไม่ได้แตกไฟล์ zip — ตอนนี้โปรแกรมรันจากโฟลเดอร์ชั่วคราว ซึ่งจะถูกลบทิ้ง\n\n' +
       'คลิกขวาที่ไฟล์ zip แล้วเลือก "แตกไฟล์ทั้งหมด (Extract All)" (ถ้าเปิดด้วย WinRAR / 7-Zip ให้กด Extract ไปไว้ที่ D:\\ หรือ Documents)\n' +
       'จากนั้นเปิดโฟลเดอร์ที่แตกแล้ว และดับเบิลคลิก setup.exe ในนั้น'
@@ -838,9 +1160,9 @@ if (flag('--no-register')) {
 }
 try {
   register()
-  report('ลงทะเบียนตัวเชื่อม Chrome', true, hostPath === join(DIR, 'host.bat') ? '' : `ผ่าน ${dirname(dirname(hostPath))} (ชื่อโฟลเดอร์มีอักษรพิเศษ)`)
+  report('ลงทะเบียนตัวเชื่อม Chrome', true, hostPath === batFile ? '' : `ผ่าน ${dirname(dirname(hostPath))} (ชื่อโฟลเดอร์มีอักษรพิเศษ)`)
 } catch (err) {
-  report('ลงทะเบียนตัวเชื่อม Chrome', false, err.message, 'ดับเบิลคลิก setup.exe อีกครั้ง (ไม่ต้อง Run as administrator)')
+  report('ลงทะเบียนตัวเชื่อม Chrome', false, err.message, MAC ? `ดับเบิลคลิก ${SETUP} อีกครั้ง` : `ดับเบิลคลิก ${SETUP} อีกครั้ง (ไม่ต้อง Run as administrator)`)
 }
 
 step('ทดสอบเปิดโปรแกรมแบบเดียวกับที่ Chrome เปิด')
@@ -849,14 +1171,14 @@ if (verified.ok) {
   bridgeInfo = verified.info
   report('โปรแกรมในเครื่อง (bridge)', true, `เปิดแล้วที่ ${verified.info.url}`)
 } else {
-  report('โปรแกรมในเครื่อง (bridge)', false, verified.problem, 'ดูรายละเอียดใน bridge\\bridge.log หรือส่งภาพหน้าต่างนี้ให้ผู้ดูแล')
+  report('โปรแกรมในเครื่อง (bridge)', false, verified.problem, `ดูรายละเอียดใน ${join('bridge', 'bridge.log')} หรือส่งภาพหน้าต่างนี้ให้ผู้ดูแล`)
 }
 
 if (!flag('--no-shortcut')) {
   step('สร้าง shortcut')
   try {
     createShortcuts()
-    report('Shortcut "Cartoon Auto"', true, option('--shortcut-dir') ? option('--shortcut-dir') : 'บนเดสก์ท็อปและ Start menu')
+    report('Shortcut "Cartoon Auto"', true, option('--shortcut-dir') ? option('--shortcut-dir') : MAC ? 'บนเดสก์ท็อปและในโฟลเดอร์ Applications' : 'บนเดสก์ท็อปและ Start menu')
   } catch (err) {
     report('Shortcut "Cartoon Auto"', false, err.message.split(/\r?\n/)[0], 'ไม่มีผลกับการใช้งาน — เปิดโปรแกรมด้วยไอคอน extension ใน Chrome ได้เหมือนเดิม')
   }
@@ -896,7 +1218,7 @@ if (!failed.length) {
     '',
     ...failed.map((r) => `✗ ${r.label}${r.detail ? `: ${r.detail}` : ''}${r.fix ? `\n   → ${r.fix}` : ''}`),
     '',
-    'แก้แล้วดับเบิลคลิก setup.exe อีกครั้งได้เลย (รันซ้ำได้ ไม่มีอะไรเสีย)',
+    `แก้แล้วดับเบิลคลิก ${SETUP} อีกครั้งได้เลย (รันซ้ำได้ ไม่มีอะไรเสีย)`,
   ].join('\n')
 }
 console.log(summary)

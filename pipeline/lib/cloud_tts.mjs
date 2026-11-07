@@ -8,7 +8,7 @@
  * ทำทีละ segment เหมือนเสียงของเรา → ความยาวแต่ละไฟล์ใช้ทำ timecode ต่อได้ทันที
  */
 import { spawn } from 'node:child_process'
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { ROOT } from './config.mjs'
@@ -20,6 +20,21 @@ import { loadEnv } from './env.mjs'
  * (มี edge-tts ในตัว ใช้ได้ทันทีโดยไม่ต้องติดตั้ง) · .venv-edge ใช้กับเครื่องที่ลงแค่ edge-tts
  */
 export function edgePython() {
+  if (process.platform !== 'win32') {
+    // Mac: site-packages อยู่ใน lib/python3.x/ — ดูว่ามี edge_tts จริงในตัวไหน
+    const has = (dir) => {
+      try {
+        return readdirSync(join(dir, 'lib')).some((v) => /^python3/.test(v) && existsSync(join(dir, 'lib', v, 'site-packages', 'edge_tts')))
+      } catch {
+        return false
+      }
+    }
+    const main = join(ROOT, 'tts', '.venv')
+    if (has(main)) return join(main, 'bin', 'python')
+    const bundled = join(ROOT, 'runtime', 'python')
+    if (has(bundled)) return join(bundled, 'bin', 'python3')
+    return join(ROOT, 'tts', '.venv-edge', 'bin', 'python')
+  }
   const main = join(ROOT, 'tts', '.venv')
   if (existsSync(join(main, 'Lib', 'site-packages', 'edge_tts'))) return join(main, 'Scripts', 'python.exe')
   const bundled = join(ROOT, 'runtime', 'python')

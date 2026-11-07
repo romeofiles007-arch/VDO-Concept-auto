@@ -99,6 +99,7 @@ const videoOf = (slug) => join(ROOT, 'projects', slug, '06_render', `${slug}.mp4
 
 /** เปิดไฟล์/โฟลเดอร์ด้วยโปรแกรมของ Windows แบบหน้าต่างขยายเต็มจอ (start /max) */
 export function openMax(target) {
+  if (process.platform === 'darwin') return void spawn('/usr/bin/open', [target], { stdio: 'ignore' }).on('error', () => {})
   if (process.platform !== 'win32') return
   spawn('cmd.exe', ['/d', '/s', '/c', `start "" /max "${target}"`], { windowsVerbatimArguments: true, windowsHide: true, stdio: 'ignore' }).on('error', () => {})
 }

@@ -31,7 +31,10 @@ export function createKeepAwake({ busy, log = () => {}, platform = process.platf
     const encoded = Buffer.from(script(process.pid), 'utf16le').toString('base64')
     let child
     try {
-      child = spawnFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], { windowsHide: true, stdio: 'ignore' })
+      // Mac: caffeinate ที่มากับ macOS — -i ห้ามหลับเองระหว่างมีงาน (จอดับได้) · -w ปิดตัวเองเมื่อ bridge หายไป
+      child = platform === 'darwin'
+        ? spawnFn('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' })
+        : spawnFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], { windowsHide: true, stdio: 'ignore' })
     } catch (err) {
       retryAt = now() + RETRY_AFTER_FAIL_MS
       return log(`กันเครื่องหลับไม่ได้: ${err.message}`)
@@ -68,7 +71,7 @@ export function createKeepAwake({ busy, log = () => {}, platform = process.platf
     else if (!want && proc) stop()
   }
 
-  if (platform !== 'win32') return { tick() {}, stop() {}, active: () => false }
+  if (platform !== 'win32' && platform !== 'darwin') return { tick() {}, stop() {}, active: () => false }
   const timer = setInterval(tick, everyMs)
   timer.unref?.()
   tick()

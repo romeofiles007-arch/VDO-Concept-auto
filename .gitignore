@@ -8,6 +8,7 @@ projects/_selftest/
 .env
 bridge/bridge.log
 native/host.bat
+native/host.sh
 native/com.cartoon_auto.bridge.json
 tts/voices/*/
 tts/myvoice/transliterate_user.json

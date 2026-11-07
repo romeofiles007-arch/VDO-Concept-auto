@@ -18,6 +18,9 @@ import { hasKey } from '../pipeline/lib/env.mjs'
 
 const HF = join(homedir(), '.cache', 'huggingface', 'hub')
 const SETUP_CMD = 'powershell -ExecutionPolicy Bypass -File scripts\\setup-tts.ps1'
+const MAC = process.platform === 'darwin'
+// ตัวติดตั้งที่ลูกค้าดับเบิลคลิก — Windows: setup.exe · Mac: ติดตั้งครั้งแรก.command (ข้างในคือ native/install.mjs ตัวเดียวกัน)
+const SETUP = MAC ? 'ติดตั้งครั้งแรก.command' : 'setup.exe'
 
 /** รันคำสั่งแบบไม่บล็อก bridge — คืนข้อความบรรทัดแรก หรือ null ถ้าไม่มี/พัง */
 function probe(cmd, args, timeout = 8000) {
@@ -50,13 +53,13 @@ export async function checklist({ connected } = {}) {
     id: 'node', group: 'พื้นฐาน', label: 'Node.js 20 ขึ้นไป', need: 'required',
     status: nodeMajor >= 20 ? 'ok' : 'missing',
     detail: `ตอนนี้ ${process.version}`,
-    fix: nodeMajor >= 20 ? null : { text: 'ดับเบิลคลิก setup.exe ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด Node.js รุ่นใหม่ให้เอง' },
+    fix: nodeMajor >= 20 ? null : { text: `ดับเบิลคลิก ${SETUP} ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด Node.js รุ่นใหม่ให้เอง` },
   })
   add({
     id: 'ffmpeg', group: 'พื้นฐาน', label: 'ffmpeg (ตัดต่อวิดีโอ แปลงเสียง)', need: 'required',
     status: ffmpeg && ffprobe ? 'ok' : 'missing',
     detail: ffmpeg ? ffmpeg.replace(/ Copyright.*/, '') : 'ไม่พบคำสั่ง ffmpeg / ffprobe ในเครื่อง',
-    fix: ffmpeg && ffprobe ? null : { text: 'ดับเบิลคลิก setup.exe ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด ffmpeg ให้เอง แล้วกดตรวจใหม่' },
+    fix: ffmpeg && ffprobe ? null : { text: `ดับเบิลคลิก ${SETUP} ในโฟลเดอร์โปรแกรมอีกครั้ง — ดาวน์โหลด ffmpeg ให้เอง แล้วกดตรวจใหม่` },
   })
   const blueprint = join(ROOT, config.blueprint)
   add({
@@ -100,6 +103,15 @@ export async function checklist({ connected } = {}) {
   const localVoice = !['edge', 'gemini', 'elevenlabs'].includes(config.tts.engine)
   const packages = [['f5_tts_th', 'F5-TTS-THAI'], ['faster_whisper', 'Whisper'], ['edge_tts', 'Edge TTS'], ['torch', 'PyTorch']]
   const lacking = packages.filter(([dir]) => !sitePackage(dir)).map(([, name]) => name)
+  if (MAC) {
+    // ระบบเสียงในเครื่อง (F5-TTS / VoxCPM) ใช้การ์ดจอ NVIDIA (CUDA) ซึ่ง Mac ไม่มี — บอกตรงๆ แทนการชวนติดตั้งที่ทำไม่ได้
+    add({
+      id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (เสียงของเราเอง / เทรนเสียง)', need: localVoice ? 'required' : 'optional',
+      status: localVoice ? 'missing' : 'info',
+      detail: 'ยังไม่รองรับบน Mac (ต้องใช้การ์ดจอ NVIDIA) · เสียง Edge, ElevenLabs และ Gemini ใช้ได้ปกติ',
+      fix: localVoice ? { text: 'เลือกเสียง Edge, ElevenLabs หรือ Gemini ในขั้นที่ 3 ของแผงข้าง' } : null,
+    })
+  } else {
   add({
     id: 'tts', group: 'เสียงพากย์', label: 'ระบบเสียงในเครื่อง (tts\\.venv)', need: localVoice ? 'required' : 'optional',
     status: venv && !lacking.length ? 'ok' : 'missing',
@@ -120,6 +132,7 @@ export async function checklist({ connected } = {}) {
     detail: gpu ?? 'ไม่พบ — เสียงของเราเอง/เทรนเสียง/ถอดเสียงจะช้ามาก · เสียง Edge ใช้ได้ปกติ',
     fix: gpu ? null : { text: 'ลงไดรเวอร์ NVIDIA ล่าสุด (ถ้ามีการ์ด) หรือเลือกเสียง Edge ในขั้นที่ 3', url: 'https://www.nvidia.com/Download/index.aspx' },
   })
+  }
 
   const engine = config.tts.engine
   let voiceOk = false
@@ -128,7 +141,9 @@ export async function checklist({ connected } = {}) {
   if (engine === 'edge') {
     voiceOk = existsSync(edgePython())
     voiceDetail = `Edge · ${config.tts.edge?.voice}`
-    voiceFix = voiceOk ? null : { text: 'ติดตั้งระบบเสียงในเครื่อง (มี Edge TTS รวมอยู่)', action: 'setupTts', command: SETUP_CMD }
+    voiceFix = voiceOk ? null : MAC
+      ? { text: `ดับเบิลคลิก ${SETUP} ในโฟลเดอร์โปรแกรมอีกครั้ง — ลง Python + เสียง Edge ให้เอง` }
+      : { text: 'ติดตั้งระบบเสียงในเครื่อง (มี Edge TTS รวมอยู่)', action: 'setupTts', command: SETUP_CMD }
   } else if (engine === 'elevenlabs') {
     const el = config.tts.elevenlabs ?? {}
     voiceOk = hasKey('ELEVENLABS_API_KEY') && !!el.voiceId
