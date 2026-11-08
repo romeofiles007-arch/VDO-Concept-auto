@@ -42,13 +42,43 @@ async function failure(res, service) {
 
 // ── Facebook ──────────────────────────────────────────────────────
 
-/** ตรวจ Page ID + โทเค็น และอ่านชื่อเพจ */
+/**
+ * ตรวจ Page ID + โทเค็น → คืนชื่อเพจ + Page access token ที่โพสต์ได้จริง
+ * รับได้ทั้ง Page token และ User token (Graph API Explorer ตั้งต้นเป็น "โทเค็นการเข้าถึงของผู้ใช้")
+ * โพสต์วิดีโอขึ้นเพจด้วย User token ตรงๆ ไม่ได้ — ถ้าได้ User token มา ขอ Page token ของเพจนั้นจาก /me/accounts ให้เอง
+ */
 export async function facebookPageInfo({ pageId, token }, { fetchImpl = fetch } = {}) {
-  const url = `${GRAPH}/${encodeURIComponent(pageId)}?fields=id,name&access_token=${encodeURIComponent(token)}`
-  const res = await fetchImpl(url)
-  if (!res.ok) throw await failure(res, 'facebook')
-  const data = await res.json()
-  return { id: String(data.id), name: String(data.name ?? pageId) }
+  const get = async (path, accessToken = token) => {
+    const res = await fetchImpl(`${GRAPH}/${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`)
+    if (!res.ok) throw await failure(res, 'facebook')
+    return res.json()
+  }
+  const id = String(pageId)
+  const me = await get('me?fields=id,name')
+  let page
+  if (String(me.id) === id) {
+    page = { id, name: String(me.name ?? id), token, kind: 'page' }
+  } else {
+    // User token → หาเพจนี้ในรายการเพจที่แอปได้รับสิทธิ์
+    const list = await get('me/accounts?fields=id,name,access_token&limit=100')
+    const pages = list.data ?? []
+    const hit = pages.find((p) => String(p.id) === id)
+    if (!hit?.access_token) {
+      const seen = pages.length ? `เพจที่แอปเห็นตอนนี้: ${pages.map((p) => `${p.name} (${p.id})`).join(', ')}` : 'แอปยังไม่เห็นเพจไหนเลย'
+      throw new Error(
+        `Facebook: โทเค็นนี้เป็นโทเค็นผู้ใช้ (${me.name ?? me.id}) และแอปยังไม่ได้รับสิทธิ์เพจ ID ${id} — ${seen}. ` +
+        'แก้: ใน Graph API Explorer เพิ่มสิทธิ์ pages_show_list → กด Generate Access Token → ในหน้าต่างที่เด้งขึ้นกด "แก้ไขการตั้งค่า/เลือกเพจ" แล้วติ๊กเพจนี้ → จากนั้นเลือก "ผู้ใช้หรือเพจ" เป็นเพจนี้ แล้วคัดลอก Page token มาวาง',
+      )
+    }
+    page = { id, name: String(hit.name ?? id), token: hit.access_token, kind: 'user' }
+  }
+  // ตรวจสิทธิ์ + วันหมดอายุของโทเค็นที่จะใช้จริง (debug_token ใช้โทเค็นตัวเองตรวจตัวเองได้) — ตรวจไม่ได้ก็ไม่ขวาง
+  const info = await get(`debug_token?input_token=${encodeURIComponent(page.token)}`, page.token).then((r) => r.data ?? null).catch(() => null)
+  if (info?.scopes && !info.scopes.includes('pages_manage_posts')) {
+    throw new Error('Facebook: โทเค็นนี้ไม่มีสิทธิ์ pages_manage_posts — เพิ่มสิทธิ์นี้ใน Graph API Explorer แล้วกด Generate Access Token ใหม่')
+  }
+  page.expiresAt = info?.expires_at ? info.expires_at * 1000 : info ? 0 : null // 0 = ไม่หมดอายุ · null = ไม่รู้
+  return page
 }
 
 /** อัปโหลดวิดีโอขึ้นเพจ (เผยแพร่ทันที — การตั้งเวลาทำฝั่งเราเอง) */

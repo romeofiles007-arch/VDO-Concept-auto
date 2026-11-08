@@ -112,6 +112,34 @@ await test('Facebook: โทเค็นหมดอายุ → error ภา�
   )
 })
 
+// Graph ปลอม: /me ตอบตามชนิดโทเค็น · /me/accounts มีเพจเดียว (42) · debug_token ตอบสิทธิ์
+const fakeGraph = ({ scopes = ['pages_show_list', 'pages_manage_posts'], expires = 0 } = {}) => async (url) => {
+  const u = new URL(url)
+  const tok = u.searchParams.get('access_token')
+  if (u.pathname.endsWith('/me')) return reply(200, tok === 'page-tok' ? { id: '42', name: 'เพจ 42' } : { id: '9001', name: 'ผู้ใช้' })
+  if (u.pathname.endsWith('/me/accounts')) return reply(200, { data: [{ id: '42', name: 'เพจ 42', access_token: 'page-tok' }] })
+  if (u.pathname.endsWith('/debug_token')) return reply(200, { data: { scopes, expires_at: expires } })
+  return reply(404, { error: { message: 'unexpected ' + u.pathname } })
+}
+
+await test('Facebook: Page token ใช้ได้ตรงๆ', async () => {
+  const p = await S.facebookPageInfo({ pageId: '42', token: 'page-tok' }, { fetchImpl: fakeGraph() })
+  assert.deepEqual([p.name, p.token, p.kind, p.expiresAt], ['เพจ 42', 'page-tok', 'page', 0])
+})
+
+await test('Facebook: User token → แลกเป็น Page token ของเพจนั้นเอง', async () => {
+  const p = await S.facebookPageInfo({ pageId: '42', token: 'user-tok' }, { fetchImpl: fakeGraph({ expires: 1800000000 }) })
+  assert.deepEqual([p.token, p.kind, p.expiresAt], ['page-tok', 'user', 1800000000000])
+})
+
+await test('Facebook: User token แต่แอปไม่ได้รับสิทธิ์เพจนี้ → บอกให้ติ๊กเลือกเพจ + บอกเพจที่แอปเห็น', async () => {
+  await assert.rejects(S.facebookPageInfo({ pageId: '77', token: 'user-tok' }, { fetchImpl: fakeGraph() }), /ยังไม่ได้รับสิทธิ์เพจ ID 77.*เพจ 42 \(42\)/)
+})
+
+await test('Facebook: โทเค็นไม่มี pages_manage_posts → ไม่บันทึก', async () => {
+  await assert.rejects(S.facebookPageInfo({ pageId: '42', token: 'page-tok' }, { fetchImpl: fakeGraph({ scopes: ['pages_show_list'] }) }), /pages_manage_posts/)
+})
+
 await test('YouTube: ขอ token ใหม่ → เปิด resumable upload → ส่งไฟล์', async () => {
   const calls = []
   const out = await S.youtubeUpload({ clientId: 'c', clientSecret: 's', refreshToken: 'r', file: sample, title: 'ชื่อ <ทดสอบ>', description: 'd', tags: ['#ยุง'], privacy: 'unlisted' }, {

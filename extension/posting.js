@@ -573,7 +573,7 @@ export function initPosting({ api, localApp }) {
       el('h3', {}, kindTag('fb'), 'Facebook Page'),
       data.facebook.length
         ? el('ul', { className: 'pAccounts' }, data.facebook.map((a) => el('li', {},
-          pageAvatar(a), el('strong', {}, a.name), el('span', { className: 'pMeta' }, `ID ${a.pageId} · โทเค็น ${a.token}`),
+          pageAvatar(a), el('strong', {}, a.name), el('span', { className: 'pMeta' }, `ID ${a.pageId} · โทเค็น ${a.token}${a.tokenExpiresAt ? ` · หมดอายุ ${new Date(a.tokenExpiresAt).toLocaleString('th-TH')}` : a.tokenExpiresAt === 0 ? ' · ไม่หมดอายุ' : ''}`),
           el('button', { type: 'button', className: 'ghost', on: { click: () => { if (confirm(`ลบเพจ "${a.name}" ออกจากโหมดโพสต์? (โทเค็นจะถูกลบจากเครื่องนี้)`)) call('/api/posting/facebook/remove', { id: a.id }, 'ลบเพจแล้ว').catch(() => {}) } } }, 'ลบ'),
           catPicker('facebook', a), accountSlots('facebook', a))))
         : el('p', { className: 'hint' }, 'ยังไม่มีเพจ'),
@@ -594,7 +594,8 @@ export function initPosting({ api, localApp }) {
         el('ol', {},
           el('li', {}, 'Page ID: เปิดเพจ → เกี่ยวกับ (About) → ความโปร่งใสของเพจ จะเห็นรหัสเพจเป็นตัวเลข'),
           el('li', {}, 'สร้างแอปที่ developers.facebook.com (ประเภท Business) แล้วเปิด Graph API Explorer'),
-          el('li', {}, 'เลือกแอป → Get Page Access Token → ติ๊กสิทธิ์ pages_show_list, pages_read_engagement, pages_manage_posts → เลือกเพจ'),
+          el('li', {}, 'เลือกแอป → ติ๊กสิทธิ์ pages_show_list, pages_read_engagement, pages_manage_posts → Generate Access Token → ในหน้าต่างที่เด้งขึ้น ต้องติ๊กเลือกเพจที่จะโพสต์ด้วย (ไม่ติ๊ก = แอปโพสต์เพจนั้นไม่ได้)'),
+          el('li', {}, 'วางได้ทั้ง Page token และ User token — ถ้าเป็น User token โปรแกรมจะแลกเป็น Page token ของเพจนี้ให้เอง'),
           el('li', {}, 'อยากให้โทเค็นไม่หมดอายุ: แลกเป็น long-lived user token ใน Access Token Debugger ก่อน แล้วค่อยขอ Page token จากโทเค็นนั้น'),
           el('li', {}, 'คัดลอกโทเค็นของเพจมาวางด้านบน — เก็บไว้ในเครื่องนี้เท่านั้น ไม่ขึ้น GitHub ไม่อยู่ในแพ็กเกจลูกค้า'),
         )),

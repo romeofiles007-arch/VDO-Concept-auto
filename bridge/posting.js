@@ -512,16 +512,26 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         const token = String(body.token ?? '').trim()
         if (!/^\d{5,}$/.test(pageId)) return json(res, 400, { error: 'Page ID ต้องเป็นตัวเลข (ดูได้ในหน้าเกี่ยวกับของเพจ)' }), true
         if (token.length < 20) return json(res, 400, { error: 'ใส่ Page access token ให้ครบ' }), true
-        const page = await fb.info({ pageId, token }) // ตรวจว่าใช้ได้จริงก่อนบันทึก
+        // ตรวจว่าใช้ได้จริงก่อนบันทึก · ได้ User token มา → แลกเป็น Page token ของเพจนี้ (โพสต์ด้วย User token ไม่ได้)
+        let page
+        try {
+          page = await fb.info({ pageId, token })
+        } catch (err) {
+          log(`โพสต์อัตโนมัติ: เพิ่มเพจ ${pageId} ไม่สำเร็จ — ${err.message}`)
+          throw err
+        }
+        const pageToken = page.token ?? token
         const name = String(body.name ?? '').trim() || page.name
+        const tokenInfo = { tokenKind: page.kind ?? null, tokenExpiresAt: page.expiresAt ?? null }
         let id
         updateAccounts((data) => {
           const old = data.facebook.find((a) => a.pageId === pageId)
-          if (old) Object.assign(old, { name, token, checkedAt: Date.now() })
-          else data.facebook.push({ id: (id = newId()), name, pageId, token, addedAt: Date.now(), checkedAt: Date.now() })
+          if (old) Object.assign(old, { name, token: pageToken, ...tokenInfo, checkedAt: Date.now() })
+          else data.facebook.push({ id: (id = newId()), name, pageId, token: pageToken, ...tokenInfo, addedAt: Date.now(), checkedAt: Date.now() })
         })
         if (id) retarget()
-        log(`โพสต์อัตโนมัติ: เพิ่มเพจ "${name}"`)
+        const expiry = page.expiresAt ? ` · โทเค็นหมดอายุ ${new Date(page.expiresAt).toLocaleString('th-TH')} (แลกเป็น long-lived token จะไม่หมดอายุ)` : ''
+        log(`โพสต์อัตโนมัติ: เพิ่มเพจ "${name}"${page.kind === 'user' ? ' (แลก User token เป็น Page token ให้แล้ว)' : ''}${expiry}`)
         return json(res, 200, await view()), true
       }
       if (path === '/api/posting/facebook/remove' || path === '/api/posting/youtube/remove') {
