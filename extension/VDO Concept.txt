@@ -250,14 +250,16 @@ ART STYLE:
 - Slightly imperfect sketchy lines (drawn fast with a marker)
 
 CHARACTERS — 2 modes (the system says which one each clip uses; use ONE mode for every character in the clip):
-A) STICK MODE (default — no reference character image attached):
-- Simple stick figures with large circular heads
+A) SIMPLE MODE (default — no reference character image attached):
+- Simple doodle characters with large circular heads and a small rounded body (bean/pill-shaped torso)
+- Arms and legs are thick rounded tubes with volume — outlined on both sides with a bold black line and filled with color, simple round mitten hands and small rounded feet
+- NEVER stick figures: no single-line arms, no single-line legs, no stick limbs
 - Dot eyes, expressive thick brow lines
-- Sometimes fully colored heads/bodies
+- Fully colored heads/bodies/limbs
   (red = hot/embarrassed, white = neutral)
-- Props/costume pieces drawn on the stick body (cloak, hat, tie, tool) to tell characters apart
+- Props/costume pieces drawn on the body (cloak, hat, tie, tool) to tell characters apart
 B) FULL-BODY MODE (a reference character image is attached):
-- Full-body cartoon characters — NOT stick figures: solid torso, shoulders, arms and legs with volume
+- Full-body cartoon characters — NOT stick figures, NO single-line limbs: solid torso, shoulders, arms and legs with volume
 - Slightly big head (about 1/4–1/3 of body height), simple hands with fingers, shoes
 - Clothing drawn clearly: shirts, jackets, pants, uniforms, costumes that fit the story/era
 - Simple readable faces: dot or small oval eyes, expressive thick brows, clear mouth shapes
@@ -328,16 +330,16 @@ USAGE RULES:
 - ห้ามแก้สี/รูปร่าง/อุปกรณ์ข้ามช็อต
 ```
 
-**ตัวอย่าง (โปรเจกต์ "มนุษย์ 7 สายพันธุ์" — STICK MODE):**
+**ตัวอย่าง (โปรเจกต์ "มนุษย์ 7 สายพันธุ์" — SIMPLE MODE):**
 
 ```
 @sapiens   = Homo sapiens (ตัวหลัก)
-  - Tall slim stick figure
+  - Tall slim doodle body, thick tube arms and legs (outlined + color-filled)
   - Brown-red shoulder cloak
   - Wooden spear with grey stone tip
 
 @Neanderthal  = Neanderthal
-  - Stocky stick figure 30% wider
+  - Stocky doodle body 30% wider, extra-thick tube limbs
   - Dark brown fur hatches on limbs
   - Beige hide cloak, wooden club
 ```

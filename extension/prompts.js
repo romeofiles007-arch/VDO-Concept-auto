@@ -280,7 +280,7 @@ export function slugify(title) {
  *   doodle     — การ์ตูน 2D ตาม VISUAL STYLE DNA ของ Blueprint (เดิม)
  *   watercolor — ภาพวาดสีน้ำ
  *   chinese    — ภาพวาดหมึกจีน (shuimo + gongbi)
- *   body / bodyFlow = แบบตัวละครที่ใช้แทน FULL-BODY/STICK MODE
+ *   body / bodyFlow = แบบตัวละครที่ใช้แทน FULL-BODY/SIMPLE MODE
  */
 export const ART_STYLES = {
   doodle: { label: 'การ์ตูน doodle' },
