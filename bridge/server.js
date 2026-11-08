@@ -183,7 +183,7 @@ function enqueue(agent, kind, payload) {
 }
 
 // อัปเดตจาก GitHub — ห้ามดึงโค้ดใหม่ระหว่างมีงานค้าง (workInProgress ประกาศด้านล่าง เรียกตอนใช้งานจริงเท่านั้น)
-const updater = createUpdater({ log, busy: () => workInProgress() })
+const updater = createUpdater({ log, busy: () => busyReason() })
 const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater, scheduler: PORT === 8765 })
 // โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — ตัวตั้งเวลาโพสต์วนเฉพาะ bridge ตัวจริง
 const posting = createPosting({ jobs, enqueue, json, readBody, log, port: PORT, token: TOKEN, pipelineBusy: () => ui.busy(), scheduler: PORT === 8765 })
@@ -353,7 +353,23 @@ const server = createServer(async (req, res) => {
 /** มีงานค้างอยู่ไหม: งานของ ChatGPT/Flow ในคิว หรือขั้นของ pipeline กำลังรัน */
 // นับเฉพาะงานของแท็บจริง — งานทดสอบ (agent x / cancel-test / flow-selftest) ที่ค้างไว้เคยขวางไม่ให้ bridge รีสตาร์ทรับโค้ดใหม่
 const REAL_AGENTS = new Set(['chatgpt', 'flow', 'meta'])
-const workInProgress = () => ui.busy() || posting.busy() || [...jobs.values()].some((j) => REAL_AGENTS.has(j.agent) && (j.status === 'running' || (j.status === 'queued' && Date.now() - j.createdAt < 30 * 60_000)))
+const liveJob = (j) => REAL_AGENTS.has(j.agent) && (j.status === 'running' || (j.status === 'queued' && Date.now() - j.createdAt < 30 * 60_000))
+const workInProgress = () => ui.busy() || posting.busy() || [...jobs.values()].some(liveJob)
+
+/**
+ * งานที่ค้างอยู่เป็นภาษาคน (null = ว่าง) — ให้ปุ่มอัปเดตบอกได้ว่ารออะไร
+ * เคยบอกแค่ "กำลังทำคลิปหรือมีงานค้าง" ตอนที่จริงๆ คือ AI ตรวจคลิปในคิวโพสต์อยู่ ผู้ใช้เลยงง
+ */
+function busyReason() {
+  if (ui.busy()) return 'กำลังทำคลิปอยู่'
+  if (posting.busy()) return 'กำลังโพสต์หรืออัปคลิปขึ้น Google Drive'
+  const job = [...jobs.values()].find(liveJob)
+  if (!job) return null
+  const label = String(job.payload?.label ?? '')
+  if (/ตรวจคลิป/.test(label)) return 'AI กำลังตรวจคลิปในคิวโพสต์'
+  if (/คิดชื่อคลิป/.test(label)) return 'ChatGPT กำลังเขียนชื่อคลิปและคำบรรยาย'
+  return job.agent === 'flow' ? 'Google Flow กำลังทำงานอยู่' : job.agent === 'meta' ? 'Meta AI กำลังทำงานอยู่' : 'ChatGPT กำลังทำงานอยู่'
+}
 
 // โค้ดของโปรแกรมเปลี่ยน → รีสตาร์ทตัวเองเมื่อว่าง (เฉพาะตัวจริงที่ port 8765 — ตัวทดสอบไม่ต้อง)
 if (PORT === 8765) watchBridgeCode({ busy: workInProgress, server, log })

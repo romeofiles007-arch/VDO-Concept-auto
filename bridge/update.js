@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
-import { createPackageUpdater } from './update-package.js'
+import { createPackageUpdater, busyMessage } from './update-package.js'
 
 const CHECK_EVERY_MS = 30 * 60_000
 const FIRST_CHECK_MS = 20_000
@@ -121,7 +121,8 @@ export function createUpdater({ log, busy, cwd = ROOT, schedule = true }) {
     if (state.error) throw new Error(state.error)
     if (!state.behind) return snapshot()
     if (state.ahead) throw new Error(`เครื่องนี้มีงาน ${state.ahead} commit ที่ยังไม่ได้ส่งขึ้น GitHub — อัปเดตอัตโนมัติจะทับกัน ให้ push ก่อน`)
-    if (busy()) throw new Error('กำลังทำคลิปหรือมีงานค้างอยู่ — อัปเดตเมื่อทำเสร็จหรือกดหยุดก่อน (อัปเดตกลางงานโปรแกรมจะรีสตาร์ทระหว่างทำ)')
+    const why = busy()
+    if (why) throw new Error(busyMessage(why))
 
     state.applying = true
     const from = (await run(['rev-parse', '--short', 'HEAD'])).stdout

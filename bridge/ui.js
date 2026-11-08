@@ -691,7 +691,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         try {
           return json(res, 200, await updater.apply()), true
         } catch (err) {
-          return json(res, 409, { error: err.message, ...updater.snapshot() }), true
+          // error ต้องอยู่หลัง snapshot — snapshot มี error: null ซึ่งเคยทับสาเหตุจริง ผู้ใช้เห็นแค่ "โปรแกรมในเครื่องตอบ 409"
+          return json(res, 409, { ...updater.snapshot(), error: err.message }), true
         }
       }
 
