@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
+import { zipFolder } from './lib/zip.mjs'
 // ไฟล์ที่ไปถึงลูกค้า / ค่าเริ่มต้นของลูกค้า — กฎชุดเดียวกับตัวอัปเดตในเครื่องลูกค้า (bridge/update-package.js)
 import { RESET, USER_CONFIG, DEFAULT_CONFIG, shipsToCustomer, isCustomerData, customerDefaults, installerProblems, githubRepoUrl } from '../bridge/package-rules.js'
 
@@ -156,7 +157,7 @@ writeFileSync(join(OUT, 'VERSION.json'), JSON.stringify({ commit, sha, dirty, bu
 writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   'Cartoon Auto — ระบบทำคลิปการ์ตูนอัตโนมัติ',
   '',
-  'สิ่งที่ต้องมี: Windows 10/11 · Google Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้',
+  'สิ่งที่ต้องมี: Windows 10/11 หรือ Mac (macOS 11 ขึ้นไป) · Google Chrome ที่ล็อกอิน ChatGPT และ Google Flow ไว้',
   '(ไม่ต้องติดตั้ง Node.js / ffmpeg / Python เอง — แถมมาในโฟลเดอร์ runtime แล้ว)',
   '',
   'วิธีติดตั้ง (ครั้งเดียว)',
@@ -175,6 +176,14 @@ writeFileSync(join(OUT, 'อ่านก่อนใช้งาน.txt'), [
   '                    (การตั้งค่า งานคลิป และเสียงที่ทำไว้ไม่หาย · อัปเดตได้เมื่อไม่ได้ทำคลิปอยู่)',
   'ถอนการติดตั้ง → ดับเบิลคลิก ถอนการติดตั้ง.bat — ปิดโปรแกรม ตัดการเชื่อมกับ Chrome ลบ shortcut และถามก่อนลบโฟลเดอร์นี้',
   '                    (ลบโฟลเดอร์ = งานคลิปและการตั้งค่าหายด้วย · extension ใน Chrome ต้องกด Remove เอง ระบบเปิดหน้าให้)',
+  '',
+  'ติดตั้งบน Mac (ใช้ zip เดียวกันนี้)',
+  '  1. ดับเบิลคลิกไฟล์ zip ให้แตกเป็นโฟลเดอร์ แล้วดับเบิลคลิก ติดตั้งครั้งแรก (for Mac).command',
+  '     ถ้าขึ้นว่าเปิดไม่ได้เพราะมาจากอินเทอร์เน็ต → กด Done → System Settings → Privacy & Security → เลื่อนลงกด Open Anyway',
+  '  2. ตัวติดตั้งโหลด Node.js, ffmpeg, Python มาไว้ในโฟลเดอร์ runtime ของโปรแกรมเอง ทดสอบว่าใช้ได้ แล้วขึ้นหน้าต่างสรุป',
+  '     ไม่ต้องลง Node.js / ffmpeg / Homebrew / nvm เอง — พิมพ์ node -v หรือ ffmpeg -version ใน Terminal จะขึ้น command not found เป็นปกติ',
+  '  3. ขั้นใน Chrome เหมือน Windows (Load unpacked → กด Cmd+Shift+G แล้ว Cmd+V → Select)',
+  '  เปิด/ปิด/ถอน: เปิดโปรแกรม (for Mac).command · ปิดโปรแกรม (for Mac).command · ถอนการติดตั้ง (for Mac).command',
   '',
   `รุ่น ${commit}${dirty ? ' (+ งานที่ยังไม่ commit)' : ''} · สร้างเมื่อ ${new Date().toLocaleString('th-TH')}`,
   '',
@@ -238,7 +247,8 @@ if (zip) {
   step('บีบอัดเป็น zip (ใช้เวลาสักครู่)')
   const zipFile = join(DIST, `${OUT_NAME}.zip`)
   rmSync(zipFile, { force: true })
-  execFileSync('powershell.exe', ['-NoProfile', '-Command', `Compress-Archive -Path '${OUT.replace(/'/g, "''")}' -DestinationPath '${zipFile.replace(/'/g, "''")}' -CompressionLevel Optimal`], { stdio: 'inherit' })
+  // ไม่ใช้ Compress-Archive — zip ของมันคั่นโฟลเดอร์ด้วย  และไม่มีสิทธิ์รันไฟล์ .command → Mac ใช้ไม่ได้ (ดู scripts/lib/zip.mjs)
+  zipFolder(OUT, zipFile)
   console.log(`✅ ${zipFile} (${mb(statSync(zipFile).size)})`)
 }
 console.log(`\nส่งให้ลูกค้า: ${zip ? `${OUT_NAME}.zip` : `โฟลเดอร์ ${basename(OUT)}`} — ลูกค้าแตกไฟล์/วาง แล้วดับเบิลคลิก setup.exe`)
