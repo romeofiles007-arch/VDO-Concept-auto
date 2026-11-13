@@ -283,7 +283,17 @@ export function slugify(title) {
  *   body / bodyFlow = แบบตัวละครที่ใช้แทน FULL-BODY/SIMPLE MODE
  */
 export const ART_STYLES = {
-  doodle: { label: 'การ์ตูน doodle' },
+  doodle: {
+    label: 'การ์ตูน doodle',
+    // ไม่มีกฎนี้ = ไม่มีที่ไหนบอกว่า "ห้ามภาพถ่าย" เลย (กฎแบบตัวละครบอกแค่ห้ามตัวก้าง ซึ่งรูปคนจริงก็ผ่าน)
+    // → Nano Banana วาดช็อตวิวและช็อตที่ไม่มีตัวละครเป็นภาพถ่ายสมจริง ปนกับการ์ตูนในคลิปเดียว (ลูกค้าแจ้ง 13 พ.ย. 2026)
+    rule: `**ลายเส้นของคลิปนี้: การ์ตูน 2D doodle ตาม ART STYLE ใน VISUAL STYLE DNA ของ Blueprint — ใช้กับทุกช็อตทั้งคลิป**
+- ART STYLE ใน Style Bible ให้เขียนว่า: Hand-drawn 2D doodle cartoon illustration — flat colors, bold black outlines, slightly imperfect marker lines, fully colored
+- ทุกช็อตเป็นภาพวาดการ์ตูน ไม่ใช่ภาพถ่าย ไม่ใช่ภาพสมจริง ไม่ใช่ 3D render — ทั้งตัวละคร ฉาก สัตว์ สิ่งของ ท้องฟ้า ภูเขา น้ำ และพื้นผิว วาดเป็นการ์ตูนลายเส้นเดียวกันหมด
+- ช็อตที่เป็นวิวทิวทัศน์ ภาพโคลสอัพของสิ่งของ หรือช็อตที่ไม่มีตัวละคร ก็ต้องเป็นการ์ตูนลายเส้นเดียวกัน ห้ามเป็นภาพถ่ายธรรมชาติ
+- ห้ามใช้คำว่า photo, photograph, photorealistic, photorealism, realistic, lifelike, cinematic photography, DSLR, 4K, 8K, hyperrealistic หรือคำที่สื่อถึงภาพถ่าย ทั้งใน Style Bible และในทุกช็อต`,
+    flow: 'ลายเส้น: การ์ตูน 2D doodle วาดมือ เส้นขอบดำหนา ลงสีแบนสดเต็มภาพ — ทุกภาพเป็นภาพวาดการ์ตูน ไม่ใช่ภาพถ่าย ไม่ใช่ภาพสมจริง ไม่ใช่ 3D render แม้แต่ช็อตวิวทิวทัศน์ ช็อตโคลสอัพสิ่งของ หรือช็อตที่ไม่มีตัวละคร ใช้ลายเส้นนี้ทุกภาพ',
+  },
   watercolor: {
     label: 'ภาพวาดสีน้ำ',
     rule: `**ลายเส้นของคลิปนี้: ภาพวาดสีน้ำ — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**

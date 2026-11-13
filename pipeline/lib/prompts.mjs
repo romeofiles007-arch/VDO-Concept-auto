@@ -140,6 +140,14 @@ export function fitPortrait(text) {
     .replace(/tall vertical composition\s+ภายในเฟรมแนวตั้ง/g, 'tall vertical composition')
 }
 
+/**
+ * บรรทัดลายเส้นของคลิป — ส่งไปกับงานด้วย เพื่อให้ extension ย้ำได้ทุกคำสั่งรอบถัดๆ ไป
+ * (คลิปยาวสั่งเป็นชุดละ 10 ช็อต ลายเส้นในข้อความแรกจางหาย → รอบหลังได้ภาพถ่ายสมจริงปนการ์ตูน)
+ */
+export function flowStyleNote(config = loadConfig(), slug = null) {
+  return artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())
+}
+
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
 export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   const portrait = orientationOf(config) === 'portrait'

@@ -557,22 +557,24 @@ ${example}
 
 /** agent หยุดกลางทาง (high demand / agent failed / ทำไม่ครบ) → สั่งต่อเฉพาะช็อตที่ขาด ใน project เดิม ตัวละครจึงยังเหมือนเดิม */
 /** agent ตอบกลับเป็นแผน/คำถาม ("ต้องการให้เริ่มสร้างภาพไหม") แทนที่จะสร้างภาพ → สั่งให้เริ่มเลย */
-function goInstruction(shots) {
-  return `เริ่มสร้างภาพได้เลยทุกช็อตตาม shot list ที่ส่งไป ไม่ต้องถามยืนยันและไม่ต้องสรุปแผนอีก ใช้ Style Bible และ Character Bible เดิม (lock ตัวละคร)
+function goInstruction(shots, styleNote = '') {
+  return `เริ่มสร้างภาพได้เลยทุกช็อตตาม shot list ที่ส่งไป ไม่ต้องถามยืนยันและไม่ต้องสรุปแผนอีก ใช้ Style Bible และ Character Bible เดิม (lock ตัวละคร)${styleNote ? `\n${styleNote}` : ''}
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์หน้าบรรทัดเป๊ะๆ เช่น "${shots[0].filename} SHOT" (ชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ)`
 }
 
-function continueInstruction(batch, { remaining, safer }) {
+// ลายเส้นต้องย้ำทุกคำสั่ง — คลิปยาวสั่งเป็นชุดละ 10 ช็อต ลายเส้นในข้อความแรกจางหาย แล้วได้ภาพถ่ายสมจริงปนการ์ตูน
+function continueInstruction(batch, { remaining, safer, styleNote = '' }) {
+  const style = styleNote ? `\n${styleNote}` : ''
   const naming = `ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ตามหน้าบรรทัดเป๊ะๆ เช่น "${batch[0].filename} SHOT" (ชื่อภาพเท่านั้น ห้ามเขียนชื่อไฟล์ เลข SHOT หรือ @TAG ลงในภาพ)`
   if (safer) {
     return `ช็อตต่อไปนี้สร้างไม่สำเร็จหลายครั้งแล้ว (Failed) — น่าจะติดตัวกรองเนื้อหา
 ปรับภาพให้ปลอดภัยขึ้นแต่ยังเล่าเรื่องเดิม: ไม่มีเลือด บาดแผล อาวุธกระทบร่างกาย การทำร้าย หรือหน้าน่ากลัวแบบสมจริง
-ใช้วิธีเล่าอ้อม เช่น เงา สัญลักษณ์ มุมกล้องไกล หรือท่าทางตกใจแบบการ์ตูน · Style Bible และ Character Bible เดิมทุกอย่าง (lock ตัวละคร)
+ใช้วิธีเล่าอ้อม เช่น เงา สัญลักษณ์ มุมกล้องไกล หรือท่าทางตกใจแบบการ์ตูน · Style Bible และ Character Bible เดิมทุกอย่าง (lock ตัวละคร)${style}
 ${naming}
 
 ${batch.map(shotLine).join('\n\n')}`
   }
-  return `ยังขาดภาพอีก ${remaining} ช็อต — รอบนี้สร้าง ${batch.length} ช็อตนี้ก่อน ใช้ Style Bible และ Character Bible เดิมทุกอย่าง (lock ตัวละครเหมือนภาพที่ทำไปแล้ว)
+  return `ยังขาดภาพอีก ${remaining} ช็อต — รอบนี้สร้าง ${batch.length} ช็อตนี้ก่อน ใช้ Style Bible และ Character Bible เดิมทุกอย่าง (lock ตัวละครเหมือนภาพที่ทำไปแล้ว)${style}
 ${naming}
 
 ${batch.map(shotLine).join('\n\n')}`
@@ -650,7 +652,7 @@ async function renameProject(title) {
 }
 
 async function runImageJob(job) {
-  const { prompt, shots, model = 'Nano Banana 2 Lite', aspect = '16:9', attachments = [], projectTitle } = job.payload
+  const { prompt, shots, model = 'Nano Banana 2 Lite', aspect = '16:9', attachments = [], projectTitle, styleNote = '' } = job.payload
   const expected = shots.length
   const wanted = new Set(shots.map((s) => s.filename))
   await openProject()
@@ -702,7 +704,7 @@ async function runImageJob(job) {
     if (collectTiles().size - base <= 0 && !picks.size && nudges < 3) {
       nudges++
       if (agentBusy()) await waitFor(() => !agentBusy(), { timeout: 10 * 60_000, interval: 2000, label: 'Agent ว่าง' })
-      await sendPrompt(goInstruction(shots))
+      await sendPrompt(goInstruction(shots, styleNote))
       continue
     }
 
@@ -739,7 +741,7 @@ async function runImageJob(job) {
         await sleep(20_000)
       }
       if (agentBusy()) await waitFor(() => !agentBusy(), { timeout: 10 * 60_000, interval: 2000, label: 'Agent ว่าง' })
-      await sendPrompt(continueInstruction(missing.slice(0, RETRY_BATCH), { remaining: missing.length, safer: false }))
+      await sendPrompt(continueInstruction(missing.slice(0, RETRY_BATCH), { remaining: missing.length, safer: false, styleNote }))
       continue
     }
     busyWaits = 0
@@ -755,7 +757,7 @@ async function runImageJob(job) {
     if (useSafer && batch.every((s) => tries.get(s.filename) >= SAFE_AFTER + 2)) break
     for (const s of batch) tries.set(s.filename, tries.get(s.filename) + 1)
     if (agentBusy()) await waitFor(() => !agentBusy(), { timeout: 10 * 60_000, interval: 2000, label: 'Agent ว่าง' })
-    await sendPrompt(continueInstruction(batch, { remaining: missing.length, safer: useSafer }))
+    await sendPrompt(continueInstruction(batch, { remaining: missing.length, safer: useSafer, styleNote }))
   }
 
   if (!saved.size) throw new Error('Agent ไม่ได้สร้างภาพที่ตั้งชื่อเป็น timecode เลย — ดูในแท็บ Flow')

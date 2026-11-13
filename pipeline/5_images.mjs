@@ -12,7 +12,7 @@ import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
-import { flowPrompt, aspectOf, stripSafeArea, tagNames, untagShotPrompt, recolorBrief, recolorShotPrompt } from './lib/prompts.mjs'
+import { flowPrompt, flowStyleNote, aspectOf, stripSafeArea, tagNames, untagShotPrompt, recolorBrief, recolorShotPrompt } from './lib/prompts.mjs'
 import { characterAttachments } from './lib/character.mjs'
 import { coverShot, coverBriefLines, hasCover, COVER_NAME } from './lib/cover.mjs'
 import { probeSize } from './lib/ffmpeg.mjs'
@@ -94,6 +94,7 @@ const result = await runJob({
   kind: 'generate-images',
   payload: {
     prompt: flowPrompt(brief, undefined, slug),
+    styleNote: flowStyleNote(config, slug), // ย้ำลายเส้นทุกคำสั่งรอบถัดไป — กันภาพถ่ายสมจริงปนการ์ตูนกลางคลิป
     shots: shots.map(untag).map((s) => ({ filename: s.filename, shot: s.shot, prompt: s.prompt })), // คำสั่งซ้ำ/ขอช็อตที่ขาดก็ไม่มี @TAG ในคำบรรยาย
     model: 'Nano Banana 2 Lite', // ใช้ 0 credits — extension ตรวจตัวเลข credit ก่อนสั่ง agent ทุกครั้ง
     aspect, // 16:9 แนวนอน | 9:16 แนวตั้ง
