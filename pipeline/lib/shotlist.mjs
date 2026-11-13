@@ -11,6 +11,9 @@ import { join } from 'node:path'
 import { projectDir } from './config.mjs'
 import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule, noTextOn } from './prompts.mjs'
 import { activeCharacter, characterRule, bodyStyleRule } from './character.mjs'
+// ทางนี้คือทางที่แอปกับ autopilot ใช้จริง — เดิมไม่เคยส่งกฎลายเส้นให้ ChatGPT เลย
+// Style Bible จึงออกมาเป็น doodle ตาม Blueprint เสมอ แม้ผู้ใช้เลือกสีน้ำ/จีน/ภาพถ่าย
+import { artStyleOf, artBodyRule, artImageRule, artIsPhoto } from './art_style.mjs'
 import { coverRequest, parseCover, saveCoverPrompt, readCoverPrompt, coverShot, coverBriefLines } from './cover.mjs'
 import { orientationOf } from './prompts.mjs'
 
@@ -94,7 +97,8 @@ export function nextRoundPrompt(config, slug, { title, timecodeText }) {
   if (!bible) {
     // ตัวละครของฉัน: กำหนด Character Bible จากรูป/คำอธิบายที่ผู้ใช้ให้ แทนตัวละครตัวอย่างของ Blueprint
     const character = activeCharacter()
-    const charRule = characterRule(character)
+    const style = artStyleOf(slug, config)
+    const charRule = characterRule(character, { photo: artIsPhoto(style) })
     return {
       round,
       batch: batch.length,
@@ -118,7 +122,7 @@ ${batch.map(slotLine).join('\n')}
 - เรียงตามนี้: 5.1 Style Bible → 5.2 Character Bible (ครอบคลุมตัวละครของทั้งคลิป) → 5.3 Shot List
 - ส่วน 5.3 ต้องขึ้นต้นด้วยบรรทัด "=== SHOT LIST ===" แล้วตามด้วย shot
 ${OUTPUT_RULES}${orientationRule(config) ? `\n${orientationRule(config)}` : ''}
-${bodyStyleRule(character)}${charRule ? `\n${charRule}` : ''}
+${artBodyRule(style, bodyStyleRule(character), !!character?.images.length)}${artImageRule(style)}${charRule ? `\n${charRule}` : ''}
 ${coverRequest(orientationOf(config) === 'portrait', language)}`,
     }
   }

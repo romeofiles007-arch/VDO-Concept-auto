@@ -1,8 +1,11 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT, loadConfig } from './config.mjs'
-import { characterFlowNote, bodyStyleRule, bodyStyleFlowNote } from './character.mjs'
-import { artStyleOf, artBodyRule, artImageRule, artFlowNote } from './art_style.mjs'
+import { activeCharacter, characterFlowNote, bodyStyleRule, bodyStyleFlowNote } from './character.mjs'
+import { artStyleOf, artBodyRule, artImageRule, artFlowNote, artIsPhoto } from './art_style.mjs'
+
+/** ผู้ใช้แนบรูปตัวละครไว้ไหม — ลายเส้นบางแบบมีกฎตัวละครคนละชุดระหว่างแนบ/ไม่แนบ */
+const hasCharacterRef = () => !!activeCharacter()?.images.length
 
 import * as shared from '../../extension/prompts.js'
 
@@ -57,7 +60,7 @@ ${table}
 - ช็อตที่กำกับว่า "ภาพต่อเนื่อง" ให้เป็น mini-sequence ของช็อตก่อนหน้า ไม่ใช่ฉากใหม่
 - ใส่ pattern interrupt ทุก 15-30 วิ ตามกฎ 6
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
-${artBodyRule(artStyleOf(slug, config), bodyStyleRule())}${artImageRule(artStyleOf(slug, config))}
+${artBodyRule(artStyleOf(slug, config), bodyStyleRule(), hasCharacterRef())}${artImageRule(artStyleOf(slug, config))}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
 ${imageLanguageRule(clipLanguage(config, slug), noTextOn(config))}`
 }
@@ -145,28 +148,34 @@ export function fitPortrait(text) {
  * (คลิปยาวสั่งเป็นชุดละ 10 ช็อต ลายเส้นในข้อความแรกจางหาย → รอบหลังได้ภาพถ่ายสมจริงปนการ์ตูน)
  */
 export function flowStyleNote(config = loadConfig(), slug = null) {
-  return artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())
+  return artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())
 }
 
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
 export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   const portrait = orientationOf(config) === 'portrait'
-  const charNote = characterFlowNote()
+  const photo = artIsPhoto(artStyleOf(slug, config)) // ลายเส้นภาพถ่าย — กฎ "สีสด ห้ามโทนหม่น" ของภาพวาดใช้ไม่ได้
+  const charNote = characterFlowNote(undefined, { photo })
+  // ภาพวาด: กันภาพลายเส้นไม่ลงสี/ขาวดำ · ภาพถ่าย: กันภาพซีด แต่ยอมให้เกรดสีและเงาเข้มแบบหนัง
+  const colorRule = photo
+    ? 'ทุกภาพเป็นภาพสีเต็มเฟรม สีและแสงสมจริง — ห้ามภาพขาวดำหรือซีเปีย (เงาเข้ม แสงสลัว และการเกรดสีให้เข้ากับอารมณ์ฉากทำได้)'
+    : 'ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด'
+  const colorReminder = photo ? 'ทุกภาพเป็นภาพสี ห้ามขาวดำ/ซีเปีย' : 'ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา'
   const textRule = noTextOn(config)
     ? 'ห้ามมีตัวหนังสือทุกชนิดในภาพช็อต — ไม่มีข้อความ ป้ายคำ คำบรรยาย ตัวเลข หรือ bubble ที่มีตัวอักษร · ป้าย หนังสือ จอในฉากให้ว่างหรือเป็นลายเส้นอ่านไม่ออก · ถ้าช็อตไหนสั่งข้อความในเครื่องหมายคำพูดไว้ ให้ข้ามข้อความนั้น (ยกเว้นภาพปก cover.png ใส่หัวข้อตามที่สั่ง)'
     : 'ตัวอักษรในภาพมีได้เฉพาะข้อความที่ shot สั่งไว้ในเครื่องหมายคำพูดเท่านั้น'
   return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
 เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
-${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ · ห้ามวาดภาพแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง — ขอบฟ้าเป็นแนวนอน พื้นอยู่ล่าง ท้องฟ้าอยู่บน ตัวละครยืนตั้งตรง' : ''}
+${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ · ห้ามวาดภาพแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง — ขอบฟ้าเป็นแนวนอน พื้นอยู่ล่าง ท้องฟ้าอยู่บน ตัวละครยืนตั้งตรง' : ''}
 ทุกภาพต้องเต็มเฟรม ฉากหลังยาวถึงขอบทุกด้าน ห้ามมีแถบว่าง ขอบขาว หรือพื้นที่เปล่าด้านบน/ล่าง
-ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด
+${colorRule}
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"
 ชื่อไฟล์ เลข SHOT และ @TAG ใช้ตั้งชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ
 @TAG (เช่น @main @crowd1) เป็นชื่อเรียกตัวละครในคำสั่งเท่านั้น ห้ามวาดป้ายชื่อ ตัวอักษร @ หรือชื่อตัวละครลอยเหนือหัว/บนตัวละครเด็ดขาด
 
 ${portrait ? fitPortrait(agentBrief) : agentBrief}
 
-ย้ำ: ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
+ย้ำ: ${colorReminder} · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
 }
 
 /** แยก shot list ออกจาก OUTPUT 5 แล้วจับคู่กับช่อง shot ที่เราคำนวณไว้ */

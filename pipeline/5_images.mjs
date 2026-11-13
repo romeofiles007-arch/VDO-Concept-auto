@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
 import { flowPrompt, flowStyleNote, aspectOf, stripSafeArea, tagNames, untagShotPrompt, recolorBrief, recolorShotPrompt } from './lib/prompts.mjs'
+import { artStyleOf, artIsPhoto } from './lib/art_style.mjs'
 import { characterAttachments } from './lib/character.mjs'
 import { coverShot, coverBriefLines, hasCover, COVER_NAME } from './lib/cover.mjs'
 import { probeSize } from './lib/ffmpeg.mjs'
@@ -64,7 +65,10 @@ if (!shots.length) {
 }
 
 // brief = Style + Character Bible เดิม + เฉพาะ shot ที่จะสร้าง
-const briefHead = recolorBrief(stripSafeArea(readFileSync(briefFile, 'utf8').split(/^=== SHOT LIST ===$/m)[0]).trim()) // ห้ามโทนเทา/ขาวดำ
+// ลายเส้นภาพถ่าย (ภาพเสมือนจริง / แบบหนัง): โทนหม่น เงาเข้ม และเกรดสีคือตัวงาน ห้ามเขียนทับเป็นสีสด
+const photoStyle = artIsPhoto(artStyleOf(slug, config))
+const recolorIfDrawn = (t) => (photoStyle ? t : recolorBrief(t))
+const briefHead = recolorIfDrawn(stripSafeArea(readFileSync(briefFile, 'utf8').split(/^=== SHOT LIST ===$/m)[0]).trim()) // ห้ามโทนเทา/ขาวดำ
 // แนวภาพของปก/ช็อตใหม่: ถ้ามีภาพของคลิปนี้แล้ว ใช้แนวเดียวกับภาพที่มี (คลิปเก่าแนวนอนได้ปกแนวนอน)
 let aspect = aspectOf(config)
 if (existing.length) {
@@ -72,7 +76,10 @@ if (existing.length) {
   if (width && height) aspect = height > width ? '9:16' : '16:9'
 }
 const names = tagNames(briefHead)
-const untag = (s) => ({ ...s, prompt: recolorShotPrompt(untagShotPrompt(stripSafeArea(s.prompt).trim(), names)) })
+const untag = (s) => {
+  const p = untagShotPrompt(stripSafeArea(s.prompt).trim(), names)
+  return { ...s, prompt: photoStyle ? p : recolorShotPrompt(p) }
+}
 const shotLines = timeline.map(untag).map((s) => `${s.filename} ${s.prompt}`)
 const brief = [
   briefHead,

@@ -208,6 +208,8 @@
   .clipSettings { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; }
   .clipSettings > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   .clipSettings .seg { width: fit-content; }
+  /* ลายเส้นมี 6 แบบแล้ว แถวเดียวไม่พอกว้างแผงข้าง — ไม่ให้ขึ้นบรรทัดใหม่ ปุ่มจะถูกบีบจนชื่อตัดขึ้นบรรทัดในปุ่มเอง (วัดที่ 360px: สูง 78px เทียบกับ 74px แบบ 2 แถวเรียบๆ) */
+  #clipArtStyle { flex-wrap: wrap; max-width: 100%; }
   .pasteZone { border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center; color: var(--ink); font-size: 13px; cursor: text; background: var(--bg); }
   .pasteZone:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
   .pasteZone.drag { border-color: var(--accent); background: var(--pick); }
