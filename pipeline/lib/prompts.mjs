@@ -62,8 +62,20 @@ ${table}
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
 ${artBodyRule(artStyleOf(slug, config), bodyStyleRule(), hasCharacterRef())}${artImageRule(artStyleOf(slug, config))}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
+${NO_FRAME_RULE}
 ${imageLanguageRule(clipLanguage(config, slug), noTextOn(config))}`
 }
+
+/**
+ * ภาพห้ามมีกรอบ — ลายเส้นภาพวาด (สีน้ำ/หมึกจีน) ชอบได้ภาพเว้นขอบกระดาษขาว เส้นกรอบรอบภาพ หรือขอบสีจาง
+ * พอขยายเต็มจอตอนตัดต่อ กรอบจะโผล่เป็นแถบข้างภาพ · กรอบของสิ่งของในฉาก (ประตู แว่น หน้าต่าง) ไม่เกี่ยว
+ *   NO_FRAME_RULE   — กฎตอนขอ Shot List จาก ChatGPT (ไม่ให้เขียนกรอบลง Style Bible/ช็อต)
+ *   NO_FRAME_FLOW   — บรรทัดในคำสั่งแรกของ Flow
+ *   NO_FRAME_REMIND — ฉบับสั้น ย้ำทุกคำสั่งรอบถัดไป (คำสั่งแรกจางหายเมื่อสั่งเป็นชุด)
+ */
+export const NO_FRAME_RULE = `- ภาพไม่มีกรอบ: ทุกช็อตเป็นภาพเต็มเฟรม (full-bleed) ฉากและสียาวถึงขอบภาพทั้ง 4 ด้าน — ห้ามสั่งหรือบรรยายกรอบรอบภาพ เส้นขอบภาพ ขอบขาว ขอบกระดาษ ขอบสีจาง/vignette มุมโค้ง กรอบรูป โพลารอยด์ ช่องการ์ตูน (comic panel) หรือภาพเล็กวางบนพื้นหลัง ทั้งใน Style Bible และทุกช็อต · เขียนกฎนี้ลงใน Style Bible ด้วย (full-bleed edge to edge, no border, no frame) · สิ่งของในฉากที่มีกรอบของมันเอง (ประตู หน้าต่าง แว่น รูปบนผนัง) เขียนได้ตามปกติ`
+export const NO_FRAME_FLOW = 'ทุกภาพต้องเต็มเฟรม (full-bleed) ฉากหลังและสียาวถึงขอบภาพทั้ง 4 ด้าน — ห้ามมีกรอบทุกชนิด: เส้นกรอบรอบภาพ ขอบขาว ขอบสี ขอบกระดาษ ขอบสีจางหรือฟุ้งแบบ vignette มุมโค้ง กรอบรูป โพลารอยด์ หรือภาพเล็กวางบนพื้นหลัง · ห้ามมีแถบว่างหรือพื้นที่เปล่าด้านบน/ล่าง/ข้าง (สิ่งของในฉากที่มีกรอบของมันเอง เช่น ประตู หน้าต่าง แว่น วาดได้ตามปกติ)'
+export const NO_FRAME_REMIND = 'ทุกภาพเต็มเฟรมถึงขอบทั้ง 4 ด้าน ห้ามมีกรอบ เส้นกรอบรอบภาพ ขอบขาว ขอบกระดาษ หรือขอบสีจาง'
 
 /**
  * ตัดคำสั่ง "เว้นที่ว่างให้ซับไตเติล" ออกจาก prompt ภาพ — ถ้าส่งไป Flow จะวาดภาพมีแถบว่างด้านล่างทุกภาพ
@@ -148,7 +160,7 @@ export function fitPortrait(text) {
  * (คลิปยาวสั่งเป็นชุดละ 10 ช็อต ลายเส้นในข้อความแรกจางหาย → รอบหลังได้ภาพถ่ายสมจริงปนการ์ตูน)
  */
 export function flowStyleNote(config = loadConfig(), slug = null) {
-  return artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())
+  return `${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}\n${NO_FRAME_REMIND}`
 }
 
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
@@ -167,7 +179,7 @@ export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   return `สร้างรูป ตามนี้ อย่าลืม lock ตัวละครต่างๆ ด้วยนะ
 เริ่มสร้างภาพทุกช็อตทันทีจนครบ ไม่ต้องสรุปแผน Storyboard และไม่ต้องถามยืนยันก่อน
 ${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ · ห้ามวาดภาพแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง — ขอบฟ้าเป็นแนวนอน พื้นอยู่ล่าง ท้องฟ้าอยู่บน ตัวละครยืนตั้งตรง' : ''}
-ทุกภาพต้องเต็มเฟรม ฉากหลังยาวถึงขอบทุกด้าน ห้ามมีแถบว่าง ขอบขาว หรือพื้นที่เปล่าด้านบน/ล่าง
+${NO_FRAME_FLOW}
 ${colorRule}
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"
 ชื่อไฟล์ เลข SHOT และ @TAG ใช้ตั้งชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ
@@ -175,7 +187,7 @@ ${colorRule}
 
 ${portrait ? fitPortrait(agentBrief) : agentBrief}
 
-ย้ำ: ${colorReminder} · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
+ย้ำ: ${colorReminder} · ${NO_FRAME_REMIND} · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
 }
 
 /** แยก shot list ออกจาก OUTPUT 5 แล้วจับคู่กับช่อง shot ที่เราคำนวณไว้ */

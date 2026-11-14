@@ -297,22 +297,22 @@ export const ART_STYLES = {
   watercolor: {
     label: 'ภาพวาดสีน้ำ',
     rule: `**ลายเส้นของคลิปนี้: ภาพวาดสีน้ำ — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Painterly watercolor illustration — soft ink linework with rich watercolor washes and gentle paper texture, warm golden light with soft atmospheric haze, detailed lush backgrounds, cinematic wide compositions, emotional storytelling mood, fully colored
+- ART STYLE ใน Style Bible ให้เขียนว่า: Painterly watercolor illustration — soft ink linework with rich watercolor washes painted full-bleed to all four edges (no paper margin, no border, no faded vignette edges), gentle paper texture, warm golden light with soft atmospheric haze, detailed lush backgrounds, cinematic wide compositions, emotional storytelling mood, fully colored
 - ตัวละครวาดแบบภาพวาดสัดส่วนสมจริง (ไม่ใช่การ์ตูน): ใบหน้ามีรายละเอียดและอารมณ์ชัด ผิวและผ้ามีแสงเงาแบบสีน้ำ
 - ทุกช็อตเหมือนภาพวาดหนึ่งภาพ: ฉากหลังละเอียด แสงนุ่ม หมอกบาง สีอิ่มแบบสีน้ำ
 - ตัวอักษรบนภาพใช้น้อยที่สุด (ซับไตเติลใส่ตอนตัดต่อ)`,
-    flow: 'ลายเส้น: ภาพวาดสีน้ำ ลายเส้นหมึกนุ่ม ลงสีน้ำซึมเต็มภาพ แสงทองนุ่ม ฉากหลังละเอียด ตัวละครสัดส่วนสมจริงแบบภาพวาด — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ใช้ลายเส้นนี้ทุกภาพ',
+    flow: 'ลายเส้น: ภาพวาดสีน้ำ ลายเส้นหมึกนุ่ม ลงสีน้ำซึมเต็มภาพถึงขอบทุกด้าน (ไม่เว้นขอบกระดาษขาว ไม่มีขอบสีจาง) แสงทองนุ่ม ฉากหลังละเอียด ตัวละครสัดส่วนสมจริงแบบภาพวาด — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ใช้ลายเส้นนี้ทุกภาพ',
     body: '- แบบตัวละคร: ภาพวาดสีน้ำสัดส่วนสมจริง (ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง ไม่ใช่หัวโต) ตามลายเส้นภาพวาดสีน้ำด้านล่าง · เขียนแบบนี้ใน Character Bible ด้วย',
     bodyFlow: 'ตัวละครทุกตัววาดแบบภาพวาดสีน้ำสัดส่วนสมจริง ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง',
   },
   chinese: {
     label: 'ภาพวาดจีน',
     rule: `**ลายเส้นของคลิปนี้: ภาพวาดหมึกจีน — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Traditional Chinese ink-wash painting (shuimo) with fine gongbi detail on the figures — expressive black ink brushstrokes, fully colored with rich translucent watercolor washes (vermilion, ochre, jade green, indigo, touches of gold) — never monochrome, aged rice-paper / silk texture, generous empty space, misty layered mountains, pine and bamboo, lotus ponds, pavilions with curved roofs, drifting clouds, cinematic scroll-painting compositions
+- ART STYLE ใน Style Bible ให้เขียนว่า: Traditional Chinese ink-wash painting (shuimo) with fine gongbi detail on the figures — expressive black ink brushstrokes, fully colored with rich translucent watercolor washes (vermilion, ochre, jade green, indigo, touches of gold) — never monochrome, aged rice-paper / silk texture, generous empty space, misty layered mountains, pine and bamboo, lotus ponds, pavilions with curved roofs, drifting clouds, cinematic scroll-painting compositions, painted full-bleed to all four edges (no scroll mount, no silk border, no paper margin, no frame)
 - ตัวละครวาดแบบภาพวาดพู่กันจีนสัดส่วนสมจริง (ไม่ใช่การ์ตูน): เส้นพู่กันเรียวคม ใบหน้ามีอารมณ์ ผ้าพลิ้วเป็นริ้ว
-- ทุกช็อตเหมือนภาพม้วนจิตรกรรมจีนหนึ่งภาพ: เว้นพื้นที่ว่างกว้าง หมอกลอยเป็นชั้น ภูเขาไกลจางเป็นหมึกอ่อน (ฉากในเรื่องยังเป็นสถานที่ตามเนื้อเรื่อง แค่วาดด้วยลายเส้นนี้)
+- ทุกช็อตเหมือนจิตรกรรมจีนหนึ่งภาพที่วาดเต็มเฟรม: เว้นพื้นที่ว่างกว้างในตัวภาพ (เป็นหมอก ท้องฟ้า ผิวน้ำ — ไม่ใช่ขอบกระดาษรอบภาพ) หมอกลอยเป็นชั้น ภูเขาไกลจางเป็นหมึกอ่อน · ห้ามวาดตัวม้วนภาพ แกนม้วน หรือขอบผ้ารอบภาพ (ฉากในเรื่องยังเป็นสถานที่ตามเนื้อเรื่อง แค่วาดด้วยลายเส้นนี้)
 - ห้ามมีตัวอักษรจีน ตราประทับ หรือข้อความใดๆ บนภาพ (ซับไตเติลใส่ตอนตัดต่อ)`,
-    flow: 'ลายเส้น: ภาพวาดหมึกจีน พู่กันหมึกดำลงสีน้ำเต็มภาพ (ชาด เหลืองดิน เขียวหยก คราม แต้มทอง — ไม่ใช่หมึกขาวดำ) พื้นกระดาษสาเก่า เว้นที่ว่างกว้าง หมอกเป็นชั้น ตัวละครสัดส่วนสมจริงแบบภาพพู่กัน — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ห้ามมีตัวอักษรจีนหรือตราประทับ ใช้ลายเส้นนี้ทุกภาพ',
+    flow: 'ลายเส้น: ภาพวาดหมึกจีน พู่กันหมึกดำลงสีน้ำเต็มภาพ (ชาด เหลืองดิน เขียวหยก คราม แต้มทอง — ไม่ใช่หมึกขาวดำ) พื้นผิวกระดาษสาเก่าเต็มภาพถึงขอบทุกด้าน เว้นที่ว่างกว้างในตัวภาพ (หมอก ท้องฟ้า — ไม่ใช่ขอบกระดาษหรือขอบม้วนภาพ) หมอกเป็นชั้น ตัวละครสัดส่วนสมจริงแบบภาพพู่กัน — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ห้ามมีตัวอักษรจีนหรือตราประทับ ใช้ลายเส้นนี้ทุกภาพ',
     body: '- แบบตัวละคร: ภาพวาดพู่กันจีนสัดส่วนสมจริง (ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง ไม่ใช่หัวโต) ตามลายเส้นภาพวาดหมึกจีนด้านล่าง · เขียนแบบนี้ใน Character Bible ด้วย',
     bodyFlow: 'ตัวละครทุกตัววาดแบบภาพพู่กันจีนสัดส่วนสมจริง ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง',
   },

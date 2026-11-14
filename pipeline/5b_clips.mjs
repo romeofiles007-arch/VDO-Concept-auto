@@ -16,6 +16,7 @@ import { join, extname } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { requireBridge, runJob } from './lib/bridge.mjs'
 import { collectImages } from './lib/shotfile.mjs'
+import { trimFrames } from './lib/trim_frame.mjs'
 import { run } from './lib/ffmpeg.mjs'
 import { clipSettings, clipTarget, clipsDir, clipName, collectClips, scenes, pickKeyShots, keyShotRequest, parseKeyShots, motionRequest, parseMotions, motionFor } from './lib/clips.mjs'
 import { animateWithKie, kieKey, kieTier, fallbackOf } from './lib/kie.mjs'
@@ -53,6 +54,7 @@ mkdirSync(dir, { recursive: true })
 
 const shotsFile = join(projectDir(slug, 'shotlist'), 'shots.json')
 const shots = existsSync(shotsFile) ? JSON.parse(readFileSync(shotsFile, 'utf8')) : []
+if (config.images?.trimFrame !== false) await trimFrames(projectDir(slug, 'images')) // คลิปขยับเริ่มจากภาพนี้ — ภาพมีกรอบ คลิปก็มีกรอบ
 const images = new Map(collectImages(projectDir(slug, 'images')).images.map((i) => [i.name, i.file]))
 const ready = shots.filter((s) => images.has(s.filename))
 if (!ready.length) {

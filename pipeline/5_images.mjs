@@ -18,6 +18,7 @@ import { characterAttachments } from './lib/character.mjs'
 import { coverShot, coverBriefLines, hasCover, COVER_NAME } from './lib/cover.mjs'
 import { probeSize } from './lib/ffmpeg.mjs'
 import { collectImages } from './lib/shotfile.mjs'
+import { trimFrames } from './lib/trim_frame.mjs'
 
 const slug = process.argv[2]
 if (!slug) {
@@ -138,6 +139,12 @@ const result = await runJob({
 console.log(`\nเซฟแล้ว ${result.files.length} ไฟล์`)
 if (result.meta && result.meta.generated !== result.meta.expected) {
   console.warn(`เตือน: Flow gen มา ${result.meta.generated} ใบ แต่สั่งไป ${result.meta.expected} ช็อต`)
+}
+
+// กฎ "ห้ามมีกรอบ" ในคำสั่งกันได้ไม่ครบ — ภาพที่ยังมีขอบกระดาษ/เส้นกรอบรอบภาพ ตัดออกตรงนี้ (ก่อนส่งไป Kie และตัดต่อ)
+if (config.images.trimFrame !== false) {
+  const trimmed = await trimFrames(imagesDir)
+  if (trimmed.length) console.log(`ตัดกรอบออกจากภาพ ${trimmed.length} ใบ (ต้นฉบับเก็บไว้ที่ 05_images/_original)`)
 }
 
 const { images } = collectImages(imagesDir)

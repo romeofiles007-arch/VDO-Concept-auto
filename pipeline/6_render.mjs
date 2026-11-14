@@ -13,6 +13,7 @@ import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadConfig, projectDir } from './lib/config.mjs'
 import { collectImages } from './lib/shotfile.mjs'
+import { trimFrames } from './lib/trim_frame.mjs'
 import { probeDuration, probeSize, renderVideo, MOTION_PRESETS } from './lib/ffmpeg.mjs'
 import { hhmmss } from './lib/timecode.mjs'
 import { buildAss, SUBTITLE_STYLES } from './lib/subtitles.mjs'
@@ -33,6 +34,12 @@ const outFile = join(projectDir(slug, 'render'), `${slug}.mp4`)
 if (!existsSync(voiceover)) {
   console.error(`ไม่พบไฟล์เสียง: ${voiceover}\nรันขั้นที่ 2 (TTS) ก่อน`)
   process.exit(1)
+}
+
+// ภาพที่เซฟจากแผงข้างหรือสร้างก่อนมีตัวตัดกรอบ ไม่ผ่านขั้นที่ 5 — ตัดกรอบที่นี่อีกรอบ (ภาพที่ตัดแล้วไม่ตัดซ้ำ)
+if (config.images?.trimFrame !== false && existsSync(imagesDir)) {
+  const trimmed = await trimFrames(imagesDir)
+  if (trimmed.length) console.log(`ตัดกรอบออกจากภาพ ${trimmed.length} ใบ (ต้นฉบับเก็บไว้ที่ 05_images/_original)`)
 }
 
 const { images, ignored } = collectImages(imagesDir)
