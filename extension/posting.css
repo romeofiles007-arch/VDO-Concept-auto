@@ -38,6 +38,14 @@
 .pTabs .n { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 99px; font-size: 11px; background: color-mix(in srgb, currentColor 18%, transparent); }
 .pTabs .n.bad { background: var(--danger); color: #fff; }
 
+/* แถบเลือกปลายทาง — ดูคิวแยกทีละเพจ Facebook / ช่อง YouTube / บัญชี TikTok */
+.pDest { display: flex; flex-wrap: wrap; gap: 6px; }
+.pDest button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 100%; padding: 4px 10px; border: 1px solid var(--gull-line); border-radius: 99px; background: var(--gull-panel); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.pDest button:hover { border-color: var(--gull); }
+.pDest button[aria-pressed="true"] { border-color: var(--gull); background: var(--gull-pick); font-weight: 700; box-shadow: inset 0 0 0 1px var(--gull); }
+.pDest .nm { min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pDest .n { flex: none; min-width: 18px; padding: 0 5px; border-radius: 99px; font-size: 11px; text-align: center; background: color-mix(in srgb, currentColor 18%, transparent); }
+
 .pList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .pCard { background: var(--gull-panel); border: 1px solid var(--gull-line); border-left: 4px solid var(--gull-edge); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
 .pCard.fail { border-left-color: var(--danger); }

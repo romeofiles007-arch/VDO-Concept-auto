@@ -1275,7 +1275,7 @@ $('startAuto').addEventListener('click', async () => {
 
 // ── หน้าสรุปก่อนเริ่มงาน: ค่าที่โปรแกรมในเครื่องจะใช้จริง ต้องกดยืนยันก่อนสั่งงาน (ทำคลิปอัตโนมัติ · ตั้งเวลาผลิต) ──
 const LANG_NAME = { th: 'ไทย', en: 'อังกฤษ', zh: 'จีน' }
-const POST_MODE = { off: 'เก็บในคลัง ไม่โพสต์', ai: 'ให้ AI ตรวจ แล้วเข้าคิวโพสต์', now: 'เข้าคิวโพสต์ทันที (ไม่ตรวจ)' }
+const POST_MODE = { off: 'เก็บในคลัง ไม่โพสต์', ai: 'เข้าคิวโพสต์ทันที', now: 'เข้าคิวโพสต์ทันที' } // 'ai' = แผนเก่าสมัยมี AI ตรวจ ตอนนี้เข้าคิวเลยเหมือนกัน
 
 function voiceLabel() {
   if (V.choice?.startsWith('edge:')) return `Edge · ${V.choice.slice(5)}`
@@ -3330,7 +3330,7 @@ function prodOptions() {
   return {
     random: { genre: $('prodRandGenre').checked, art: $('prodRandArt').checked, narration: $('prodRandNarration').checked, language: $('prodRandLang').checked },
     languages: [...$('prodLangs').querySelectorAll('input:checked')].map((i) => i.value),
-    autoPost: $('prodAutoPost').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'ai',
+    autoPost: $('prodAutoPost').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'now',
   }
 }
 
@@ -3382,9 +3382,7 @@ function renderProd() {
     ? 'คลิปที่เสร็จอยู่ในคลังวิดีโอ ไม่เข้าคิวโพสต์'
     : !prod.postTargets
       ? 'ยังไม่ได้เชื่อมเพจ/ช่อง — คลิปจะรอในคิว เปิดหน้า “โพสต์อัตโนมัติ” เพื่อเชื่อมช่องทาง'
-      : postMode === 'now'
-        ? 'คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปเลย (ไม่ตรวจ)'
-        : 'คลิปเข้าคิวทันทีที่เสร็จ → AI ตรวจ → ผ่านแล้วลงช่องเวลาโพสต์ถัดไปเอง (ไม่ผ่าน = รอคุณตรวจในหน้า 📣)'
+      : 'คลิปเข้าคิวทันทีที่เสร็จ แล้วลงช่องเวลาโพสต์ถัดไปเลย'
   $('prodBatchTime').disabled = !$('prodBatchLater').checked
   try {
     const copy = scheduleCopy(prodForm())

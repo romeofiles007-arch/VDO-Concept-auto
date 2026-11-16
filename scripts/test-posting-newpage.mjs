@@ -60,7 +60,7 @@ test('แผง: ปุ่มส่ง all · สรุปจำนวนคล�
   const bridge = readFileSync(join(ROOT, 'bridge', 'posting.js'), 'utf8')
   assert.match(ui, /call\('\/api\/posting\/reorganize', \{ all: true \}/)
   assert.match(ui, /\.\.\.lockBadges\(q\)/)
-  assert.match(ui, /if \(list\.length && targetList\(\)\.length\) wrap\.append\(reorgTools\(\)\)/)
+  assert.match(ui, /if \(!dest && list\.length && targetList\(\)\.length\) wrap\.append\(reorgTools\(\)\)/)
   assert.match(bridge, /reorganize\('กดจัดคิวใหม่', \{ all: body\.all === true \}\)/)
   assert.match(bridge, /resetEdited: all/)
   assert.match(bridge, /return \{ retargeted, rescheduled, pages, locked \}/)

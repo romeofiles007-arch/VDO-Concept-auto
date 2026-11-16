@@ -1,5 +1,5 @@
 /**
- * โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — คิวคลิปที่ทำเสร็จ → ตรวจ (AI + คน) → ตั้งเวลา → โพสต์ Facebook Page / YouTube
+ * โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — คิวคลิปที่ทำเสร็จ → ตั้งเวลาเองทันที (ไม่มีขั้นตรวจ) → โพสต์ Facebook Page / YouTube
  *
  * เก็บใน projects/_posting/ (อยู่ใต้ .gitignore และไม่ถูกใส่ในแพ็กเกจลูกค้า — มีโทเค็น)
  *   accounts.json  การตั้งค่า + บัญชีเพจ/ช่อง (โทเค็นอยู่ที่นี่ที่เดียว ห้ามส่งออกไปหน้าแผงข้างตรงๆ)
@@ -22,9 +22,12 @@ export const POSTING_DIR = process.env.POSTING_DIR || join(ROOT, 'projects', '_p
 const ACCOUNTS_FILE = () => join(POSTING_DIR, 'accounts.json')
 const QUEUE_FILE = () => join(POSTING_DIR, 'queue.json')
 
-/** สถานะของคลิปในคิว — ลำดับตามเส้นทางปกติ */
+/**
+ * สถานะของคลิปในคิว — ลำดับตามเส้นทางปกติ
+ * review = เข้าคิวแล้วแต่ยังไม่มีเวลาโพสต์ (รอชื่อโพสต์/เพจ/ช่องเวลาว่าง หรือผู้ใช้พักไว้) — ไม่ใช่ขั้นตรวจ ระบบตั้งเวลาให้เองทันทีที่พร้อม
+ */
 export const STATUS = {
-  review: 'รอตรวจ',
+  review: 'รอตั้งเวลา',
   scheduled: 'ตั้งเวลาแล้ว',
   posting: 'กำลังโพสต์',
   posted: 'โพสต์แล้ว',
@@ -34,8 +37,7 @@ export const STATUS = {
 
 export const DEFAULT_SETTINGS = {
   enabledAt: null, // เปิดโหมดเมื่อไร — คลิปที่เสร็จหลังเวลานี้เข้าคิวเอง (คลิปเก่าเพิ่มเองจากคลัง)
-  autoCheck: true, // คลิปเข้าคิวแล้วให้ AI ตรวจทันที
-  autoApprove: false, // AI ให้ผ่าน → อนุมัติ + ลงช่องเวลาถัดไปเอง (ค่าเริ่มต้นปิด — ให้คนดูก่อน)
+  // ไม่มีขั้นตรวจ/อนุมัติ (ผู้ใช้ 16 พ.ย. 2026) — คลิปเข้าคิวแล้วตั้งเวลาโพสต์เองทันที · ค่าเก่า autoCheck/autoApprove ใน accounts.json ไม่ถูกใช้แล้ว
   slots: ['12:00', '19:00'], // ช่องเวลาประจำวัน
   google: { clientId: '', clientSecret: '' }, // OAuth client ของ Google Cloud (ประเภท Desktop app) — ใช้ร่วมทุกช่อง
   // OAuth client ของ Drive แยกจาก YouTube — Drive อาจอยู่คนละบัญชี/คนละโปรเจกต์ Google Cloud
@@ -243,8 +245,8 @@ export function cleanHashtags(tags) {
 }
 
 /**
- * คลิปใหม่เข้าคิว — สถานะแรกคือรอตรวจ
- * category = หมวดหมู่หัวข้อ (AI ระบุตอนตรวจ หรือผู้ใช้เลือกเอง) · targetsEdited = ผู้ใช้ติ๊กปลายทางเอง (ระบบไม่เลือกให้ตามหมวดอีก)
+ * คลิปใหม่เข้าคิว — สถานะแรกคือรอตั้งเวลา (ระบบตั้งเวลาให้เองทันทีที่พร้อม ไม่มีขั้นตรวจ)
+ * category = หมวดหมู่หัวข้อ (ผู้ใช้เลือกเอง) · targetsEdited = ผู้ใช้ติ๊กปลายทางเอง (ระบบไม่เลือกให้ตามหมวดอีก)
  */
 export function newItem({ slug, file, title, post, targets = [] }) {
   return {
@@ -254,9 +256,8 @@ export function newItem({ slug, file, title, post, targets = [] }) {
     title,
     status: 'review',
     addedAt: Date.now(),
-    ai: null,
     category: null,
-    categoryBy: null, // 'ai' | 'manual'
+    categoryBy: null, // 'manual' ('ai' = ข้อมูลเก่าสมัยมี AI ตรวจ)
     post: postFromFile(post),
     targets,
     targetsEdited: false,
@@ -362,7 +363,7 @@ export function dueItems(queue, now = Date.now()) {
 // ── ช่องเวลาต่อเพจ (ผู้ใช้ 7 พ.ย. 2026: "โพสต์พร้อมกันได้แต่คนละคลิป") ───────────
 // ช่องเวลาประจำวันชุดเดียวกัน แต่แต่ละเพจ/ช่องมีที่ว่างของตัวเอง: 12:00 เพจ A ลงคลิป 1 · เพจ B ลงคลิป 2 พร้อมกันได้
 
-/** สถานะที่ยังจองเพจไว้ (รอตรวจ/ตั้งเวลา/กำลังโพสต์) — โพสต์ไม่สำเร็จไม่นับ: ค้างรอคนกดลองใหม่ ไม่ได้ออกตามช่องเวลา (8 พ.ย. 2026 ใจใสมีค้าง 4 คลิป ทำให้ไม่ได้คลิปใหม่) */
+/** สถานะที่ยังจองเพจไว้ (รอตั้งเวลา/ตั้งเวลา/กำลังโพสต์) — โพสต์ไม่สำเร็จไม่นับ: ค้างรอคนกดลองใหม่ ไม่ได้ออกตามช่องเวลา (8 พ.ย. 2026 ใจใสมีค้าง 4 คลิป ทำให้ไม่ได้คลิปใหม่) */
 export const PENDING = new Set(['review', 'scheduled', 'posting'])
 
 /** เวลาที่ถูกจองแล้วของปลายทางเหล่านี้ (ตามเวลาของปลายทางนั้นในแต่ละคลิป) — เพจอื่นใช้เวลาเดียวกันได้ */
@@ -492,69 +493,27 @@ export function reorganizeQueue(queue, data, { slots, posted = loadPosted(), now
   return { queue: work, retargeted, rescheduled }
 }
 
-// ── AI ตรวจคลิป (ChatGPT ผ่านหน้าเว็บ — ไม่ใช้ API) ────────────────
+// ── ปิดงานคลิปที่ค้างในคิว ─────────────────────────────────────────
 
-export const QC_FRAMES = 8
-
-/** เวลาที่จะตัดภาพตัวอย่าง — กระจายทั้งคลิป ไม่เอาเฟรมแรก/สุดท้ายพอดี */
-export function frameTimes(seconds, count = QC_FRAMES) {
-  const total = Number(seconds) > 0 ? Number(seconds) : count
-  return Array.from({ length: count }, (_, i) => Math.round(((i + 0.5) / count) * total * 10) / 10)
-}
-
-export function qcPrompt({ title, script, post, seconds, times, language = 'th' }) {
-  const th = language !== 'en'
-  const stamp = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`
-  return `คุณคือคนตรวจคุณภาพ (QC) คลิปการ์ตูนสั้นก่อนโพสต์ลง Facebook Page และ YouTube งานนี้คือหาจุดที่ทำให้คลิปดูไม่มืออาชีพหรือเสี่ยงโดนลดการมองเห็น
-
-ชื่อเรื่อง: "${title}"
-ความยาวคลิป: ${Math.round(seconds || 0)} วินาที · ภาษาคลิป: ${language === 'zh' ? 'จีน' : th ? 'ไทย' : 'อังกฤษ'}
-
-ภาพที่แนบ ${times.length} ภาพคือเฟรมจากคลิปตามลำดับเวลา: ${times.map((t, i) => `ภาพ ${i + 1} = ${stamp(t)}`).join(', ')}
-
-บทพากย์:
-${String(script ?? '').slice(0, 5000) || '(ไม่มีบท)'}
-
-ข้อความที่จะโพสต์:
-ชื่อ: ${post?.title || '(ยังไม่มี)'}
-คำบรรยาย: ${post?.description || '(ยังไม่มี)'}
-แฮชแท็ก: ${cleanHashtags(post?.hashtags).join(' ') || '(ยังไม่มี)'}
-
-═══════════════════════════════════════
-ตรวจตามนี้:
-1. ภาพตรงกับเนื้อเรื่องในบทไหม ตัวละครหน้าตาเหมือนกันทุกภาพไหม
-2. ตัวอักษรในภาพสะกดถูกไหม อ่านออกไหม มีตัวอักษรเพี้ยน/ภาษาต่างดาวไหม
-3. ภาพผิดปกติ: มือ/นิ้วเกิน หน้าเบี้ยว วัตถุละลาย ภาพว่าง ภาพซ้ำ
-4. เนื้อหาเสี่ยงผิดนโยบาย Facebook/YouTube: ความรุนแรง เลือด เรื่องเพศ ข้อมูลสุขภาพที่ผิด คำกล่าวอ้างเกินจริง ใช้ชื่อแบรนด์/คนดังเสียหาย
-5. ข้อความโพสต์: ชื่อดึงดูดแต่ไม่หลอก (clickbait เกินเนื้อหา) คำบรรยายสะกดถูก แฮชแท็กตรงเรื่อง
-
-ให้คะแนน 0–100 (80 ขึ้นไป = โพสต์ได้เลย) verdict เป็น "pass" เมื่อไม่มีปัญหาร้ายแรง หรือ "fix" เมื่อควรแก้ก่อนโพสต์
-issues: ปัญหาที่เจอ ข้อละ 1 ประโยค ระบุภาพที่/เวลา ถ้าเกี่ยวกับภาพ (ไม่มีปัญหาให้เป็น [])
-category: หมวดหมู่ของคลิปนี้ เลือก 1 หมวดจากรายการนี้เท่านั้น สะกดตรงตัว:
-${CATEGORIES.map((c) => `- ${c}`).join('\n')}
-เขียน summary และ issues เป็นภาษาไทย ตอบเป็น JSON ก้อนเดียวเท่านั้น ไม่มีคำนำ รูปแบบนี้เป๊ะๆ:
-{"score": 85, "verdict": "pass", "summary": "สรุป 1–2 ประโยค", "issues": ["..."], "category": "${CATEGORIES[0]}"}`
-}
-
-/** อ่านผลตรวจจากคำตอบของ ChatGPT — ทนต่อ ```json``` และข้อความนำหน้า */
-export function parseQc(text) {
-  const raw = String(text ?? '')
-  const start = raw.indexOf('{')
-  const end = raw.lastIndexOf('}')
-  if (start === -1 || end <= start) throw new Error('อ่านผลตรวจจากคำตอบของ ChatGPT ไม่ออก')
-  let data
-  try {
-    // ChatGPT บางครั้งขึ้นบรรทัดใหม่จริงในสตริง — JSON ไม่รับ แปลงเป็นช่องว่าง
-    data = JSON.parse(raw.slice(start, end + 1).replace(/\r?\n/g, ' '))
-  } catch {
-    throw new Error('ผลตรวจจาก ChatGPT ไม่ใช่ JSON ที่ถูกต้อง')
+/**
+ * คลิปที่ขึ้นครบทุกปลายทางที่ยังเหลืออยู่แล้ว แต่สถานะยังค้าง "รอตั้งเวลา / ตั้งเวลาแล้ว / โพสต์ไม่สำเร็จ" → ย้ายเป็น "โพสต์แล้ว"
+ * เกิดเมื่อปลายทางที่คลิปยังรออยู่/โพสต์พลาดหายไปจากคลิป (เช่นลบเพจหรือช่องนั้นออก) — ไม่มีรอบไหนปิดงานให้ คลิปจึงค้างในคิว
+ * แก้ queue ตรงๆ คืนจำนวนคลิปที่ย้าย
+ * ไม่แตะ finishedAt — ไม่ให้แจ้งเตือน "โพสต์แล้ว" ย้อนหลังรัวๆ (postingEvents ดู finishedAt)
+ */
+const SETTLE = new Set(['review', 'scheduled', 'failed'])
+export function settleQueue(queue) {
+  let settled = 0
+  for (const q of queue) {
+    if (!SETTLE.has(q.status)) continue
+    const ok = Object.values(q.results ?? {}).filter((r) => r?.ok)
+    if (!ok.length || (q.targets ?? []).some((k) => !q.results?.[k]?.ok)) continue
+    q.status = 'posted'
+    q.postedAt = Math.max(...ok.map((r) => Number(r.at) || 0)) || q.finishedAt || Date.now()
+    q.error = null
+    q.targetAt = null
+    q.history = [...(q.history ?? []), { at: Date.now(), text: 'ขึ้นครบทุกปลายทางที่เหลืออยู่แล้ว → ย้ายไป "โพสต์แล้ว"' }].slice(-30)
+    settled++
   }
-  const score = Math.max(0, Math.min(100, Math.round(Number(data.score))))
-  if (!Number.isFinite(score)) throw new Error('ผลตรวจไม่มีคะแนน')
-  const verdict = data.verdict === 'pass' || data.verdict === 'fix' ? data.verdict : score >= 80 ? 'pass' : 'fix'
-  const issues = (Array.isArray(data.issues) ? data.issues : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 12)
-  // หมวดต้องตรงรายการ — สะกดเพี้ยนเล็กน้อย (ช่องว่าง) ยังจับคู่ได้ · ไม่ตรงเลย = ไม่รู้หมวด
-  const squash = (v) => String(v ?? '').replace(/\s+/g, '')
-  const category = CATEGORIES.find((c) => squash(c) === squash(data.category)) ?? null
-  return { score, verdict, summary: String(data.summary ?? '').trim(), issues, category }
+  return settled
 }

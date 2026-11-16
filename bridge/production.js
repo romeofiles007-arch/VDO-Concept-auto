@@ -33,9 +33,10 @@ export const DEFAULT_SETTINGS = {
   delayMax: 40,
   random: { genre: true, art: true, narration: true, language: false },
   languages: ['th'], // ภาษาที่สุ่มได้ (ใช้เมื่อ random.language)
-  autoPost: 'ai', // off | ai = AI ตรวจผ่านแล้วตั้งเวลาโพสต์เอง | now = ตั้งเวลาโพสต์ทันที ไม่ตรวจ
+  // off = เก็บในคลัง | now = เข้าคิวแล้วตั้งเวลาโพสต์ทันที · ไม่มีขั้น AI ตรวจแล้ว (ผู้ใช้ 16 พ.ย. 2026) — ค่าเก่า 'ai' นับเป็น 'now'
+  autoPost: 'now',
 }
-const AUTO_POST = ['off', 'ai', 'now']
+const AUTO_POST = ['off', 'now']
 
 const blankState = () => ({ active: false, made: 0, failed: 0, failsInRow: 0, nextAt: null, run: null, batch: 0, message: '', history: [] })
 
@@ -63,8 +64,9 @@ export function cleanSettings(input = {}, base = DEFAULT_SETTINGS) {
     if (langs.length) s.languages = [...new Set(langs)]
   }
   if (AUTO_POST.includes(input.autoPost)) s.autoPost = input.autoPost
-  else if (typeof input.autoPost === 'boolean') s.autoPost = input.autoPost ? 'ai' : 'off' // ค่าแบบเก่า (ติ๊กถูก)
-  if (!AUTO_POST.includes(s.autoPost)) s.autoPost = s.autoPost ? 'ai' : 'off'
+  else if (input.autoPost === 'ai' || input.autoPost === true) s.autoPost = 'now' // ค่าแบบเก่า (AI ตรวจ / ติ๊กถูก)
+  else if (input.autoPost === false) s.autoPost = 'off'
+  if (!AUTO_POST.includes(s.autoPost)) s.autoPost = s.autoPost ? 'now' : 'off' // ค่าที่บันทึกไว้เป็น 'ai' → เข้าคิวโพสต์เลย
   return s
 }
 

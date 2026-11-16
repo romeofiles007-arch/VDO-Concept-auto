@@ -1,22 +1,21 @@
 /**
  * แผนกนกนางนวล — โหมดโพสต์อัตโนมัติบน bridge
  *
- *   คลิปทำเสร็จ → เข้าคิว "รอตรวจ" → AI ตรวจ (ChatGPT ผ่านหน้าเว็บ) + คนตรวจ → อนุมัติ + ตั้งเวลา → โพสต์ Facebook Page / YouTube
+ *   คลิปทำเสร็จ → เข้าคิว → ตั้งเวลาโพสต์เองทันที (ไม่มีขั้นตรวจ) → โพสต์ Facebook Page / YouTube
  *
  * แยกจากขั้นทำคลิปทั้งหมด: อ่านคลิปจากคลังวิดีโอเท่านั้น ไม่แก้ไฟล์ของ project
- * งาน AI ตรวจเข้าคิว ChatGPT เดียวกับขั้นอื่น (ทุกงานเปิดแชตใหม่ จึงไม่ปนกัน) และตรวจเองเฉพาะตอนคิว ChatGPT ว่าง — ไม่หน่วงการทำคลิป
+ * ใช้ ChatGPT เฉพาะเขียนชื่อโพสต์ให้คลิปที่ยังไม่มี — เข้าคิว ChatGPT เดียวกับขั้นอื่น และขอเฉพาะตอนไม่มีขั้นทำคลิปกำลังรัน
  * bridge ต้องเปิดอยู่ตอนถึงเวลาโพสต์ (คนโพสต์คือเครื่องนี้)
  */
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { ROOT } from '../pipeline/lib/config.mjs'
-import { run } from '../pipeline/lib/ffmpeg.mjs'
-import { clipSource, readPost } from '../pipeline/lib/post.mjs'
+import { clipSource, readPost, postPrompt, parsePost, savePost } from '../pipeline/lib/post.mjs'
 import {
   POSTING_DIR, loadAccounts, updateAccounts, publicAccounts, allTargets, findTarget, newId, cleanSlots, targetsFor, cleanCategories, CATEGORIES,
   loadQueue, saveQueue, newItem, postFromFile, cleanHashtags, videosToEnroll, caption, nextFreeSlot, dueItems,
-  frameTimes, qcPrompt, parseQc, STATUS, nextDriveUpload, driveToTrash,
+  STATUS, nextDriveUpload, driveToTrash, settleQueue,
   loadPosted, recordPosted, backfillPosted, clipKey, platformOf, PLATFORM_NAME, takenFor, nextSlotFor, readyItems, reorganizeQueue, multiAccountPlatforms, slotsFor, nextSlotForItem,
 } from '../pipeline/lib/posting.mjs'
 import { facebookPageInfo, facebookUpload, youtubeAuthUrl, youtubeConnect, youtubeUpload, DRIVE_SCOPES, driveConnect, driveUpload, driveTrash } from '../pipeline/lib/social.mjs'
@@ -77,6 +76,20 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     item.history = [...(item.history ?? []), { at: Date.now(), text }].slice(-30)
   }
 
+  /**
+   * คลิปที่ขึ้นครบทุกปลายทางที่เหลือแล้วแต่ยังค้างในคิว (ปลายทางที่รออยู่/พลาดถูกเอาออก) → ย้ายไป "โพสต์แล้ว"
+   * เรียกตอนเปิดโปรแกรม ทุกรอบ และตอนเปิดหน้าโพสต์ — คลิปที่กำลังโพสต์ไม่แตะ (settleQueue ข้ามสถานะ posting)
+   */
+  function settle() {
+    const queue = loadQueue()
+    const moved = settleQueue(queue)
+    if (!moved) return 0
+    saveQueue(queue)
+    log('โพสต์อัตโนมัติ: ย้าย ' + moved + ' คลิปที่ขึ้นครบทุกปลายทางแล้วไป "โพสต์แล้ว" (ไม่มีปลายทางค้างรอแล้ว)')
+    return moved
+  }
+  try { settle() } catch (err) { log('โพสต์อัตโนมัติ: เก็บคิวที่โพสต์ครบแล้วไม่ได้ — ' + err.message) }
+
   function mutateItem(id, fn) {
     const queue = loadQueue()
     const item = queue.find((q) => q.id === id)
@@ -88,14 +101,17 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
 
   const videoPath = (item) => join(PROJECTS, item.slug, '06_render', item.file)
 
-  /** เพจ/ช่องที่เพิ่งเพิ่ม → ติ๊กให้คลิปที่ยังรอตรวจทุกคลิป (ค่าเริ่มต้น "ลงทุกที่") */
+  /** เพจ/ช่องที่เพิ่งเพิ่ม → ติ๊กให้คลิปที่ยังรอตั้งเวลาทุกคลิป (ค่าเริ่มต้น "ลงทุกที่") */
   /**
-   * คลิปที่ยังรอตรวจและผู้ใช้ยังไม่ได้ติ๊กปลายทางเอง → เลือกเพจ/ช่องใหม่ตามหมวดของคลิป
-   * เรียกหลังเพิ่ม/ลบบัญชี หรือเปลี่ยนหมวดที่บัญชีรับ (คลิปที่อนุมัติแล้วไม่เปลี่ยน)
+   * คลิปที่ยังรอตั้งเวลาและผู้ใช้ยังไม่ได้ติ๊กปลายทางเอง → เลือกเพจ/ช่องใหม่ตามหมวดของคลิป
+   * เรียกหลังเพิ่ม/ลบบัญชี หรือเปลี่ยนหมวดที่บัญชีรับ (คลิปที่ตั้งเวลาแล้วไม่เปลี่ยน)
    */
   function retarget() {
     const data = loadAccounts()
-    saveQueue(loadQueue().map((q) => (q.status === 'review' && !q.targetsEdited ? { ...q, targets: targetsFor(data, q.category, { clip: clipKey(q) }) } : q)))
+    // ทีละคลิปบนคิวชุดเดียวกัน — คลิปถัดไปเห็นเพจที่คลิปก่อนหน้าเพิ่งได้ จึงกระจายเพจ ไม่กองเพจเดียว
+    const queue = loadQueue()
+    for (const q of queue) if (q.status === 'review' && !q.targetsEdited) q.targets = targetsFor(data, q.category, { clip: clipKey(q), queue })
+    saveQueue(queue)
   }
 
   // ── เข้าคิวเอง ──
@@ -106,24 +122,23 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     if (!settings.enabledAt) return
     const fresh = videosToEnroll(await videosOf(), loadQueue(), settings.enabledAt)
     if (!fresh.length) return
-    // ยังไม่รู้หมวด → ไปเฉพาะเพจ/ช่องที่รับทุกหมวด · AI ระบุหมวดตอนตรวจแล้วค่อยเลือกให้ใหม่
+    // ยังไม่รู้หมวด → ไปเฉพาะเพจ/ช่องที่รับทุกหมวด (เลือกหมวดเองได้ในการ์ดของคลิป)
     const accounts = loadAccounts()
     const queue = loadQueue()
     for (const v of fresh) {
-      const item = newItem({ ...v, post: readPost(v.slug), targets: targetsFor(accounts, null, { clip: clipKey(v) }) })
-      note(item, 'คลิปทำเสร็จ เข้าคิวรอตรวจ')
+      const item = newItem({ ...v, post: readPost(v.slug), targets: targetsFor(accounts, null, { clip: clipKey(v), queue }) })
+      note(item, 'คลิปทำเสร็จ เข้าคิวโพสต์')
       queue.push(item)
-      log(`โพสต์อัตโนมัติ: "${v.title}" เข้าคิวรอตรวจ`)
+      log(`โพสต์อัตโนมัติ: "${v.title}" เข้าคิวโพสต์`)
     }
     saveQueue(queue)
   }
 
   /**
    * 🏭 ผลิตต่อเนื่อง: คลิปเสร็จ → เข้าคิวทันที (ไม่ต้องรอรอบดึงคลิป 2 นาที / ไม่ต้องเปิดโหมดโพสต์ทั้งระบบ)
-   *   mode 'ai'  = AI ตรวจก่อน ผ่านแล้วลงช่องเวลาถัดไปเอง (ไม่ผ่าน → รอคนตรวจ)
-   *   mode 'now' = ลงช่องเวลาถัดไปทันที ไม่ตรวจ
+   *   mode รับไว้เพื่อให้เข้ากับการตั้งค่าเก่า ('ai' / 'now') — ไม่มีขั้นตรวจแล้ว ทุกคลิปตั้งเวลาโพสต์เองทันที
    */
-  async function enqueueAuto(slug, mode = 'ai') {
+  async function enqueueAuto(slug, mode = 'now') {
     const video = (await videosOf()).find((v) => v.slug === slug)
     const main = video?.files?.find((f) => f.name === `${slug}.mp4`) ?? video?.files?.[0]
     if (!main) throw new Error('ไม่พบไฟล์วิดีโอของคลิปนี้')
@@ -133,22 +148,98 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
       item = newItem({ slug, file: main.name, title: video.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null, { clip: clipKey({ slug, file: main.name }) }) })
       queue.push(item)
     }
-    item.auto = mode
-    note(item, mode === 'now' ? 'ผลิตต่อเนื่อง: เข้าคิว → ตั้งเวลาโพสต์เองทันที' : 'ผลิตต่อเนื่อง: เข้าคิว → AI ตรวจ ผ่านแล้วตั้งเวลาเอง')
+    item.auto = 'now'
+    delete item.hold
+    note(item, 'ผลิตต่อเนื่อง: เข้าคิว → ตั้งเวลาโพสต์เองทันที')
     saveQueue(queue)
-    log(`โพสต์อัตโนมัติ: "${item.title}" เข้าคิวจากผลิตต่อเนื่อง (${mode === 'now' ? 'ตั้งเวลาทันที' : 'AI ตรวจก่อน'})`)
+    log(`โพสต์อัตโนมัติ: "${item.title}" เข้าคิวจากผลิตต่อเนื่อง — ตั้งเวลาโพสต์ทันที`)
     scheduleAuto()
     return loadQueue().find((q) => q.id === item.id)
   }
 
-  /** คลิปจากผลิตต่อเนื่องที่พร้อมแล้ว → ลงช่องเวลาถัดไปเอง (เรียกทุกรอบ — เพิ่งเชื่อมเพจทีหลังก็ตั้งเวลาให้) */
+  /** คลิปที่ยังไม่ตั้งเวลาและยังไม่มีปลายทาง (เช่นเข้าคิวก่อนเชื่อมเพจ) → เลือกเพจ/ช่องให้ ทีละคลิปบนคิวชุดเดียวกันจึงกระจายเพจ */
+  function fillMissingTargets() {
+    const accounts = loadAccounts()
+    const queue = loadQueue()
+    let changed = false
+    for (const item of queue) {
+      if (item.status !== 'review' || item.targetsEdited || item.targets?.length) continue
+      const targets = targetsFor(accounts, item.category, { clip: clipKey(item), queue })
+      if (!targets.length) continue
+      item.targets = targets
+      changed = true
+    }
+    if (changed) saveQueue(queue)
+  }
+
+  /**
+   * ไม่มีขั้นตรวจแล้ว — ผู้ใช้ (16 พ.ย. 2026): "ไม่ต้องรอตรวจ ตั้งโพสต์ได้เลย เอาโหมดตรวจออกไปเลยก็ได้"
+   * คลิปทุกคลิปที่เข้าคิว (สถานะ review = ยังไม่มีเวลาโพสต์) ตั้งเวลาโพสต์เองทันทีที่มีเพจ/ช่อง + ชื่อโพสต์ + ช่องเวลาว่าง
+   * ยกเว้นคลิปที่ผู้ใช้กด "ยกเลิกเวลา" พักไว้เอง (item.hold) — รอจนกดตั้งเวลาใหม่
+   */
+  const selfScheduling = (item) => item.status === 'review' && !item.hold
+  const POST_RETRY_MS = 30 * 60_000
+  const POST_TRIES = 3
+  const EDIT_QUIET_MS = deps.editQuietMs ?? 60_000
+
+  /**
+   * คลิปยังไม่มีข้อความโพสต์ (ตอนทำคลิปขอ ChatGPT ไม่สำเร็จ) → ให้ ChatGPT เขียนให้เอง ไม่ค้างรอคน
+   * พลาด → ลองใหม่เองหลังเว้น 30 นาที รวมไม่เกิน 3 ครั้งต่อคลิป (ไม่มีคนมากดให้แล้ว) · ครบแล้วยังพลาด = พิมพ์ชื่อโพสต์เองในการ์ดของคลิป
+   * ขอเฉพาะคลิปที่มีเพจ/ช่องจะลงแล้ว (ยังไม่มีปลายทาง = ยังโพสต์ไม่ได้อยู่ดี) · ไม่แย่ง ChatGPT ตอนกำลังทำคลิป
+   */
+  function fillPosts() {
+    const queue = loadQueue()
+    let changed = false
+    for (const item of queue) {
+      if (item.postJob?.status === 'error' && selfScheduling(item) && !item.post?.title && (item.postJob.tries ?? 1) < POST_TRIES && Date.now() - (item.postJob.at ?? 0) >= POST_RETRY_MS) {
+        item.postJob = { status: 'retry', tries: item.postJob.tries ?? 1 }
+        changed = true
+      }
+      if (item.postJob?.status !== 'running') continue
+      const job = jobs.get(item.postJob.jobId)
+      const tries = item.postJob.tries ?? 1
+      const again = tries < POST_TRIES ? ' — จะลองใหม่เองในอีก 30 นาที' : ' — ครบ 3 ครั้งแล้ว พิมพ์ชื่อโพสต์เองในการ์ดของคลิป'
+      if (!job || job.status === 'error') {
+        item.postJob = { status: 'error', error: job?.error ?? 'งานเขียนข้อความโพสต์หายไปจากคิว ChatGPT', at: Date.now(), tries }
+        note(item, 'ChatGPT เขียนข้อความโพสต์ไม่สำเร็จ' + again)
+      } else if (job.status === 'done') {
+        try {
+          item.post = postFromFile(savePost(item.slug, parsePost(job.result?.text)))
+          item.postJob = { status: 'done' }
+          note(item, 'ChatGPT เขียนข้อความโพสต์ให้แล้ว')
+        } catch (err) {
+          item.postJob = { status: 'error', error: err.message, at: Date.now(), tries }
+          note(item, 'อ่านข้อความโพสต์จาก ChatGPT ไม่ได้ (' + err.message + ')' + again)
+        }
+      } else continue
+      changed = true
+    }
+    const chatgptBusy = [...jobs.values()].some((j) => j.agent === 'chatgpt' && (j.status === 'queued' || j.status === 'running'))
+    if (!chatgptBusy && !pipelineBusy()) {
+      const next = queue.find((q) => selfScheduling(q) && q.targets?.length && !q.post?.title && (!q.postJob || q.postJob.status === 'retry') && !postFromFile(readPost(q.slug))?.title)
+      if (next) {
+        const tries = (next.postJob?.tries ?? 0) + 1
+        const job = enqueue('chatgpt', 'prompt', { prompt: postPrompt(clipSource(next.slug)), newChat: true, label: 'คิดชื่อคลิป + คำบรรยาย' })
+        next.postJob = { status: 'running', jobId: job.id, startedAt: Date.now(), tries }
+        note(next, 'ยังไม่มีข้อความโพสต์ — ให้ ChatGPT เขียนให้')
+        log('โพสต์อัตโนมัติ: "' + next.title + '" ยังไม่มีข้อความโพสต์ ให้ ChatGPT เขียนให้')
+        changed = true
+      }
+    }
+    if (changed) saveQueue(queue)
+  }
+
+  /**
+   * คลิปที่พร้อมแล้ว → ลงช่องเวลาว่างถัดไปของเพจที่คลิปจะลงเอง ไม่รอคนกด ไม่มีขั้นตรวจ
+   * เรียกทุกรอบ — เพิ่งเชื่อมเพจ / เพิ่งได้ข้อความโพสต์ทีหลังก็ตั้งเวลาให้ · ไฟล์วิดีโอหายไม่ตั้งเวลา (จะโพสต์พลาดเปล่าๆ)
+   */
   function scheduleAuto() {
     const queue = loadQueue()
     const accounts = loadAccounts()
     let changed = false
     for (const item of queue) {
-      if (item.status !== 'review' || !item.auto) continue
-      if (item.auto === 'ai' && !(item.ai?.status === 'done' && item.ai.verdict === 'pass')) continue
+      if (!selfScheduling(item)) continue
+      if (Date.now() - (item.editedAt ?? 0) < EDIT_QUIET_MS) continue // ผู้ใช้เพิ่งแก้ข้อความโพสต์ — รอให้พิมพ์จบก่อน
       if (!item.post?.title) {
         const post = postFromFile(readPost(item.slug))
         if (post?.title) {
@@ -156,105 +247,18 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           changed = true
         }
       }
-      if (!item.targetsEdited && !item.targets?.length) item.targets = targetsFor(accounts, item.category, { clip: clipKey(item) })
+      if (!item.targetsEdited && !item.targets?.length) item.targets = targetsFor(accounts, item.category, { clip: clipKey(item), queue })
       if (!item.targets?.length || !item.post?.title) continue // ยังไม่มีเพจ/ช่อง หรือยังไม่มีข้อความโพสต์ → รอ
+      if (!existsSync(videoPath(item))) continue
       const at = nextSlotForItem(accounts, queue, item) // ตามเวลาของเพจที่คลิปจะลง · เพจอื่นช่องเดียวกันได้
       if (!at) continue
       item.status = 'scheduled'
       item.scheduleAt = at
-      note(item, item.auto === 'now' ? 'ตั้งเวลาเองทันที (ผลิตต่อเนื่อง)' : 'AI ให้ผ่าน → ตั้งเวลาเอง (ผลิตต่อเนื่อง)')
-      log(`โพสต์อัตโนมัติ: "${item.title}" ตั้งเวลาโพสต์ ${new Date(at).toLocaleString('th-TH')}`)
+      note(item, 'ตั้งเวลาโพสต์เอง (ไม่มีขั้นตรวจ)')
+      log('โพสต์อัตโนมัติ: "' + item.title + '" ตั้งเวลาโพสต์ ' + new Date(at).toLocaleString('th-TH'))
       changed = true
     }
     if (changed) saveQueue(queue)
-  }
-
-  // ── AI ตรวจ ──
-  async function startCheck(id) {
-    const item = loadQueue().find((q) => q.id === id)
-    if (!item) throw new Error('ไม่พบคลิปนี้ในคิว')
-    if (item.ai?.status === 'running') return item
-    const file = videoPath(item)
-    if (!existsSync(file)) throw new Error('ไม่พบไฟล์วิดีโอ — อาจถูกลบหรือเปลี่ยนชื่อไปแล้ว')
-    const seconds = (await videosOf()).find((v) => v.slug === item.slug)?.files.find((f) => f.name === item.file)?.seconds ?? null
-    const times = frameTimes(seconds)
-    const dir = join(POSTING_DIR, 'frames', item.id)
-    rmSync(dir, { recursive: true, force: true })
-    mkdirSync(dir, { recursive: true })
-    const attachments = []
-    for (const [i, t] of times.entries()) {
-      const out = join(dir, `frame_${i + 1}.jpg`)
-      await run('ffmpeg', ['-y', '-v', 'error', '-ss', String(t), '-i', file, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '5', out])
-      if (existsSync(out)) attachments.push({ name: `frame_${i + 1}.jpg`, type: 'image/jpeg', base64: readFileSync(out).toString('base64') })
-    }
-    if (!attachments.length) throw new Error('ตัดภาพตัวอย่างจากคลิปไม่ได้')
-    const source = clipSource(item.slug)
-    const prompt = qcPrompt({ title: item.title, script: source.script, post: item.post, seconds, times, language: source.language })
-    const job = enqueue('chatgpt', 'prompt', { prompt, newChat: true, attachments, label: 'นกนางนวลตรวจคลิป' })
-    return mutateItem(id, (it) => {
-      it.ai = { status: 'running', jobId: job.id, startedAt: Date.now() }
-      note(it, 'ส่งให้ AI ตรวจ')
-    })
-  }
-
-  /** ผลตรวจที่ ChatGPT ตอบกลับแล้ว → เก็บลงคิว (+ อนุมัติเองถ้าตั้งไว้) */
-  function collectChecks() {
-    const queue = loadQueue()
-    const accounts = loadAccounts()
-    const { settings } = accounts
-    let changed = false
-    for (const item of queue) {
-      if (item.ai?.status !== 'running') continue
-      const job = jobs.get(item.ai.jobId)
-      if (!job) {
-        item.ai = { status: 'error', error: 'งานตรวจหายไปจากคิว ChatGPT — กดตรวจใหม่' }
-        changed = true
-        continue
-      }
-      if (job.status === 'error') {
-        item.ai = { status: 'error', error: job.error ?? 'ChatGPT ตรวจไม่สำเร็จ' }
-        changed = true
-        continue
-      }
-      if (job.status !== 'done') continue
-      try {
-        item.ai = { status: 'done', ...parseQc(job.result?.text), checkedAt: Date.now() }
-        note(item, `AI ตรวจแล้ว: ${item.ai.verdict === 'pass' ? 'ผ่าน' : 'ควรแก้'} ${item.ai.score}/100`)
-        // หมวดจาก AI — ไม่ทับหมวดที่ผู้ใช้เลือกเอง · ปลายทางเลือกให้ใหม่ถ้าผู้ใช้ยังไม่ได้ติ๊กเอง
-        if (item.ai.category && item.categoryBy !== 'manual') {
-          item.category = item.ai.category
-          item.categoryBy = 'ai'
-          if (item.status === 'review' && !item.targetsEdited) item.targets = targetsFor(accounts, item.category, { clip: clipKey(item) })
-          note(item, `AI ระบุหมวด: ${item.category}`)
-        }
-      } catch (err) {
-        item.ai = { status: 'error', error: err.message, raw: String(job.result?.text ?? '').slice(0, 1500) }
-      }
-      changed = true
-      if (settings.autoApprove && item.status === 'review' && item.ai.status === 'done' && item.ai.verdict === 'pass' && item.targets?.length && item.post?.title) {
-        const at = nextSlotForItem(loadAccounts(), queue, item)
-        if (at) {
-          item.status = 'scheduled'
-          item.scheduleAt = at
-          note(item, 'AI ให้ผ่าน → อนุมัติเองและลงช่องเวลาถัดไป')
-        }
-      }
-    }
-    if (changed) saveQueue(queue)
-  }
-
-  /** ตรวจเองทีละคลิป เฉพาะตอนคิว ChatGPT ว่างและไม่มีขั้นทำคลิปกำลังรัน — ไม่แย่งคิวกับการทำคลิป */
-  async function autoCheck() {
-    const { settings } = loadAccounts()
-    const queue = loadQueue()
-    // คลิปจากผลิตต่อเนื่องแบบ "AI ตรวจก่อน" ตรวจเสมอ แม้ปิดตรวจอัตโนมัติของทั้งระบบ
-    const wants = (q) => q.status === 'review' && !q.ai && (settings.autoCheck || q.auto === 'ai')
-    if (!queue.some(wants) || pipelineBusy()) return
-    const chatgptBusy = [...jobs.values()].some((j) => j.agent === 'chatgpt' && (j.status === 'queued' || j.status === 'running'))
-    if (chatgptBusy) return
-    if (queue.some((q) => q.ai?.status === 'running')) return
-    const next = queue.find(wants)
-    if (next) await startCheck(next.id).catch((err) => mutateItem(next.id, (it) => { it.ai = { status: 'error', error: err.message } }))
   }
 
   // ── โพสต์ ──
@@ -382,9 +386,10 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
     ticking = true
     try {
       await enroll().catch((err) => log(`โพสต์อัตโนมัติ: ดึงคลิปเข้าคิวไม่ได้ — ${err.message}`))
-      collectChecks()
+      settle()
+      fillMissingTargets()
+      fillPosts()
       scheduleAuto()
-      await autoCheck().catch(() => {})
       await postDue()
       await syncDrive().catch((err) => log(`โพสต์อัตโนมัติ: Google Drive — ${err.message}`))
     } finally {
@@ -397,7 +402,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
   // ── มุมมองให้แผงข้าง ──
   async function view() {
     await enroll({ force: true }).catch(() => {})
-    collectChecks()
+    if (!uploading) settle()
     const videos = await videosOf()
     const bySlug = new Map(videos.map((v) => [v.slug, v]))
     const postedLog = loadPosted()
@@ -409,7 +414,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
       // คลิปที่ยังไม่มีข้อความโพสต์ตอนเข้าคิว แต่ตอนนี้มี post.json แล้ว → เติมให้ (ไม่ทับที่ผู้ใช้แก้)
       const post = !q.post?.title && v?.post ? postFromFile(v.post) : q.post
       // postedOn = แพลตฟอร์มที่คลิปนี้ลงไปแล้ว (จากสมุดบันทึก) — แผงใช้ล็อกช่องติ๊กของแพลตฟอร์มนั้น
-      // nextSlot = ช่องว่างถัดไปของเพจที่คลิปนี้จะลง (ช่องเวลาต่อเพจ) — ปุ่ม "อนุมัติ · ช่องเวลาถัดไป" ใช้ค่านี้
+      // nextSlot = ช่องว่างถัดไปของเพจที่คลิปนี้จะลง (ช่องเวลาต่อเพจ) — ปุ่ม "ตั้งเวลา · ช่องเวลาถัดไป" ใช้ค่านี้
       return { ...q, post, thumb: v?.thumb ?? null, video: f?.url ?? null, seconds: f?.seconds ?? null, missing: !f, postedOn: postedLog[clipKey(q)] ?? null, nextSlot: q.status === 'review' ? nextSlotForItem(accData, raw, q) : null }
     })
     const inQueue = new Set(queue.map((q) => `${q.slug}/${q.file}`))
@@ -485,8 +490,6 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         const beforeSlots = loadAccounts()
         updateAccounts(({ settings }) => {
           if (typeof body.enabled === 'boolean') settings.enabledAt = body.enabled ? settings.enabledAt ?? Date.now() : null
-          if (typeof body.autoCheck === 'boolean') settings.autoCheck = body.autoCheck
-          if (typeof body.autoApprove === 'boolean') settings.autoApprove = body.autoApprove
           if (body.slots !== undefined) settings.slots = cleanSlots(body.slots)
         })
         if (body.slots !== undefined) retime(beforeSlots, 'เปลี่ยนเวลาโพสต์กลาง')
@@ -539,6 +542,8 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         updateAccounts((data) => { data[kind] = data[kind].filter((a) => a.id !== body.id) })
         const key = `${kind === 'facebook' ? 'fb' : 'yt'}:${body.id}`
         saveQueue(loadQueue().map((q) => (q.status === 'posted' ? q : { ...q, targets: (q.targets ?? []).filter((k) => k !== key) })))
+        // คลิปที่รอ/พลาดแค่บัญชีนี้ (ที่อื่นขึ้นครบแล้ว) → ปิดงานเป็น "โพสต์แล้ว" ไม่ค้างในคิว
+        settle()
         return json(res, 200, await view()), true
       }
       // หมวดที่เพจ/ช่องนี้รับ — ว่าง = รับทุกหมวด
@@ -592,11 +597,12 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         const queue = loadQueue().filter((q) => !(q.slug === slug && q.file === file && q.status === 'removed'))
         if (!queue.some((q) => q.slug === slug && q.file === file)) {
           const v = (await videosOf()).find((x) => x.slug === slug)
-          const item = newItem({ slug, file, title: v?.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null, { clip: clipKey({ slug, file }) }) })
+          const item = newItem({ slug, file, title: v?.title ?? slug, post: readPost(slug), targets: targetsFor(loadAccounts(), null, { clip: clipKey({ slug, file }), queue }) })
           note(item, 'เพิ่มจากคลังวิดีโอ')
           queue.push(item)
         }
         saveQueue(queue)
+        scheduleAuto() // ไม่มีขั้นตรวจ — เพิ่มแล้วได้เวลาโพสต์เลย
         return json(res, 200, await view()), true
       }
       if (path === '/api/posting/item') {
@@ -609,6 +615,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
               description: String(body.post.description ?? it.post.description ?? '').slice(0, 5000),
               hashtags: cleanHashtags(body.post.hashtags ?? it.post.hashtags),
             }
+            it.editedAt = Date.now() // กำลังพิมพ์อยู่ — scheduleAuto รอให้หยุดพิมพ์ก่อน ไม่ตั้งเวลาด้วยชื่อที่พิมพ์ค้าง
           }
           // เลือกหมวดเอง (null = ไม่รู้หมวด) → ปลายทางตามหมวดใหม่ ถ้ายังไม่ได้ติ๊กเอง
           if (body.category !== undefined) {
@@ -662,10 +669,6 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         const out = reorganize('กดจัดคิวใหม่', { all: body.all === true })
         return json(res, 200, { ...(await view()), reorganized: out }), true
       }
-      if (path === '/api/posting/check') {
-        await startCheck(body.id)
-        return json(res, 200, await view()), true
-      }
       if (path === '/api/posting/approve') {
         const queue = loadQueue()
         const { settings } = loadAccounts()
@@ -674,7 +677,7 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         if (!Number.isFinite(at) || !at) return json(res, 400, { error: body.when === 'next' ? 'ยังไม่ได้ตั้งช่องเวลาประจำ — ตั้งในแท็บตั้งค่า หรือเลือกวันเวลาเอง' : 'เลือกวันเวลาโพสต์ก่อน' }), true
         if (body.when !== 'now' && at < Date.now() - 60_000) return json(res, 400, { error: 'เวลาที่เลือกผ่านไปแล้ว' }), true
         mutateItem(body.id, (it) => {
-          if (!it.post?.title?.trim()) throw new Error('ยังไม่มีชื่อโพสต์ — ใส่ชื่อก่อนอนุมัติ')
+          if (!it.post?.title?.trim()) throw new Error('ยังไม่มีชื่อโพสต์ — ใส่ชื่อก่อนตั้งเวลา')
           if (!it.targets?.length) {
             const done = Object.keys(loadPosted()[clipKey(it)] ?? {}).map((p) => PLATFORM_NAME[p] ?? p)
             throw new Error(done.length ? `คลิปนี้ลง ${done.join(' และ ')} ไปแล้ว — ห้ามโพสต์ซ้ำในแพลตฟอร์มเดิม (เหลือเฉพาะแพลตฟอร์มที่ยังไม่เคยลง)` : 'ยังไม่ได้เลือกเพจหรือช่องที่จะโพสต์')
@@ -682,7 +685,8 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           if (it.status === 'posting' || it.status === 'posted') throw new Error('คลิปนี้โพสต์ไปแล้ว')
           it.status = 'scheduled'
           it.scheduleAt = at
-          note(it, body.when === 'now' ? 'อนุมัติ · โพสต์ทันที' : `อนุมัติ · ตั้งเวลา ${new Date(at).toLocaleString('th-TH')}`)
+          delete it.hold
+          note(it, body.when === 'now' ? 'กดโพสต์ทันที' : `ตั้งเวลาเอง ${new Date(at).toLocaleString('th-TH')}`)
         })
         if (body.when === 'now' && scheduler) setTimeout(() => tick().catch(() => {}), 200)
         return json(res, 200, await view()), true
@@ -692,7 +696,8 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
           if (it.status !== 'scheduled') throw new Error('คลิปนี้ไม่ได้อยู่ในรายการตั้งเวลา')
           it.status = 'review'
           it.scheduleAt = null
-          note(it, 'ยกเลิกเวลา กลับไปรอตรวจ')
+          it.hold = true // พักไว้ — ไม่ตั้งเวลาเองจนกว่าผู้ใช้จะกดตั้งเวลาใหม่
+          note(it, 'ยกเลิกเวลา — พักคลิปไว้ (กดตั้งเวลาเมื่อพร้อม)')
         })
         return json(res, 200, await view()), true
       }
@@ -709,8 +714,10 @@ export function createPosting({ jobs, enqueue, json, readBody, log, port, token,
         mutateItem(body.id, (it) => {
           if (it.status !== 'rejected') throw new Error('คลิปนี้ไม่ได้ถูกตีกลับ')
           it.status = 'review'
-          note(it, 'ดึงกลับมารอตรวจ')
+          delete it.hold
+          note(it, 'ดึงกลับเข้าคิว — ตั้งเวลาโพสต์ให้เอง')
         })
+        scheduleAuto()
         return json(res, 200, await view()), true
       }
       if (path === '/api/posting/retry') {
