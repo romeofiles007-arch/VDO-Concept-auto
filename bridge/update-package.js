@@ -10,7 +10,7 @@
  * หลังวางทับ: selfupdate.js เห็นโค้ด bridge เปลี่ยนแล้วรีสตาร์ทเอง · extension reload ตัวเอง
  * snapshot() คืนรูปแบบเดียวกับตัวอัปเดตแบบ git (update.js) — แผงข้างใช้หน้าจอเดิมได้เลย
  */
-import { execFile } from 'node:child_process'
+import { extractZip } from './unzip.js'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { shipsToCustomer, isProtected, isCustomerData, USER_CONFIG, DEFAULT_CONFIG, customerDefaults, installerProblems } from './package-rules.js'
@@ -60,13 +60,16 @@ async function recentCommits(repo, branch, fetchFn) {
   }
 }
 
-function untar(zip, dest) {
-  // tar.exe ของ Windows 10+ แตก zip ได้ (tar ของ Git Bash แตกไม่ได้ — ระบุตัวของ Windows ตรงๆ)
-  // Mac: tar ของระบบ (bsdtar) แตก zip ได้เหมือนกัน
-  const tar = process.platform === 'win32' ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : '/usr/bin/tar'
-  return new Promise((resolve, reject) => {
-    execFile(tar, ['-xf', zip, '-C', dest], { windowsHide: true, timeout: 5 * 60_000 }, (err, _out, stderr) => (err ? reject(new Error(`แตกไฟล์อัปเดตไม่ได้: ${String(stderr || err.message).trim()}`)) : resolve()))
-  })
+/**
+ * แตก zip รุ่นใหม่ลง dest — ใช้ตัวแตกของเราเอง (bridge/unzip.js) ไม่ใช่ tar.exe ของเครื่อง
+ * tar.exe รุ่นใหม่ของ Windows ข้ามไฟล์ชื่อไทยบนเครื่องที่ภาษาระบบไม่ใช่ไทย → อัปเดตล้มทุกครั้ง (17 พ.ย. 2026)
+ */
+export async function unpack(zip, dest) {
+  try {
+    return extractZip(zip, dest)
+  } catch (err) {
+    throw new Error(`แตกไฟล์อัปเดตไม่ได้: ${err.message}`)
+  }
 }
 
 function listFiles(dir, base = dir, out = []) {
@@ -237,7 +240,7 @@ export function createPackageUpdater({ log = () => {}, busy = () => false, cwd, 
       if (!res.ok) throw new Error(`โหลดรุ่นใหม่จาก GitHub ไม่ได้ (${res.status})`)
       const zip = join(tmp, 'update.zip')
       writeFileSync(zip, Buffer.from(await res.arrayBuffer()))
-      await untar(zip, join(tmp, 'x'))
+      await unpack(zip, join(tmp, 'x'))
       const top = readdirSync(join(tmp, 'x'), { withFileTypes: true }).find((e) => e.isDirectory())
       if (!top) throw new Error('ไฟล์อัปเดตว่างเปล่า')
       const src = join(tmp, 'x', top.name)
