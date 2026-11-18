@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT, loadConfig } from './config.mjs'
 import { activeCharacter, characterFlowNote, bodyStyleRule, bodyStyleFlowNote } from './character.mjs'
-import { artStyleOf, artBodyRule, artImageRule, artFlowNote, artIsPhoto } from './art_style.mjs'
+import { artStyleOf, artBodyRule, artImageRule, artFlowNote, artIsPhoto, artPastNote } from './art_style.mjs'
 
 /** ผู้ใช้แนบรูปตัวละครไว้ไหม — ลายเส้นบางแบบมีกฎตัวละครคนละชุดระหว่างแนบ/ไม่แนบ */
 const hasCharacterRef = () => !!activeCharacter()?.images.length
@@ -166,12 +166,15 @@ export function flowStyleNote(config = loadConfig(), slug = null) {
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
 export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
   const portrait = orientationOf(config) === 'portrait'
-  const photo = artIsPhoto(artStyleOf(slug, config)) // ลายเส้นภาพถ่าย — กฎ "สีสด ห้ามโทนหม่น" ของภาพวาดใช้ไม่ได้
+  const style = artStyleOf(slug, config)
+  const photo = artIsPhoto(style) // ลายเส้นภาพถ่าย — กฎ "สีสด ห้ามโทนหม่น" ของภาพวาดใช้ไม่ได้
   const charNote = characterFlowNote(undefined, { photo })
   // ภาพวาด: กันภาพลายเส้นไม่ลงสี/ขาวดำ · ภาพถ่าย: กันภาพซีด แต่ยอมให้เกรดสีและเงาเข้มแบบหนัง
+  // ลายเส้นที่ให้ช็อตเล่าอดีตสีจางลง (สีน้ำพู่กันจีน) ต้องบอกข้อยกเว้นไว้ตรงนี้ ไม่งั้น "ห้ามสีซีดเด็ดขาด" จะชนะ
+  const past = artPastNote(style)
   const colorRule = photo
     ? 'ทุกภาพเป็นภาพสีเต็มเฟรม สีและแสงสมจริง — ห้ามภาพขาวดำหรือซีเปีย (เงาเข้ม แสงสลัว และการเกรดสีให้เข้ากับอารมณ์ฉากทำได้)'
-    : 'ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด'
+    : `ทุกภาพลงสีเต็มทั้งภาพ สีสดอิ่ม ทั้งตัวละครและฉากหลัง — ห้ามภาพขาวดำ โทนเทา ซีเปีย สีซีด หรือลายเส้นไม่ลงสีเด็ดขาด${past ? ` · ${past}` : ''}`
   const colorReminder = photo ? 'ทุกภาพเป็นภาพสี ห้ามขาวดำ/ซีเปีย' : 'ทุกภาพลงสีเต็ม ห้ามขาวดำ/โทนเทา'
   const textRule = noTextOn(config)
     ? 'ห้ามมีตัวหนังสือทุกชนิดในภาพช็อต — ไม่มีข้อความ ป้ายคำ คำบรรยาย ตัวเลข หรือ bubble ที่มีตัวอักษร · ป้าย หนังสือ จอในฉากให้ว่างหรือเป็นลายเส้นอ่านไม่ออก · ถ้าช็อตไหนสั่งข้อความในเครื่องหมายคำพูดไว้ ให้ข้ามข้อความนั้น (ยกเว้นภาพปก cover.png ใส่หัวข้อตามที่สั่ง)'

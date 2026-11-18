@@ -37,5 +37,8 @@ export const artImageRule = (style) => (ART_STYLES[style]?.rule ? `\n${ART_STYLE
 export const artFlowNote = (style, fallback, hasRef = false) =>
   `${variant(ART_STYLES[style]?.bodyFlow, hasRef) ?? fallback}${ART_STYLES[style]?.flow ? `\n${ART_STYLES[style].flow}` : ''}`
 
+/** ข้อยกเว้นของกฎ "สีสดอิ่ม ห้ามสีซีด" ใน Flow — ลายเส้นที่ให้ช็อตเล่าอดีตสีจางลง (ไม่มี = '') */
+export const artPastNote = (style) => ART_STYLES[style]?.past ?? ''
+
 /** ลายเส้นนี้เป็นภาพถ่ายไหม — ใช้ปลดกฎ "ต้องเป็นการ์ตูน/สีสด/ห้ามโทนหม่น" ที่เขียนไว้ให้ภาพวาด */
 export const artIsPhoto = (style) => isPhotoStyle(style)
