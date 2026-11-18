@@ -364,4 +364,7 @@ export const ART_STYLES = {
 }
 
 /** ลายเส้นที่เป็นภาพถ่าย — ข้ามกฎ "ต้องเป็นการ์ตูน/ห้ามโทนหม่น" ที่เขียนไว้สำหรับภาพวาด */
+// ไม่เอาลายเส้นจีน (ผู้ใช้สั่ง 17 พ.ย. 2026) — สุ่มไม่ได้ เลือกไม่ได้ คลิปที่จำไว้กลับไปใช้ตั้งค่า
+delete ART_STYLES.chinese
+
 export const isPhotoStyle = (style) => ART_STYLES[style]?.photo === true
