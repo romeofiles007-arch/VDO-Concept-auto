@@ -221,6 +221,22 @@
   .charThumbs li { position: relative; }
   .charThumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
   .charThumbs button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+  /* ดนตรีประกอบ: รายการเพลง — แตะชื่อ = ใช้เพลงนี้ · ▶ ฟัง · 🗑 ลบ */
+  #musicBox { grid-template-columns: minmax(0, 1fr); } /* ชื่อเพลงยาวไม่ดันแผงให้กว้างเกินจอ */
+  .musicList { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .musicList:empty { display: none; }
+  .musicList li { display: flex; gap: 4px; align-items: stretch; }
+  .musicPick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .musicPick[aria-pressed="true"] { border-color: var(--accent); background: var(--pick); font-weight: 700; }
+  .musicPick:focus-visible, .musicUpload:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .musicMark { width: 1.2em; flex: none; text-align: center; color: var(--accent); }
+  .musicName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .musicPick small { flex: none; color: var(--muted); font-weight: 400; }
+  .musicList .musicPlay, .musicList .musicDel { flex: none; min-width: 34px; padding: 0 8px; }
+  .musicUpload { justify-self: start; display: inline-flex; align-items: center; margin: 8px 0 0; padding: 6px 12px; border: 1.5px dashed var(--line); border-radius: 9px; background: var(--bg); color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .musicUpload:hover { border-color: var(--accent); }
+  .musicVolumeRow { margin: 8px 0 0; font-size: 13px; }
+  .musicVolumeRow[hidden] { display: none; }
   .clipSettings textarea { width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
   .projectRow { display: grid; grid-template-columns: 1fr; gap: 6px; }
   .projectCover { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
@@ -495,6 +511,15 @@
       </div>
       <div class="pick">ช่วงเงียบระหว่างประโยค
         <div class="seg" id="clipPause" role="group" aria-label="ช่วงเงียบ"></div>
+      </div>
+      <div class="pick" id="musicBox" hidden>ดนตรีประกอบ
+        <div class="seg" id="musicMode" role="group" aria-label="ดนตรีประกอบ"></div>
+        <ul class="musicList" id="musicList" aria-label="เพลงที่อัปโหลดไว้"></ul>
+        <label class="musicUpload"><input type="file" id="musicFile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg" multiple hidden />⬆ อัปโหลดเพลง</label>
+        <div class="musicVolumeRow" id="musicVolumeRow">ความดังของเพลง
+          <div class="seg" id="musicVolume" role="group" aria-label="ความดังของเพลง"></div>
+        </div>
+        <span class="hint" id="musicHint" role="status" aria-live="polite" style="margin:2px 0 0"></span>
       </div>
       <div class="pick">ตัวละครของฉัน
         <div class="pasteZone" id="charPaste" tabindex="0" role="button" aria-describedby="charHint">

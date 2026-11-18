@@ -229,7 +229,9 @@ export async function renderVideo({ images, voiceover, bgm, outFile, totalDurati
   const audio = bgm
     ? [
         '-filter_complex',
-        `[0:v]${vf}[v];[1:a]volume=${voiceoverDb}dB[vo];[2:a]volume=${bgmDb}dB[bg];[vo][bg]amix=inputs=2:duration=first:dropout_transition=0[a]`,
+        // เพลง: ค่อยๆ ดังขึ้น 1 วิแรก ค่อยๆ เบาลง 3 วิสุดท้าย · normalize=0 ไม่ให้ amix หารเสียงพากย์ลงครึ่งหนึ่ง (เดิมใส่เพลงแล้วเสียงพากย์เบาลง 6 dB)
+        // alimiter กันเสียงแตกตอนเสียงพากย์กับเพลงดังพร้อมกัน
+        `[0:v]${vf}[v];[1:a]volume=${voiceoverDb}dB[vo];[2:a]volume=${bgmDb}dB,afade=t=in:d=1,afade=t=out:st=${Math.max(0, totalDuration - 3).toFixed(2)}:d=3[bg];[vo][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[a]`,
         '-map', '[v]', '-map', '[a]',
       ]
     : ['-vf', vf, '-map', '0:v', '-map', '1:a']

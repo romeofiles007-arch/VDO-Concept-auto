@@ -32,6 +32,7 @@ import { readCharacter, updateCharacter, addCharacterImage, removeCharacterImage
 import { PAUSE_PRESETS, MOTION_PRESETS } from '../pipeline/lib/ffmpeg.mjs'
 import { SUBTITLE_STYLES } from '../pipeline/lib/subtitles.mjs'
 import { ART_STYLES } from '../extension/prompts.js'
+import { MUSIC_MODES, MUSIC_VOLUMES, addTrack, listTracks, musicSettings, musicView, removeTrack } from '../pipeline/lib/music.mjs'
 import { createProduction } from './production.js'
 import { clipSettings, CLIP_COVERAGES } from '../pipeline/lib/clips.mjs'
 import { KIE_TIERS, kieTier } from '../pipeline/lib/kie.mjs'
@@ -39,7 +40,7 @@ import { clipCost } from '../pipeline/lib/usage.mjs'
 import { readAsrTimeline, writeAsrTimeline, parseSegmentText } from '../pipeline/lib/asr.mjs'
 
 const MIME = {
-  '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8',
 }
 
@@ -859,6 +860,14 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
             }
             if (KIE_TIERS[body.kieTier]) c.clips = { ...(c.clips ?? {}), tier: body.kieTier }
             if (SUBTITLE_STYLES[body.subtitles]) c.render.subtitles = { ...(c.render.subtitles ?? {}), style: body.subtitles }
+            // ดนตรีประกอบ — ใช้ตอนตัดต่อคลิปถัดไป (ไฟล์เพลงอัปโหลดผ่าน /api/music/upload)
+            if (body.musicMode || body.musicFile !== undefined || body.musicVolume) {
+              const m = musicSettings(c)
+              if (MUSIC_MODES.some((o) => o.id === body.musicMode)) m.mode = body.musicMode
+              if (typeof body.musicFile === 'string' && listTracks().some((t) => t.name === body.musicFile)) m.file = body.musicFile
+              if (MUSIC_VOLUMES[body.musicVolume]) m.volume = body.musicVolume
+              c.music = m
+            }
             if (PAUSE_PRESETS[body.pause]) {
               const { segmentGapMs, paragraphGapMs } = PAUSE_PRESETS[body.pause]
               Object.assign(c.tts, { pause: body.pause, segmentGapMs, paragraphGapMs })
@@ -877,6 +886,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         return json(res, 200, {
           orientation: c.render.orientation === 'portrait' ? 'portrait' : 'landscape',
           artStyle: ART_STYLES[c.art?.style] ? c.art.style : 'doodle',
+          music: musicView(c),
           subtitles: SUBTITLE_STYLES[c.render.subtitles?.style] ? c.render.subtitles.style : 'off',
           pause: PAUSE_PRESETS[c.tts.pause] ? c.tts.pause : 'normal',
           motion: MOTION_PRESETS[c.render.motion] ? c.render.motion : 'off',
@@ -914,6 +924,31 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           if (speed !== undefined) c.tts.myVoice.speed = Math.min(1.5, Math.max(0.7, Number(speed) || 1))
         })
         return json(res, 200, { setup: setupStatus(loadConfig()) }), true
+      }
+
+      // ── ดนตรีประกอบ: คลังเพลงของผู้ใช้ (projects/_music/) ──
+      if (req.method === 'POST' && path === '/api/music/upload') {
+        const { name, base64 } = await readBody(req)
+        const saved = addTrack(name, Buffer.from(String(base64 ?? ''), 'base64'))
+        // อัปโหลดแล้วใช้ได้เลย: ยังไม่เปิดดนตรี หรือเลือกเพลงเดียวไว้ → เลือกเพลงที่เพิ่งอัปโหลด
+        updateConfig((c) => {
+          const m = musicSettings(c)
+          if (m.mode !== 'random') Object.assign(m, { mode: 'one', file: saved })
+          c.music = m
+        })
+        return json(res, 200, { ...musicView(loadConfig()), saved }), true
+      }
+      if (req.method === 'POST' && path === '/api/music/delete') {
+        const { name } = await readBody(req)
+        removeTrack(name)
+        updateConfig((c) => {
+          const m = musicSettings(c)
+          const left = listTracks()
+          if (m.file === name) m.file = left[0]?.name ?? null
+          if (!left.length) m.mode = 'off'
+          c.music = m
+        })
+        return json(res, 200, musicView(loadConfig())), true
       }
 
       if (req.method === 'POST' && path === '/api/bgm') {

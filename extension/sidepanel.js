@@ -1313,6 +1313,8 @@ async function confirmStart({ kind, title = '', autoTopic = false, schedule = nu
     const text = !c.imageText ? '' : c.imageText === 'off' ? 'ไม่มีตัวหนังสือในภาพ (ภาพปกยังมีชื่อเรื่อง)' : 'มีตัวหนังสือในภาพได้'
     add('ภาพ', [c.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9', art].filter(Boolean).join(' · '), text)
     add('ซับไตเติล', label(c.options?.subtitles, c.subtitles))
+    const m = c.music
+    if (m) add('ดนตรีประกอบ', m.mode === 'random' && m.tracks.length ? `สุ่มจาก ${m.tracks.length} เพลง` : m.mode === 'one' && m.file ? m.file : 'ไม่มี', m.mode !== 'off' ? `ความดัง${label(m.options.volume, m.volume)}` : '')
     add('แอนิเมชัน Kie', aiOn ? `เปิด ${ai}% ของฉาก` : 'ปิด',
       aiOn ? (c.kie?.name ? `${c.kie.name} ≈ ${c.kie.credits} เครดิต/ฉาก · มีค่าใช้จ่าย` : 'มีค่าใช้จ่ายต่อฉาก') : 'ภาพนิ่งซูม/เลื่อนกล้อง ไม่มีค่าใช้จ่าย')
   }
@@ -1737,7 +1739,132 @@ function renderClipSettings() {
   $('clipSettingsSummary').textContent = `ตั้งค่าคลิป: ${summary}${character?.active ? ' · ตัวละครของฉัน' : ''}`
   $('renderSettingsHint').textContent = `ซับไตเติล: ${subLabel}${motionLabel ? ` · ${motionLabel}` : ''} · แนวภาพตามภาพที่สร้างไว้ (เปลี่ยนได้ที่ ⚡ ตั้งค่าคลิป)`
   for (const el of [...$('clipOrientation').querySelectorAll('button'), sel, ...pause.querySelectorAll('button'), ...motion.querySelectorAll('button'), ...imageText.querySelectorAll('button'), ...ai.querySelectorAll('button')]) el.disabled = localBusy()
+  renderMusic()
 }
+
+// ── ดนตรีประกอบ — คลังเพลงของผู้ใช้ · เลือกแล้วบันทึกเองทันที ใช้ตอนตัดต่อทุกคลิปใหม่ (รวมผลิตต่อเนื่อง) ──
+const musicPlayer = new Audio()
+let musicPlaying = null
+let musicBusyText = ''
+musicPlayer.addEventListener('ended', () => { musicPlaying = null; renderMusic() })
+
+function renderMusic() {
+  const m = clip?.music
+  $('musicBox').hidden = !m // โปรแกรมในเครื่องรุ่นเก่าไม่ส่งมา → ซ่อน
+  if (!m) return
+  const modeBox = $('musicMode')
+  if (!modeBox.childElementCount) {
+    for (const o of m.options.mode) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      modeBox.append(b)
+    }
+  }
+  for (const b of modeBox.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.value === m.mode))
+    b.disabled = b.dataset.value !== 'off' && !m.tracks.length // ยังไม่มีเพลง → เลือกได้แค่ "ไม่มี"
+  }
+  const vol = $('musicVolume')
+  if (!vol.childElementCount) {
+    for (const o of m.options.volume) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', textContent: o.label })
+      b.dataset.value = o.id
+      vol.append(b)
+    }
+  }
+  for (const b of vol.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === m.volume))
+  $('musicVolumeRow').hidden = m.mode === 'off'
+
+  const list = $('musicList')
+  list.textContent = ''
+  for (const t of m.tracks) {
+    const li = document.createElement('li')
+    const chosen = m.mode === 'one' && m.file === t.name
+    const pick = Object.assign(document.createElement('button'), { type: 'button', className: 'musicPick', title: 'ใช้เพลงนี้กับคลิปใหม่' })
+    pick.setAttribute('aria-pressed', String(chosen))
+    pick.append(Object.assign(document.createElement('span'), { className: 'musicMark', textContent: chosen ? '✓' : m.mode === 'random' ? '🎲' : '' }),
+      Object.assign(document.createElement('span'), { className: 'musicName', textContent: t.name }),
+      Object.assign(document.createElement('small'), { textContent: `${t.mb} MB` }))
+    pick.dataset.name = t.name
+    const play = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost musicPlay', textContent: musicPlaying === t.name ? '⏸' : '▶' })
+    play.dataset.play = t.name
+    play.dataset.url = t.url
+    play.setAttribute('aria-label', `${musicPlaying === t.name ? 'หยุด' : 'ฟัง'} ${t.name}`)
+    const del = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost musicDel', textContent: '🗑' })
+    del.dataset.del = t.name
+    del.setAttribute('aria-label', `ลบ ${t.name}`)
+    li.append(pick, play, del)
+    list.append(li)
+  }
+  const volLabel = m.options.volume.find((o) => o.id === m.volume)?.label
+  $('musicHint').textContent = musicBusyText || (
+    !m.tracks.length ? `ยังไม่มีเพลง — อัปโหลด mp3, wav, m4a, aac หรือ ogg (ไม่เกิน ${m.maxMb} MB ต่อไฟล์)`
+      : m.mode === 'off' ? 'ไม่ใส่ดนตรี — กดเพลงในรายการหรือเลือก 🎲 เพื่อใช้'
+        : `${m.mode === 'random' ? `สุ่มจาก ${m.tracks.length} เพลง ทีละคลิป` : `ใช้ "${m.file}"`} · ความดัง${volLabel} · ใช้กับคลิปใหม่ทุกคลิป รวมตั้งเวลาผลิต · เพลงสั้นกว่าคลิปเล่นวนซ้ำ`
+  ) + (m.tracks.length ? ' · ใช้เพลงที่มีสิทธิ์ใช้เท่านั้น เพลงติดลิขสิทธิ์อาจถูกปิดเสียงหรือบล็อกคลิป' : '')
+}
+
+async function musicCall(path, body, busyText) {
+  musicBusyText = busyText
+  renderMusic()
+  try {
+    clip.music = await api(await localApp(), path, body)
+    musicBusyText = ''
+  } catch (err) {
+    musicBusyText = err.message
+  }
+  renderMusic()
+  renderClipSettings()
+}
+
+$('musicMode').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b && !b.disabled) saveClipSettings({ musicMode: b.dataset.value })
+})
+$('musicVolume').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (b) saveClipSettings({ musicVolume: b.dataset.value })
+})
+$('musicList').addEventListener('click', async (e) => {
+  const pick = e.target.closest('.musicPick')
+  const play = e.target.closest('[data-play]')
+  const del = e.target.closest('[data-del]')
+  if (pick) return saveClipSettings({ musicMode: 'one', musicFile: pick.dataset.name })
+  if (play) {
+    if (musicPlaying === play.dataset.play) {
+      musicPlayer.pause()
+      musicPlaying = null
+    } else {
+      musicPlayer.src = mediaUrl(await localApp(), play.dataset.url)
+      musicPlaying = play.dataset.play
+      musicPlayer.play().catch((err) => { musicPlaying = null; musicBusyText = `เล่นเพลงไม่ได้: ${err.message}`; renderMusic() })
+    }
+    return renderMusic()
+  }
+  if (del) {
+    if (!confirm(`ลบเพลง "${del.dataset.del}" ออกจากเครื่อง?`)) return
+    if (musicPlaying === del.dataset.del) { musicPlayer.pause(); musicPlaying = null }
+    return musicCall('/api/music/delete', { name: del.dataset.del }, 'กำลังลบเพลง…')
+  }
+})
+$('musicFile').addEventListener('change', async (e) => {
+  const files = [...e.target.files]
+  e.target.value = ''
+  for (const [i, f] of files.entries()) {
+    if (f.size > (clip?.music?.maxMb ?? 40) * 1048576) {
+      musicBusyText = `"${f.name}" ใหญ่เกิน ${clip?.music?.maxMb ?? 40} MB`
+      renderMusic()
+      continue
+    }
+    const base64 = await new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
+      r.onerror = () => reject(r.error)
+      r.readAsDataURL(f)
+    })
+    await musicCall('/api/music/upload', { name: f.name, base64 }, `กำลังอัปโหลด ${files.length > 1 ? `${i + 1}/${files.length} ` : ''}"${f.name}"…`)
+  }
+})
 
 async function saveClipSettings(change) {
   try {

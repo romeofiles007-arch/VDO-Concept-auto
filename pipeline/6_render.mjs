@@ -11,7 +11,8 @@
  */
 import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadConfig, projectDir } from './lib/config.mjs'
+import { ROOT, loadConfig, projectDir } from './lib/config.mjs'
+import { pickMusic } from './lib/music.mjs'
 import { collectImages } from './lib/shotfile.mjs'
 import { trimFrames } from './lib/trim_frame.mjs'
 import { probeDuration, probeSize, renderVideo, MOTION_PRESETS } from './lib/ffmpeg.mjs'
@@ -26,7 +27,11 @@ if (!slug) {
 }
 
 const config = loadConfig()
-const bgmArg = rest.includes('--bgm') ? rest[rest.indexOf('--bgm') + 1] : config.render.bgmFile
+// ดนตรีประกอบ: --bgm ที่สั่งมา > เพลงเฉพาะคลิป (projects/<slug>/bgm.*) > ดนตรีประกอบในตั้งค่าคลิป > render.bgmFile (ค่าเก่า)
+const ownBgm = ['mp3', 'wav', 'm4a', 'aac', 'ogg'].map((e) => join(ROOT, 'projects', slug, `bgm.${e}`)).find((f) => existsSync(f))
+const music = rest.includes('--bgm') || ownBgm ? null : pickMusic(slug, config)
+const bgmArg = rest.includes('--bgm') ? rest[rest.indexOf('--bgm') + 1] : ownBgm ?? music?.file ?? config.render.bgmFile
+if (music) console.log(`ดนตรีประกอบ: ${music.name} (${music.db} dB)`)
 const imagesDir = projectDir(slug, 'images')
 const voiceover = join(projectDir(slug, 'audio'), 'voiceover.wav')
 const outFile = join(projectDir(slug, 'render'), `${slug}.mp4`)
@@ -135,7 +140,7 @@ await renderVideo({
   bgm: bgmArg && existsSync(bgmArg) ? bgmArg : null,
   outFile,
   totalDuration,
-  config: config.render,
+  config: music ? { ...config.render, bgmDb: music.db } : config.render,
   resolution,
   subtitles,
   fit,

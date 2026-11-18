@@ -55,6 +55,7 @@ export function customerDefaults(config) {
   // เสียงที่โคลนไว้ไม่ได้ติดไปด้วย → ลูกค้าเริ่มที่เสียง Edge ซึ่งใช้ได้ทันที
   if (c.tts) c.tts.engine = 'edge'
   if (c.clips) c.clips.provider = 'off' // Kie มีค่าใช้จ่าย — ให้ลูกค้าเปิดเองเมื่อมี key
+  if (c.music) c.music = { mode: 'off', file: null, volume: 'normal' } // เพลงของเราไม่ได้ติดไปด้วย — ลูกค้าอัปโหลดเอง
   return c
 }
 
