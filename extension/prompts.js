@@ -288,20 +288,20 @@ export const ART_STYLES = {
     // ไม่มีกฎนี้ = ไม่มีที่ไหนบอกว่า "ห้ามภาพถ่าย" เลย (กฎแบบตัวละครบอกแค่ห้ามตัวก้าง ซึ่งรูปคนจริงก็ผ่าน)
     // → Nano Banana วาดช็อตวิวและช็อตที่ไม่มีตัวละครเป็นภาพถ่ายสมจริง ปนกับการ์ตูนในคลิปเดียว (ลูกค้าแจ้ง 13 พ.ย. 2026)
     rule: `**ลายเส้นของคลิปนี้: การ์ตูน 2D doodle ตาม ART STYLE ใน VISUAL STYLE DNA ของ Blueprint — ใช้กับทุกช็อตทั้งคลิป**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Hand-drawn 2D doodle cartoon illustration — flat colors, bold black outlines, slightly imperfect marker lines, fully colored
+- ART STYLE ใน Style Bible ให้เขียนว่า: Hand-drawn 2D doodle cartoon illustration — flat colors, bold black outlines, slightly imperfect marker lines, fully colored with bright vivid saturated colors, clean neutral white balance (no yellow, sepia or warm-orange tint)
 - ทุกช็อตเป็นภาพวาดการ์ตูน ไม่ใช่ภาพถ่าย ไม่ใช่ภาพสมจริง ไม่ใช่ 3D render — ทั้งตัวละคร ฉาก สัตว์ สิ่งของ ท้องฟ้า ภูเขา น้ำ และพื้นผิว วาดเป็นการ์ตูนลายเส้นเดียวกันหมด
 - ช็อตที่เป็นวิวทิวทัศน์ ภาพโคลสอัพของสิ่งของ หรือช็อตที่ไม่มีตัวละคร ก็ต้องเป็นการ์ตูนลายเส้นเดียวกัน ห้ามเป็นภาพถ่ายธรรมชาติ
 - ห้ามใช้คำว่า photo, photograph, photorealistic, photorealism, realistic, lifelike, cinematic photography, DSLR, 4K, 8K, hyperrealistic หรือคำที่สื่อถึงภาพถ่าย ทั้งใน Style Bible และในทุกช็อต`,
-    flow: 'ลายเส้น: การ์ตูน 2D doodle วาดมือ เส้นขอบดำหนา ลงสีแบนสดเต็มภาพ — ทุกภาพเป็นภาพวาดการ์ตูน ไม่ใช่ภาพถ่าย ไม่ใช่ภาพสมจริง ไม่ใช่ 3D render แม้แต่ช็อตวิวทิวทัศน์ ช็อตโคลสอัพสิ่งของ หรือช็อตที่ไม่มีตัวละคร ใช้ลายเส้นนี้ทุกภาพ',
+    flow: 'ลายเส้น: การ์ตูน 2D doodle วาดมือ เส้นขอบดำหนา ลงสีแบนสดใสเต็มภาพ สมดุลแสงขาวเป็นกลาง ไม่ติดโทนเหลือง — ทุกภาพเป็นภาพวาดการ์ตูน ไม่ใช่ภาพถ่าย ไม่ใช่ภาพสมจริง ไม่ใช่ 3D render แม้แต่ช็อตวิวทิวทัศน์ ช็อตโคลสอัพสิ่งของ หรือช็อตที่ไม่มีตัวละคร ใช้ลายเส้นนี้ทุกภาพ',
   },
   watercolor: {
     label: 'ภาพวาดสีน้ำ',
     rule: `**ลายเส้นของคลิปนี้: ภาพวาดสีน้ำ — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้าม doodle ห้ามตัวก้าง ห้ามการ์ตูนหัวโต)**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Painterly watercolor illustration — soft ink linework with rich watercolor washes painted full-bleed to all four edges (no paper margin, no border, no faded vignette edges), gentle paper texture, warm golden light with soft atmospheric haze, detailed lush backgrounds, cinematic wide compositions, emotional storytelling mood, fully colored
+- ART STYLE ใน Style Bible ให้เขียนว่า: Painterly watercolor illustration — soft ink linework with rich watercolor washes painted full-bleed to all four edges (no paper margin, no border, no faded vignette edges), gentle clean white paper texture, bright clear daylight with vivid fresh colors and neutral white balance (no yellow, golden or sepia tint), soft atmospheric haze, detailed lush backgrounds, cinematic wide compositions, emotional storytelling mood, fully colored
 - ตัวละครวาดแบบภาพวาดสัดส่วนสมจริง (ไม่ใช่การ์ตูน): ใบหน้ามีรายละเอียดและอารมณ์ชัด ผิวและผ้ามีแสงเงาแบบสีน้ำ
 - ทุกช็อตเหมือนภาพวาดหนึ่งภาพ: ฉากหลังละเอียด แสงนุ่ม หมอกบาง สีอิ่มแบบสีน้ำ
 - ตัวอักษรบนภาพใช้น้อยที่สุด (ซับไตเติลใส่ตอนตัดต่อ)`,
-    flow: 'ลายเส้น: ภาพวาดสีน้ำ ลายเส้นหมึกนุ่ม ลงสีน้ำซึมเต็มภาพถึงขอบทุกด้าน (ไม่เว้นขอบกระดาษขาว ไม่มีขอบสีจาง) แสงทองนุ่ม ฉากหลังละเอียด ตัวละครสัดส่วนสมจริงแบบภาพวาด — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ใช้ลายเส้นนี้ทุกภาพ',
+    flow: 'ลายเส้น: ภาพวาดสีน้ำ ลายเส้นหมึกนุ่ม ลงสีน้ำซึมเต็มภาพถึงขอบทุกด้าน (ไม่เว้นขอบกระดาษขาว ไม่มีขอบสีจาง) แสงกลางวันสว่างใส สีสดใส ไม่ติดโทนเหลือง/ทอง ฉากหลังละเอียด ตัวละครสัดส่วนสมจริงแบบภาพวาด — ไม่ใช่การ์ตูน doodle ไม่ใช่ตัวก้าง ใช้ลายเส้นนี้ทุกภาพ',
     body: '- แบบตัวละคร: ภาพวาดสีน้ำสัดส่วนสมจริง (ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง ไม่ใช่หัวโต) ตามลายเส้นภาพวาดสีน้ำด้านล่าง · เขียนแบบนี้ใน Character Bible ด้วย',
     bodyFlow: 'ตัวละครทุกตัววาดแบบภาพวาดสีน้ำสัดส่วนสมจริง ไม่ใช่การ์ตูน ไม่ใช่ตัวก้าง',
   },
@@ -326,7 +326,7 @@ export const ART_STYLES = {
     label: 'ภาพเสมือนจริง',
     photo: true, // ภาพถ่าย — ข้ามกฎ "ต้องเป็นการ์ตูน/สีสด" ที่ใช้กับลายเส้นภาพวาด
     rule: `**ลายเส้นของคลิปนี้: ภาพถ่ายเสมือนจริง — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้ามการ์ตูน ห้าม doodle ห้ามตัวก้าง ห้ามภาพวาด ห้ามลายเส้น)**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Photorealistic photography — natural daylight or realistic practical lighting, true-to-life colors and skin tones, real materials and textures, sharp focus, straightforward documentary framing, no illustration and no CGI look
+- ART STYLE ใน Style Bible ให้เขียนว่า: Photorealistic photography — natural daylight or realistic practical lighting, true-to-life vivid colors and skin tones, neutral white balance (no yellow or orange cast), real materials and textures, sharp focus, straightforward documentary framing, no illustration and no CGI look
 - ทุกช็อตเหมือนภาพถ่ายจากกล้องจริง ไม่ใช่ภาพวาด ไม่ใช่การ์ตูน ไม่ใช่ 3D render
 - ฉาก เสื้อผ้า และสิ่งของเป็นของจริงตามยุคสมัยและสถานที่ของเรื่อง พื้นผิวมีรายละเอียด (ผ้า ไม้ โลหะ ผิวหนัง ฝุ่น รอยสึก)
 - ตัวอักษรบนภาพใช้น้อยที่สุด (ซับไตเติลใส่ตอนตัดต่อ)`,
@@ -345,10 +345,10 @@ export const ART_STYLES = {
     label: 'ภาพแบบหนัง',
     photo: true,
     rule: `**ลายเส้นของคลิปนี้: ภาพนิ่งจากภาพยนตร์ — ใช้แทน ART STYLE และ CHARACTERS ใน VISUAL STYLE DNA ของ Blueprint ทั้งคลิป (ห้ามการ์ตูน ห้าม doodle ห้ามตัวก้าง ห้ามภาพวาด)**
-- ART STYLE ใน Style Bible ให้เขียนว่า: Cinematic film still — shallow depth of field with soft background bokeh, motivated directional lighting with strong highlights and deep shadows, filmic color grading, subtle film grain, deliberate composition with leading lines and depth layers, real photographic look
+- ART STYLE ใน Style Bible ให้เขียนว่า: Cinematic film still — shallow depth of field with soft background bokeh, motivated directional lighting with strong highlights and deep shadows, clean filmic color grading with neutral white balance (no yellow, orange or sepia cast), subtle film grain, deliberate composition with leading lines and depth layers, real photographic look
 - ทุกช็อตเหมือนเฟรมหนึ่งที่ตัดมาจากหนัง ไม่ใช่ภาพวาด ไม่ใช่การ์ตูน
 - ระบุแสงของแต่ละช็อตให้ชัด (แสงมาจากทางไหน เวลาอะไร โทนอุ่นหรือเย็น) และวางองค์ประกอบให้มีชั้นหน้า–กลาง–หลัง
-- โทนสีของคลิปคุมให้เป็นชุดเดียวกันทั้งเรื่อง (เช่น ฟ้า–ส้ม หรือเขียว–น้ำตาล) เงาเข้มและสีหม่นใช้ได้ถ้าเข้ากับอารมณ์ฉาก
+- โทนสีของคลิปคุมให้เป็นชุดเดียวกันทั้งเรื่อง (เช่น ฟ้า–แดง หรือเขียว–ฟ้า) ห้ามทั้งภาพติดโทนเหลือง/ส้ม/ซีเปีย เงาเข้มและสีหม่นใช้ได้ถ้าเข้ากับอารมณ์ฉาก
 - ตัวอักษรบนภาพใช้น้อยที่สุด (ซับไตเติลใส่ตอนตัดต่อ)`,
     flow: 'ลายเส้น: ภาพนิ่งจากภาพยนตร์ ระยะชัดตื้น ฉากหลังละลาย แสงมีทิศทางชัด เงาเข้ม เกรดสีแบบหนัง เกรนฟิล์มบางๆ — ทุกภาพเหมือนเฟรมจากหนังจริง ไม่ใช่ภาพวาด ไม่ใช่การ์ตูน ใช้แบบนี้ทุกภาพ',
     body: {

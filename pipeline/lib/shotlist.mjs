@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { projectDir } from './config.mjs'
-import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule, noTextOn, NO_FRAME_RULE } from './prompts.mjs'
+import { blueprint, parseShotList, flowPrompt, orientationRule, aspectOf, stripSafeArea, clipLanguage, imageLanguageRule, noTextOn, NO_FRAME_RULE, NO_YELLOW_RULE } from './prompts.mjs'
 import { activeCharacter, characterRule, bodyStyleRule } from './character.mjs'
 // ทางนี้คือทางที่แอปกับ autopilot ใช้จริง — เดิมไม่เคยส่งกฎลายเส้นให้ ChatGPT เลย
 // Style Bible จึงออกมาเป็น doodle ตาม Blueprint เสมอ แม้ผู้ใช้เลือกสีน้ำ/จีน/ภาพถ่าย
@@ -74,6 +74,7 @@ const outputRules = (language, noText) => `- ตอบเป็นข้อค�
 - ใส่ pattern interrupt ทุก 15-30 วิ ตามกฎ 6
 - ตัวละครทุกตัวต้องมี @TAG และห้ามเปลี่ยนรูปร่าง/สี/อุปกรณ์ข้ามช็อต
 ${NO_FRAME_RULE}
+${NO_YELLOW_RULE}
 ${imageLanguageRule(language, noText)}`
 
 /**

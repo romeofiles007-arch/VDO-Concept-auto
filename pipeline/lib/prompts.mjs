@@ -63,6 +63,7 @@ ${table}
 ${artBodyRule(artStyleOf(slug, config), bodyStyleRule(), hasCharacterRef())}${artImageRule(artStyleOf(slug, config))}
 - Env ต้องเป็นฉากที่มีรายละเอียดตาม BACKGROUNDS ใน Style Bible (สถานที่ + ของประกอบฉาก 3–6 ชิ้น + แสง/บรรยากาศ + โทนสี) ห้ามเขียนแค่ "พื้นหลังสีเรียบ"
 ${NO_FRAME_RULE}
+${NO_YELLOW_RULE}
 ${imageLanguageRule(clipLanguage(config, slug), noTextOn(config))}`
 }
 
@@ -76,6 +77,14 @@ ${imageLanguageRule(clipLanguage(config, slug), noTextOn(config))}`
 export const NO_FRAME_RULE = `- ภาพไม่มีกรอบ: ทุกช็อตเป็นภาพเต็มเฟรม (full-bleed) ฉากและสียาวถึงขอบภาพทั้ง 4 ด้าน — ห้ามสั่งหรือบรรยายกรอบรอบภาพ เส้นขอบภาพ ขอบขาว ขอบกระดาษ ขอบสีจาง/vignette มุมโค้ง กรอบรูป โพลารอยด์ ช่องการ์ตูน (comic panel) หรือภาพเล็กวางบนพื้นหลัง ทั้งใน Style Bible และทุกช็อต · เขียนกฎนี้ลงใน Style Bible ด้วย (full-bleed edge to edge, no border, no frame) · สิ่งของในฉากที่มีกรอบของมันเอง (ประตู หน้าต่าง แว่น รูปบนผนัง) เขียนได้ตามปกติ`
 export const NO_FRAME_FLOW = 'ทุกภาพต้องเต็มเฟรม (full-bleed) ฉากหลังและสียาวถึงขอบภาพทั้ง 4 ด้าน — ห้ามมีกรอบทุกชนิด: เส้นกรอบรอบภาพ ขอบขาว ขอบสี ขอบกระดาษ ขอบสีจางหรือฟุ้งแบบ vignette มุมโค้ง กรอบรูป โพลารอยด์ หรือภาพเล็กวางบนพื้นหลัง · ห้ามมีแถบว่างหรือพื้นที่เปล่าด้านบน/ล่าง/ข้าง (สิ่งของในฉากที่มีกรอบของมันเอง เช่น ประตู หน้าต่าง แว่น วาดได้ตามปกติ)'
 export const NO_FRAME_REMIND = 'ทุกภาพเต็มเฟรมถึงขอบทั้ง 4 ด้าน ห้ามมีกรอบ เส้นกรอบรอบภาพ ขอบขาว ขอบกระดาษ หรือขอบสีจาง'
+
+/**
+ * ห้ามภาพติดโทนเหลือง — Flow ชอบเติมแสงทอง/ฟิลเตอร์อุ่นจนทั้งภาพอมเหลืองส้ม (ผู้ใช้แจ้ง 17 พ.ย. 2026)
+ * ของที่เป็นสีทองจริง (เหรียญ มงกุฎ บัลลังก์) ยังวาดสีทองได้ ที่ห้ามคือทั้งภาพติดโทน
+ */
+export const NO_YELLOW_RULE = `- ห้ามภาพติดโทนเหลือง: ทุกช็อตสีสดใสสะอาดหลากสี สมดุลแสงขาวเป็นกลาง (neutral white balance) — ห้ามสั่งหรือบรรยาย แสงสีทอง แสงอุ่น แสงส้มยามเย็น golden hour โทนทอง/เหลือง/ส้ม/น้ำตาล/ซีเปียทั้งภาพ หรือกระดาษเหลืองเก่า · แสงให้เป็นแสงกลางวันสว่างใส และเขียนโทนสีของฉากเป็นสีสด เช่น ฟ้าสด เขียวสด แดงสด ม่วง ชมพู (ของที่เป็นสีทองจริง เช่น เหรียญ มงกุฎ วาดสีทองได้ แต่ทั้งภาพต้องไม่อมเหลือง)`
+export const NO_YELLOW_FLOW = 'สีสดใสสะอาด สมดุลแสงขาวเป็นกลาง — ห้ามทั้งภาพติดโทนเหลือง ส้ม ทอง น้ำตาล หรือซีเปีย ห้ามฟิลเตอร์อุ่นและแสงทองยามเย็น · สีขาวต้องขาวสะอาด ท้องฟ้าฟ้าสด ใบไม้เขียวสด ผิวคนเป็นสีธรรมชาติไม่อมเหลือง (ของที่เป็นสีทองจริงวาดสีทองได้)'
+export const NO_YELLOW_REMIND = 'สีสดใส แสงขาวเป็นกลาง ห้ามทั้งภาพติดโทนเหลือง/ส้ม/ทอง/ซีเปีย'
 
 /**
  * ตัดคำสั่ง "เว้นที่ว่างให้ซับไตเติล" ออกจาก prompt ภาพ — ถ้าส่งไป Flow จะวาดภาพมีแถบว่างด้านล่างทุกภาพ
@@ -160,7 +169,7 @@ export function fitPortrait(text) {
  * (คลิปยาวสั่งเป็นชุดละ 10 ช็อต ลายเส้นในข้อความแรกจางหาย → รอบหลังได้ภาพถ่ายสมจริงปนการ์ตูน)
  */
 export function flowStyleNote(config = loadConfig(), slug = null) {
-  return `${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}\n${NO_FRAME_REMIND}`
+  return `${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}\n${NO_FRAME_REMIND}\n${NO_YELLOW_REMIND}`
 }
 
 /** ข้อความที่วางลง Flow — คำกำกับข้างบนตามที่ผู้ใช้ระบุในข้อ 5 ของสเปก */
@@ -184,13 +193,14 @@ export function flowPrompt(agentBrief, config = loadConfig(), slug = null) {
 ${artFlowNote(artStyleOf(slug, config), bodyStyleFlowNote(), hasCharacterRef())}${charNote ? `\n${charNote}` : ''}${portrait ? '\nทุกภาพเป็นแนวตั้ง 9:16 จัดองค์ประกอบแนวตั้ง ตัวละครอยู่กลางภาพ · ห้ามวาดภาพแนวนอนแล้วหมุนตะแคงใส่กรอบแนวตั้ง — ขอบฟ้าเป็นแนวนอน พื้นอยู่ล่าง ท้องฟ้าอยู่บน ตัวละครยืนตั้งตรง' : ''}
 ${NO_FRAME_FLOW}
 ${colorRule}
+${NO_YELLOW_FLOW}
 ตั้งชื่อแต่ละภาพเป็นชื่อไฟล์ที่อยู่หน้าบรรทัดของ shot นั้นเป๊ะๆ เช่น "00_00_00.png SHOT 01"
 ชื่อไฟล์ เลข SHOT และ @TAG ใช้ตั้งชื่อภาพเท่านั้น ห้ามเขียนลงในภาพ
 @TAG (เช่น @main @crowd1) เป็นชื่อเรียกตัวละครในคำสั่งเท่านั้น ห้ามวาดป้ายชื่อ ตัวอักษร @ หรือชื่อตัวละครลอยเหนือหัว/บนตัวละครเด็ดขาด
 
 ${portrait ? fitPortrait(agentBrief) : agentBrief}
 
-ย้ำ: ${colorReminder} · ${NO_FRAME_REMIND} · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
+ย้ำ: ${colorReminder} · ${NO_YELLOW_REMIND} · ${NO_FRAME_REMIND} · ห้ามมีป้ายชื่อ @TAG หรือชื่อตัวละครในภาพ — ${textRule}`
 }
 
 /** แยก shot list ออกจาก OUTPUT 5 แล้วจับคู่กับช่อง shot ที่เราคำนวณไว้ */
@@ -238,11 +248,16 @@ export function recolorScene(text) {
     .replace(/เทาหม่น|หม่นหมอง/g, 'เข้มอิ่ม')
     .replace(/โทน(สี)?เทา/g, 'โทน$1ฟ้าเข้ม')
     .replace(/หม่น(ลง)?/g, 'เข้มขึ้น')
+    // โทนอุ่นในคำบรรยายฉากทำให้ Flow เกรดทั้งภาพอมเหลือง (ผู้ใช้แจ้ง 17 พ.ย. 2026) — สีของสิ่งของ ("บัลลังก์ทองคำ") ไม่แตะ
+    .replace(/แสง(อาทิตย์|แดด|ไฟ|เทียน|คบเพลิง|ตะเกียง|ยามเย็น)?\s*(?:สี)?(?:ทอง|ส้ม|เหลือง|อำพัน|อุ่น)(?:อ่อน|นวล|อุ่น|เข้ม)?/g, 'แสง$1สว่างใส')
+    .replace(/โทน(?:หลัก)?(?:สี)?(?:ทอง|เหลือง|ส้ม|น้ำตาล|ซีเปีย|อุ่น|อบอุ่น)(?:อ่อน|เข้ม)?/g, 'โทนสีสดใสหลากสี')
+    .replace(/\b(?:warm\s+)?golden(?:[- ]hour)?\s+(?:light(?:ing)?|glow|tones?|hues?)|\bgolden[- ]hour\b|\bwarm\s+(?:light(?:ing)?|glow|tones?|palette|hues?)|\bamber\s+(?:light|glow)/gi, 'bright clear daylight')
+    .replace(/\bsepia(?:[- ]toned?)?\b/gi, 'vivid')
     .replace(/ขาวดำ|monochrome|grayscale|greyscale|black and white/gi, 'ลงสีสด')
 }
 /** ใช้กับบรรทัดใน Style Bible ที่พูดถึงฉากหลัง/โทนสี/บรรยากาศ และช่อง Env/Frame ของ shot */
 export function recolorBrief(bible) {
-  return String(bible).split(/\r?\n/).map((line) => (/ฉากหลัง|โทน|บรรยากาศ|background|palette/i.test(line) ? recolorScene(line) : line)).join('\n')
+  return String(bible).split(/\r?\n/).map((line) => (/ฉากหลัง|โทน|บรรยากาศ|แสง|background|palette|light/i.test(line) ? recolorScene(line) : line)).join('\n')
 }
 export function recolorShotPrompt(prompt) {
   return String(prompt).split(' | ').map((f) => (/^\s*(Env|Frame)\s*:/i.test(f) ? recolorScene(f) : f)).join(' | ')
