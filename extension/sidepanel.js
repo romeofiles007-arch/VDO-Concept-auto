@@ -1392,16 +1392,21 @@ $('newAuto').addEventListener('click', async () => {
   if ((S.autoTopicMode ?? 'manual') === 'manual') $('autoTitle').focus({ preventScroll: true })
 })
 
-// 🧹 ล้างทั้งหมด — สำหรับคนที่ติดอยู่ ไม่รู้จะแก้ยังไง: หยุดทุกงาน ล้างงานค้างทั้งในโปรแกรมในเครื่องและในแผง
-// แล้ว reload extension (แผงปิด เปิดใหม่จากไอคอนบนแถบ Chrome = เริ่มสะอาดจริง ไม่มีค่าค้างในหน่วยความจำ)
+// 🧹 ล้างทั้งหมด — สำหรับคนที่ติดอยู่ ไม่รู้จะแก้ยังไง: หยุดทุกงาน ล้างงานค้างทั้งในโปรแกรมในเครื่องและในแผง แล้วปิดแผง
+// (เปิดใหม่จากไอคอนบนแถบ Chrome = แผงเริ่มสะอาด ไม่มีค่าค้างในหน่วยความจำ)
+// ห้ามแตะการเชื่อมต่อทุกอย่าง (ผู้ใช้ 18 พ.ย. 2026): โปรแกรมในเครื่อง (port/token) · แท็บ ChatGPT/Flow ที่ผูกไว้
+// · เพจ/ช่อง/Drive/key (อยู่ฝั่งโปรแกรมในเครื่อง /api/reset ไม่แตะ) — เดิม reload ทั้ง extension
+// ตัวช่วยในแท็บ ChatGPT/Flow หลุด ต้องรีเฟรชแท็บก่อนใช้ต่อ · ตอนนี้แค่ปิดแผง ไม่ reload
 // เก็บไว้: ค่าที่ตั้ง (ภาษา ความยาว แนวคลิป เสียง) — ล้างค่าพวกนี้ทำให้ได้คลิปไม่ตรงที่ตั้งใจ เหมือนเคสลายเส้น
 const PANEL_SETTINGS = ['language', 'titleLanguage', 'minutes', 'lengthUnit', 'genre', 'emotion', 'speed', 'autoTopicMode']
-const KEEP_LOCAL = ['port', 'token', 'enabled'] // การเชื่อมกับโปรแกรมในเครื่อง
+// ล้างเฉพาะงานค้างที่รู้จัก (ไม่ล้างแบบ "ทุกอย่างยกเว้น…" — ค่าการเชื่อมต่อที่เพิ่มทีหลังจะได้ไม่หายไปด้วย)
+const RESET_LOCAL = [SHOWN_DONE_KEY, 'notifiedAutopilot', 'status', 'statusAt']
+const RESET_SESSION = ['chatAskUntil'] // ล็อก "แผงกำลังถาม ChatGPT" — ค้างไว้ ChatGPT จะไม่รับงานจากโปรแกรม 20 นาที
 $('resetAll').addEventListener('click', async () => {
   if (!confirm('🧹 ล้างทั้งหมด แล้วเริ่มจากศูนย์?\n\n'
     + 'หยุด: งานที่กำลังทำทุกอย่าง รวมตั้งเวลาผลิต\n'
     + 'ล้าง: หัวข้อที่เลือก · หัวข้อที่ AI เสนอ · งานที่ค้างไว้ทำต่อ · สถานะรอบผลิต\n'
-    + 'ยังอยู่ครบ: คลิปที่ทำเสร็จ (คลังวิดีโอ) · ค่าที่ตั้งไว้ · key · เพจ/ช่องที่เชื่อม · เสียง · เพลง · คิวโพสต์\n\n'
+    + 'ยังอยู่ครบ: การเชื่อมต่อทั้งหมด (โปรแกรมในเครื่อง · ChatGPT · Flow · เพจ/ช่อง · Drive · key) · คลิปที่ทำเสร็จ · ค่าที่ตั้งไว้ · เสียง · เพลง · คิวโพสต์\n\n'
     + 'แผงนี้จะปิดเอง — กดไอคอน Cartoon Auto บนแถบ Chrome เพื่อเปิดใหม่')) return
   $('resetAll').disabled = true
   let failed = ''
@@ -1414,12 +1419,18 @@ $('resetAll').addEventListener('click', async () => {
   const { chatTabId } = await chrome.storage.session.get('chatTabId').catch(() => ({}))
   if (chatTabId) await chrome.tabs.sendMessage(chatTabId, { type: 'STOP' }).catch(() => {})
   const kept = Object.fromEntries(PANEL_SETTINGS.filter((k) => S[k] !== undefined).map((k) => [k, S[k]]))
-  const all = await chrome.storage.local.get(null)
-  await chrome.storage.local.remove(Object.keys(all).filter((k) => !KEEP_LOCAL.includes(k)))
+  await chrome.storage.local.remove(RESET_LOCAL)
   await chrome.storage.local.set({ panel: kept })
-  await chrome.storage.session.clear()
+  await chrome.storage.session.remove(RESET_SESSION).catch(() => {})
+  chrome.action?.setBadgeText({ text: '' }).catch(() => {})
   if (failed) alert(`ล้างในแผงแล้ว แต่ติดต่อโปรแกรมในเครื่องไม่ได้ (${failed})\nถ้ายังมีงานค้าง ให้กด ปิดโปรแกรม แล้ว เปิดโปรแกรม ใหม่`)
-  chrome.runtime.reload()
+  window.close()
+  // บาง Chrome ไม่ยอมให้แผงข้างปิดตัวเอง → ปิดแผงด้วยการปิด-เปิดแผงทันที (ไอคอนยังกดเปิดได้ตามเดิม)
+  setTimeout(async () => {
+    await chrome.sidePanel.setOptions({ enabled: false }).catch(() => {})
+    await chrome.sidePanel.setOptions({ enabled: true }).catch(() => {})
+    setTimeout(() => location.reload(), 500) // ยังปิดไม่ได้อีก → อย่างน้อยโหลดแผงใหม่ให้สะอาด
+  }, 300)
 })
 
 async function startAutopilot({ title, autoTopic }) {
