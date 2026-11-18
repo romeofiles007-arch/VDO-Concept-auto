@@ -21,8 +21,8 @@ export function artStyleOf(slug, config = loadConfig()) {
       if (STYLES.includes(saved)) return saved
     } catch {}
   }
-  // ผลิตต่อเนื่องส่ง CLIP_ART_STYLE มาแทนตั้งค่าคลิป (สุ่มต่อคลิปโดยไม่แก้ค่าของผู้ใช้)
-  const want = process.env.CLIP_ART_STYLE || config.art?.style
+  // ตามตั้งค่าคลิปเสมอ ทั้งคลิปที่สั่งเองและผลิตต่อเนื่อง (เดิมผลิตต่อเนื่องส่ง CLIP_ART_STYLE=random มาสุ่มทับ — เอาออก 18 พ.ย. 2026)
+  const want = config.art?.style
   const style = want === 'random' ? RANDOM_POOL[Math.floor(Math.random() * RANDOM_POOL.length)] : STYLES.includes(want) ? want : 'doodle'
   if (dir && existsSync(dir)) writeFileSync(file, JSON.stringify({ style }, null, 2))
   return style

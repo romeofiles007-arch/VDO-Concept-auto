@@ -31,7 +31,8 @@ export const DEFAULT_SETTINGS = {
   time: '22:00',
   delayMin: 20,
   delayMax: 40,
-  random: { genre: true, art: true, narration: true, language: false },
+  // ไม่มีสุ่มลายเส้นที่นี่แล้ว — ลายเส้นตามตั้งค่าคลิปเสมอ (เลือก 🎲 สุ่ม ที่นั่นได้) · เดิมติ๊กไว้ตั้งแต่แรกแล้วสุ่มทับค่าที่ลูกค้าเลือก (ลูกค้าแจ้ง 18 พ.ย. 2026)
+  random: { genre: true, narration: true, language: false },
   languages: ['th'], // ภาษาที่สุ่มได้ (ใช้เมื่อ random.language)
   // off = เก็บในคลัง | now = เข้าคิวแล้วตั้งเวลาโพสต์ทันที · ไม่มีขั้น AI ตรวจแล้ว (ผู้ใช้ 16 พ.ย. 2026) — ค่าเก่า 'ai' นับเป็น 'now'
   autoPost: 'now',
@@ -51,6 +52,7 @@ function readJson(file, fallback) {
 /** ค่าที่ผู้ใช้ส่งมา → ค่าที่ปลอดภัย */
 export function cleanSettings(input = {}, base = DEFAULT_SETTINGS) {
   const s = { ...base, random: { ...base.random }, languages: [...base.languages] }
+  delete s.random.art // ค่าที่บันทึกไว้จากรุ่นก่อน — ไม่ใช้แล้ว
   const int = (v, min, max) => Math.min(max, Math.max(min, Math.round(Number(v))))
   if (input.count !== undefined && Number.isFinite(Number(input.count))) s.count = int(input.count, 0, 100)
   if (['now', 'at', 'daily'].includes(input.start)) s.start = input.start
@@ -92,7 +94,7 @@ export function pickClip(s, config, rand = Math.random) {
     titleLanguage: s.random.language ? language : config.script.titleLanguage ?? language,
     minutes: config.script.targetMinutes,
     // clip_profile.mjs อ่านตัวแปรนี้แทน config — สุ่มต่อคลิปโดยไม่แตะตั้งค่าคลิปของผู้ใช้
-    env: { ...(s.random.art && { CLIP_ART_STYLE: 'random' }), ...(s.random.narration && { CLIP_NARRATION: 'random' }) },
+    env: { ...(s.random.narration && { CLIP_NARRATION: 'random' }) },
   }
 }
 

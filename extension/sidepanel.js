@@ -1309,7 +1309,7 @@ async function confirmStart({ kind, title = '', autoTopic = false, schedule = nu
   const ai = c?.aiCoverage ?? c?.aiClips
   const aiOn = !!ai && ai !== 'off'
   if (c) {
-    const art = kind === 'prod' && rand.art ? 'สุ่มลายเส้นทุกคลิป' : label(c.options?.artStyle, c.artStyle)
+    const art = label(c.options?.artStyle, c.artStyle)
     const text = !c.imageText ? '' : c.imageText === 'off' ? 'ไม่มีตัวหนังสือในภาพ (ภาพปกยังมีชื่อเรื่อง)' : 'มีตัวหนังสือในภาพได้'
     add('ภาพ', [c.orientation === 'portrait' ? 'แนวตั้ง 9:16' : 'แนวนอน 16:9', art].filter(Boolean).join(' · '), text)
     add('ซับไตเติล', label(c.options?.subtitles, c.subtitles))
@@ -3328,7 +3328,7 @@ const prodMode = () => document.querySelector('input[name="prodMode"]:checked')?
 
 function prodOptions() {
   return {
-    random: { genre: $('prodRandGenre').checked, art: $('prodRandArt').checked, narration: $('prodRandNarration').checked, language: $('prodRandLang').checked },
+    random: { genre: $('prodRandGenre').checked, narration: $('prodRandNarration').checked, language: $('prodRandLang').checked },
     languages: [...$('prodLangs').querySelectorAll('input:checked')].map((i) => i.value),
     autoPost: $('prodAutoPost').querySelector('[aria-pressed="true"]')?.dataset.value ?? 'now',
   }
@@ -3371,7 +3371,6 @@ function renderProd() {
     $('prodLoopHours').value = f.loopHours
     $('prodLoopMins').value = f.loopMins
     $('prodRandGenre').checked = s.random.genre
-    $('prodRandArt').checked = s.random.art
     $('prodRandNarration').checked = s.random.narration
     $('prodRandLang').checked = s.random.language
     for (const i of $('prodLangs').querySelectorAll('input')) i.checked = s.languages.includes(i.value)
@@ -3483,7 +3482,7 @@ $('prodAutoPost').addEventListener('click', (e) => {
   for (const x of $('prodAutoPost').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b))
   prodSave()
 })
-for (const id of ['prodBatchLater', 'prodRandGenre', 'prodRandArt', 'prodRandNarration', 'prodRandLang']) {
+for (const id of ['prodBatchLater', 'prodRandGenre', 'prodRandNarration', 'prodRandLang']) {
   $(id).addEventListener('change', prodSave)
 }
 // แตะตรงไหนของการ์ด หรือพิมพ์ตัวเลขในประโยคของการ์ดไหน = เลือกแบบนั้น
