@@ -1203,6 +1203,22 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('autoLogBox').classList.contains('expanded')) setLogExpanded(false)
 })
 
+/**
+ * คลิปที่กำลังทำเป็นของ 🏭 ตั้งเวลาผลิต → บอกให้ชัด ไม่ใช่หัวข้อที่เลือกในแผง
+ * (ลูกค้าเลือกหัวข้อใหม่ระหว่างรอบผลิตยังไม่จบ เห็นคลิปของรอบผลิตแล้วนึกว่าระบบทำผิดหัวข้อ — 18 พ.ย. 2026)
+ */
+function showFromProd(p) {
+  const el = $('autoFromProd')
+  el.hidden = !p
+  if (!p) return
+  const genre = p.genre && p.genre !== 'mix' ? ` · แนว ${p.genre}` : ''
+  el.textContent = ''
+  el.append(
+    Object.assign(document.createElement('b'), { textContent: `🏭 คลิปนี้มาจากตั้งเวลาผลิต — คลิปที่ ${p.n}${p.count ? `/${p.count}` : ''}${genre}` }),
+    'ไม่ใช่หัวข้อที่เลือกด้านล่าง · อยากทำหัวข้อของตัวเอง: รอรอบผลิตจบ หรือกด "หยุด" ในกล่อง 🏭 ตั้งเวลาผลิต แล้วค่อยกด ▶',
+  )
+}
+
 /** รอจน autopilot จบ — resolve เมื่อได้วิดีโอ, reject เมื่อหยุดหรือพัง */
 function watchAuto(app, slug) {
   clearInterval(autoTimer)
@@ -1217,6 +1233,7 @@ function watchAuto(app, slug) {
         if (a.run.title) $('autoTitle').value = a.run.title
       }
       showAuto(a.status, a.run, a.progress, a.log, a.cost)
+      showFromProd(a.production)
       const st = a.status
       if (a.run?.status === 'running' || st?.status === 'running') {
         const secs = Math.round((Date.now() - (st?.startedAt ?? started)) / 1000)
@@ -1224,6 +1241,7 @@ function watchAuto(app, slug) {
         return setStatus('autoStatus', `${a.progress ? `${a.progress.percent}% · ` : ''}${cur ? cur[1] : slug ? 'กำลังเริ่ม' : 'แผนกคิดหัวข้อ'}กำลังทำงาน · ผ่านไป ${fmtTime(secs)}`, 'busy')
       }
       clearInterval(autoTimer)
+      showFromProd(null)
       if (st?.status === 'done') resolve({ ...st, slug: st.slug ?? slug })
       else if (a.run?.status === 'stopped' || st?.status === 'stopped') reject(new Error('หยุดแล้ว — กดทำคลิปอัตโนมัติอีกครั้งเพื่อทำต่อจากที่ค้าง'))
       else {
@@ -1363,6 +1381,8 @@ async function confirmStart({ kind, title = '', autoTopic = false, schedule = nu
 $('newAuto').addEventListener('click', async () => {
   $('autoTitle').value = ''
   S.autoTitle = ''
+  S.scoredTopics = [] // รายการที่ AI เสนอรอบก่อนด้วย — เริ่มใหม่ต้องไม่เห็นหัวข้อเก่าค้าง
+  setStatus('suggestStatus', '')
   autoResume = null // ปุ่ม ▶ จะได้ไม่ทำต่อเรื่องเดิม
   await save()
   render()
@@ -1370,6 +1390,36 @@ $('newAuto').addEventListener('click', async () => {
   setStatus('autoStatus', 'เริ่มวิดีโอใหม่ — เลือกหัวข้อและตั้งค่าด้านล่าง เสร็จแล้วกด ▶ ทำคลิปอัตโนมัติ', 'ok')
   $('autoTopicBlock').scrollIntoView({ behavior: 'smooth', block: 'start' })
   if ((S.autoTopicMode ?? 'manual') === 'manual') $('autoTitle').focus({ preventScroll: true })
+})
+
+// 🧹 ล้างทั้งหมด — สำหรับคนที่ติดอยู่ ไม่รู้จะแก้ยังไง: หยุดทุกงาน ล้างงานค้างทั้งในโปรแกรมในเครื่องและในแผง
+// แล้ว reload extension (แผงปิด เปิดใหม่จากไอคอนบนแถบ Chrome = เริ่มสะอาดจริง ไม่มีค่าค้างในหน่วยความจำ)
+// เก็บไว้: ค่าที่ตั้ง (ภาษา ความยาว แนวคลิป เสียง) — ล้างค่าพวกนี้ทำให้ได้คลิปไม่ตรงที่ตั้งใจ เหมือนเคสลายเส้น
+const PANEL_SETTINGS = ['language', 'titleLanguage', 'minutes', 'lengthUnit', 'genre', 'emotion', 'speed', 'autoTopicMode']
+const KEEP_LOCAL = ['port', 'token', 'enabled'] // การเชื่อมกับโปรแกรมในเครื่อง
+$('resetAll').addEventListener('click', async () => {
+  if (!confirm('🧹 ล้างทั้งหมด แล้วเริ่มจากศูนย์?\n\n'
+    + 'หยุด: งานที่กำลังทำทุกอย่าง รวมตั้งเวลาผลิต\n'
+    + 'ล้าง: หัวข้อที่เลือก · หัวข้อที่ AI เสนอ · งานที่ค้างไว้ทำต่อ · สถานะรอบผลิต\n'
+    + 'ยังอยู่ครบ: คลิปที่ทำเสร็จ (คลังวิดีโอ) · ค่าที่ตั้งไว้ · key · เพจ/ช่องที่เชื่อม · เสียง · เพลง · คิวโพสต์\n\n'
+    + 'แผงนี้จะปิดเอง — กดไอคอน Cartoon Auto บนแถบ Chrome เพื่อเปิดใหม่')) return
+  $('resetAll').disabled = true
+  let failed = ''
+  try {
+    await api(await localApp(), '/api/reset', {})
+  } catch (err) {
+    failed = err.message
+  }
+  // ChatGPT ที่กำลังพิมพ์คำตอบค้าง → หยุดด้วย
+  const { chatTabId } = await chrome.storage.session.get('chatTabId').catch(() => ({}))
+  if (chatTabId) await chrome.tabs.sendMessage(chatTabId, { type: 'STOP' }).catch(() => {})
+  const kept = Object.fromEntries(PANEL_SETTINGS.filter((k) => S[k] !== undefined).map((k) => [k, S[k]]))
+  const all = await chrome.storage.local.get(null)
+  await chrome.storage.local.remove(Object.keys(all).filter((k) => !KEEP_LOCAL.includes(k)))
+  await chrome.storage.local.set({ panel: kept })
+  await chrome.storage.session.clear()
+  if (failed) alert(`ล้างในแผงแล้ว แต่ติดต่อโปรแกรมในเครื่องไม่ได้ (${failed})\nถ้ายังมีงานค้าง ให้กด ปิดโปรแกรม แล้ว เปิดโปรแกรม ใหม่`)
+  chrome.runtime.reload()
 })
 
 async function startAutopilot({ title, autoTopic }) {

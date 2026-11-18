@@ -9,7 +9,7 @@
  *
  * ChatGPT/Flow ผ่านเว็บ; แอนิเมชัน Kie API เป็นตัวเลือกที่ปิดได้; ขั้นอื่นรันในเครื่อง
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, unlinkSync, renameSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, createReadStream, createWriteStream, unlinkSync, renameSync, rmSync } from 'node:fs'
 import { pipeline as pipeStreams } from 'node:stream/promises'
 import { join, resolve, sep, extname } from 'node:path'
 import { ROOT, loadConfig, updateConfig, slugify } from '../pipeline/lib/config.mjs'
@@ -78,6 +78,31 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
   const runner = createRunner({ log })
   // 🏭 ผลิตต่อเนื่อง — สั่ง autopilot ทีละคลิปตามเวลา (วนเฉพาะ bridge ตัวจริง)
   const production = createProduction({ runner, log, json, readBody, scheduler })
+
+  /**
+   * ยกเลิกทั้งงานที่รอคิว และงานที่ ChatGPT/Flow กำลังทำอยู่ — เดิมยกเลิกแค่ที่รอคิว
+   * งานที่กำลังทำจึงทำต่อจนจบและเขียนภาพลงเครื่องต่ออีก ≥90 วิ (จนกว่าจะถูกจับว่าเป็นงานกำพร้า)
+   * ผู้ใช้เห็นว่ากดหยุดแล้วแต่ระบบ "แอบทำต่อ" · cancelled: แท็บเลิกทำในรอบ heartbeat ถัดไป (≤20 วิ)
+   * และ bridge ไม่รับไฟล์ของงานนี้อีกตั้งแต่วินาทีนี้
+   */
+  function cancelJobs(reason = 'หยุดโดยผู้ใช้') {
+    for (const job of jobs.values()) {
+      if (job.status === 'queued' || job.status === 'running') {
+        Object.assign(job, { status: 'error', error: reason, cancelled: true, touchedAt: Date.now() })
+        log(`ยกเลิก ${job.kind} (${job.id.slice(0, 8)}): ${reason}`)
+      }
+    }
+  }
+
+  /** บันทึกว่าคลิปอัตโนมัติหยุดเอง — กด "ทำต่อ" ได้ แม้โปรแกรมในเครื่องถูกปิดไปก่อน */
+  function markAutopilotStopped(run) {
+    if (run?.step !== 'autopilot' || run.status !== 'running') return
+    const file = run.slug ? join(ROOT, 'projects', run.slug, 'autopilot.json') : null
+    const st = file && existsSync(file) ? readJson(file, null) : null
+    if (st?.status !== 'running') return
+    for (const d of Object.values(st.departments ?? {})) if (d.status === 'working') Object.assign(d, { status: 'waiting', detail: 'หยุดไว้ — กดทำต่อ' })
+    writeFileSync(file, JSON.stringify({ ...st, status: 'stopped', stoppedAt: Date.now(), updatedAt: Date.now() }, null, 2))
+  }
 
   function state({ freshSetup = false } = {}) {
     const config = loadConfig()
@@ -700,28 +725,25 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       if (req.method === 'POST' && path === '/api/run/stop') {
         const run = runner.snapshot()
         const stopped = runner.stop() ?? {}
-        if (run?.status === 'running') {
-          // ยกเลิกทั้งงานที่รอคิว และงานที่ ChatGPT/Flow กำลังทำอยู่ — เดิมยกเลิกแค่ที่รอคิว
-          // งานที่กำลังทำจึงทำต่อจนจบและเขียนภาพลงเครื่องต่ออีก ≥90 วิ (จนกว่าจะถูกจับว่าเป็นงานกำพร้า)
-          // ผู้ใช้เห็นว่ากดหยุดแล้วแต่ระบบ "แอบทำต่อ" · cancelled: แท็บเลิกทำในรอบ heartbeat ถัดไป (≤20 วิ)
-          // และ bridge ไม่รับไฟล์ของงานนี้อีกตั้งแต่วินาทีนี้
-          for (const job of jobs.values()) {
-            if (job.status === 'queued' || job.status === 'running') {
-              Object.assign(job, { status: 'error', error: 'หยุดโดยผู้ใช้', cancelled: true, touchedAt: Date.now() })
-              log(`ยกเลิก ${job.kind} (${job.id.slice(0, 8)}): หยุดโดยผู้ใช้`)
-            }
-          }
-        }
-        if (run?.step === 'autopilot' && run.status === 'running') {
-          // บันทึกว่าหยุดเอง — กด "ทำต่อ" ได้ แม้โปรแกรมในเครื่องถูกปิดไปก่อน
-          const file = run.slug ? join(ROOT, 'projects', run.slug, 'autopilot.json') : null
-          const st = file && existsSync(file) ? readJson(file, null) : null
-          if (st?.status === 'running') {
-            for (const d of Object.values(st.departments ?? {})) if (d.status === 'working') Object.assign(d, { status: 'waiting', detail: 'หยุดไว้ — กดทำต่อ' })
-            writeFileSync(file, JSON.stringify({ ...st, status: 'stopped', stoppedAt: Date.now(), updatedAt: Date.now() }, null, 2))
-          }
-        }
+        if (run?.status === 'running') cancelJobs()
+        markAutopilotStopped(run)
         return json(res, 200, stopped), true
+      }
+
+      // ── 🧹 ล้างทั้งหมด: คนที่ไม่รู้จะแก้ยังไง กดแล้วเริ่มจากศูนย์ ──
+      // หยุดทุกงาน (ทำคลิป/ผลิตต่อเนื่อง/งานในแท็บ ChatGPT/Flow) · ลืมหัวข้อที่เลือก งานค้าง รายการหัวข้อ สถานะรอบผลิต
+      // ไม่แตะ: คลิปที่ทำเสร็จ (คลังวิดีโอ) · ค่าที่ตั้งไว้ · key · เพจ/ช่องที่เชื่อม · เสียง · เพลง · คิวโพสต์ · ประวัติหัวข้อที่เคยทำ (กันเรื่องซ้ำ)
+      if (req.method === 'POST' && path === '/api/reset') {
+        const run = runner.snapshot()
+        production.reset()
+        runner.stop()
+        cancelJobs('ล้างทั้งหมดโดยผู้ใช้')
+        markAutopilotStopped(run)
+        runner.forget()
+        for (const f of [SELECTED_FILE, join(ROOT, 'projects', '_autopilot_last.json')]) rmSync(f, { force: true })
+        if (existsSync(TOPICS_FILE)) writeFileSync(TOPICS_FILE, '[]\n')
+        log('ล้างทั้งหมดโดยผู้ใช้')
+        return json(res, 200, { ok: true }), true
       }
 
       // ── ตรวจความพร้อมของเครื่อง (เปิดดูเมื่ออยากรู้) ──
@@ -751,6 +773,13 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const genre = GENRES.includes(body.genre) ? body.genre : 'mix'
         // เริ่มใหม่ตั้งแต่แผนกที่เลือก (ไม่ใส่ = ทำต่อจากที่ค้าง) — ต้องมีหัวข้อ ใช้กับคลิปที่มีอยู่แล้ว
         const restartFrom = title && ['script', 'voice', 'art', 'images', 'clips', 'edit'].includes(body.restartFrom) ? body.restartFrom : null
+        // เครื่องทำได้ทีละคลิป — บอกให้ชัดว่าใครกำลังทำอยู่ (เดิมขึ้นแค่ "กำลังทำคลิปอัตโนมัติอยู่" ลูกค้าไม่รู้ว่าเป็นของรอบผลิต)
+        if (runner.snapshot()?.status === 'running') {
+          const p = production.current()
+          return json(res, 409, { error: p
+            ? `ตั้งเวลาผลิตกำลังทำคลิปที่ ${p.n}${p.count ? `/${p.count}` : ''} อยู่ — รอให้เสร็จ หรือกด "หยุด" ในกล่อง 🏭 ตั้งเวลาผลิต แล้วค่อยกด ▶ ใหม่`
+            : `กำลัง${runner.snapshot().label}อยู่ — รอให้เสร็จ หรือกด "หยุด" ก่อน` }), true
+        }
         const slug = autoTopic ? null : slugify(title)
         const started = runner.start('autopilot', slug, { title, autoTopic, genre, language, titleLanguage, minutes, restartFrom })
         // ขั้นเสียงพากย์อ่านภาษา/ความยาวเป้าหมายจาก config — ให้ตรงกับที่เลือกในแผงข้าง
@@ -791,7 +820,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const active = !!autopilotRun && (autopilotRun.slug === slug || choosingTopic)
         // โปรแกรมถูกปิดกลางคัน → ไฟล์ยังเขียนว่า running
         if (status?.status === 'running' && !(active && run.status === 'running')) status.status = active && run.status === 'stopped' ? 'stopped' : 'failed'
-        return json(res, 200, { slug, status, run: active ? run : null, last: last?.slug === slug ? last : null, progress: status ? autopilotProgress(status) : null, log: autopilotLog(autopilotRun, slug, choosingTopic), cost: slug && status ? await clipCost(slug).catch(() => null) : null }), true
+        return json(res, 200, { slug, status, run: active ? run : null, production: active ? production.current() : null, last: last?.slug === slug ? last : null, progress: status ? autopilotProgress(status) : null, log: autopilotLog(autopilotRun, slug, choosingTopic), cost: slug && status ? await clipCost(slug).catch(() => null) : null }), true
       }
 
       // เสียงต้นแบบสำหรับ voice clone + ข้อความที่พูดในไฟล์นั้น

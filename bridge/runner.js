@@ -167,5 +167,10 @@ export function createRunner({ log }) {
     return { ...rest, label: STEPS[rest.step].label, lines: rest.lines.map((l) => l.text), entries: rest.lines.map((l) => ({ at: l.at, text: l.text, progress: !!l.progress })) }
   }
 
-  return { start, stop, snapshot }
+  /** ลืมงานที่จบไปแล้ว (ปุ่มล้างทั้งหมด) — แผงจะได้ไม่เห็นงานเก่าเป็น "หยุดไว้ กดทำต่อ" */
+  function forget() {
+    if (current && current.status !== 'running') current = null
+  }
+
+  return { start, stop, snapshot, forget }
 }

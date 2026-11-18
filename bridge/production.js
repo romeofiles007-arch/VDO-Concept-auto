@@ -247,7 +247,7 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
     }
     const clip = pickClip(settings, config)
     const run = runner.start('autopilot', null, { autoTopic: true, genre: clip.genre, language: clip.language, titleLanguage: clip.titleLanguage, minutes: clip.minutes, env: clip.env, quiet: true })
-    state.run = { startedAt: run.startedAt, language: clip.language }
+    state.run = { startedAt: run.startedAt, language: clip.language, genre: clip.genre }
     const n = state.made + 1
     say(`เริ่มคลิป ${n}${settings.count ? `/${settings.count}` : ''} (${{ th: 'ไทย', zh: 'จีน', en: 'อังกฤษ' }[clip.language]})`)
     save()
@@ -344,6 +344,23 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
   }
 
   // active: เปิดโหมดผลิตต่อเนื่องอยู่ (รวมช่วงพักระหว่างคลิป/รอเวลาเริ่ม) — ใช้กันเครื่องหลับ ไม่งั้นคลิปถัดไปไม่เริ่ม
-  const api = { handle, tick, view, busy: () => !!state.run, active: () => !!state.active, onClipReady: null }
+  /**
+   * คลิปที่ทำคลิปอัตโนมัติกำลังทำอยู่เป็นของรอบผลิตนี้ไหม — แผงข้างใช้ขึ้นป้ายว่า "คลิปจากตั้งเวลาผลิต"
+   * (ลูกค้าเลือกหัวข้อใหม่ระหว่างรอบผลิตยังไม่จบ แล้วเห็นคลิปของรอบผลิตในแผง นึกว่าเป็นคลิปที่ตัวเองสั่ง — 18 พ.ย. 2026)
+   */
+  function current() {
+    const snap = runner.snapshot()
+    if (!state.run || snap?.status !== 'running' || snap.startedAt !== state.run.startedAt) return null
+    return { n: state.made + 1, count: settings.count, genre: state.run.genre ?? null }
+  }
+
+  /** ปุ่มล้างทั้งหมด: หยุดรอบผลิต ล้างสถานะ/ประวัติรอบผลิต (ไฟล์คลิปยังอยู่ในคลัง) — ค่าที่ตั้งไว้คงเดิม */
+  function reset() {
+    if (state.run && runner.snapshot()?.status === 'running' && runner.snapshot()?.startedAt === state.run.startedAt) runner.stop()
+    state = blankState()
+    save()
+  }
+
+  const api = { handle, tick, view, current, reset, busy: () => !!state.run, active: () => !!state.active, onClipReady: null }
   return api
 }

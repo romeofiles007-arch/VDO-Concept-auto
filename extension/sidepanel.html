@@ -161,6 +161,8 @@
   .voxRef { margin-top: 10px; }
   .voxRef textarea { width: 100%; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
   .voxRef #saveVoxRef { margin-top: 6px; width: fit-content; }
+  .fromProd { margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-left: 4px solid currentColor; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  .fromProd b { display: block; }
   .restartRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; font-size: 13px; color: var(--muted); }
   .restartRow select { flex: 1; min-width: 150px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; }
   .modalBack { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; padding: 12px; z-index: 30; }
@@ -289,6 +291,7 @@
         <button class="ghost" id="openLibrary">🎬 คลังวิดีโอ</button>
         <button class="ghost" id="openPosting" title="ตรวจคลิป ตั้งเวลา และโพสต์ลง Facebook Page / YouTube">📣 โพสต์อัตโนมัติ</button>
         <button class="ghost" id="openProjects">📂 เปิด project เก่า</button>
+        <button class="ghost" id="resetAll" title="ติดอยู่ ไม่รู้จะแก้ยังไง — หยุดทุกงาน ล้างหัวข้อและงานที่ค้าง แล้วเริ่มจากศูนย์ (คลิปที่ทำเสร็จและค่าที่ตั้งไว้ยังอยู่)">🧹 ล้างทั้งหมด</button>
       </div>
     </div>
     <div class="status" id="projectsStatus" role="status" aria-live="polite" style="margin:8px 0 0"></div>
@@ -301,6 +304,7 @@
     <div class="agentBlock controlBlock" id="autoControlBlock" data-agent="control">
     <div class="blockHead" data-agent-label="ศูนย์ควบคุม"><svg class="blockIcon" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="blockTitle">ควบคุมอัตโนมัติ</span></div>
     <div class="autoLive" id="autoLive">
+    <p class="fromProd" id="autoFromProd" hidden></p>
     <div class="status" id="autoStatus" role="status" aria-live="polite"></div>
     <div class="autoProgress" id="autoProgress" hidden>
       <div class="autoProgressHead"><strong id="autoPct">0%</strong><span id="autoProgressText"></span></div>
