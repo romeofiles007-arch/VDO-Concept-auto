@@ -62,6 +62,41 @@ export function gapLabel(min) {
   return h ? `${h} ชั่วโมง${m ? ` ${m} นาที` : ''}` : `${m} นาที`
 }
 
+/** เวลาแบบคนอ่าน: วันนี้ → "22:00 น." · วันอื่น → "พรุ่งนี้ 22:00 น." / "21 พ.ย. 22:00 น." */
+function clockLabel(at, now) {
+  const d = new Date(at), n = new Date(now)
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} น.`
+  if (d.toDateString() === n.toDateString()) return hm
+  const tomorrow = new Date(n)
+  tomorrow.setDate(n.getDate() + 1)
+  if (d.toDateString() === tomorrow.toDateString()) return `พรุ่งนี้ ${hm}`
+  return `${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} ${hm}`
+}
+
+/**
+ * แถบ "ผลิตครั้งต่อไป" ที่ค้างอยู่บนแผง (ผู้ใช้ 19 พ.ย. 2026) — ข้อความจากสถานะของตัวตั้งเวลาผลิต
+ * prod = คำตอบของ /api/production { settings, state } · คืน null เมื่อไม่ได้เปิดผลิต (ไม่ต้องแสดงแถบ)
+ * @returns {{ main: string, sub: string, mode: 'wait'|'run'|'due' } | null}
+ */
+export function nextProductionLabel(prod, now = Date.now()) {
+  const st = prod?.state, s = prod?.settings
+  if (!st?.active || !s) return null
+  const total = s.count ? `/${s.count}` : ''
+  if (st.run) {
+    const n = st.made + 1
+    const last = s.count > 0 && n >= s.count
+    const gap = !s.delayMax ? 'ต่อทันทีที่คลิปนี้เสร็จ' : `หลังคลิปนี้เสร็จ เว้น ${s.delayMin === s.delayMax ? gapLabel(s.delayMin) : `${s.delayMin}–${s.delayMax} นาที`}`
+    const sub = !last ? `คลิปถัดไปเริ่ม${gap}`
+      : s.start === 'daily' ? `คลิปสุดท้ายของรอบนี้ · รอบถัดไป ${clockLabel(nextProductionStart(s.time, new Date(now)), now)}`
+        : 'คลิปสุดท้ายของรอบนี้ — เสร็จแล้วหยุดผลิต'
+    return { mode: 'run', main: `กำลังผลิตคลิปที่ ${n}${total}`, sub }
+  }
+  const made = `ทำแล้ว ${st.made}${total} คลิป`
+  if (!st.nextAt || st.nextAt <= now) return { mode: 'due', main: 'กำลังจะเริ่มผลิตคลิปถัดไป', sub: made }
+  const mins = Math.ceil((st.nextAt - now) / 60_000)
+  return { mode: 'wait', main: `ผลิตครั้งต่อไป ${clockLabel(st.nextAt, now)}`, sub: `อีก ${mins < 1 ? 'ไม่ถึง 1 นาที' : gapLabel(mins)} · ${made}` }
+}
+
 export function scheduleCopy(s, now = new Date()) {
   const amount = s.count ? `${s.count} คลิป` : 'ต่อเนื่องจนกดหยุด'
   const headline = s.start === 'daily' && s.count ? `ทุกวัน ${s.time} น. · วันละ ${amount}`

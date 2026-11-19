@@ -2,7 +2,7 @@
 //   node --test scripts/test-production-schedule.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { modeFields, scheduleFromMode, scheduleCopy, nextProductionStart, gapLabel } from '../extension/production-schedule.js'
+import { modeFields, scheduleFromMode, scheduleCopy, nextProductionStart, gapLabel, nextProductionLabel } from '../extension/production-schedule.js'
 
 const base = { batchCount: '3', later: false, batchTime: '22:00', dailyTime: '22:00', dailyCount: '2', loopHours: '2', loopMins: '0' }
 
@@ -55,6 +55,32 @@ test('เวลาเริ่มที่ผ่านไปแล้ววั�
   const now = new Date(2026, 10, 3, 22, 0, 0)
   assert.equal(nextProductionStart('22:00', now).getDate(), 4)
   assert.equal(nextProductionStart('23:00', now).getDate(), 3)
+})
+
+test('แถบ "ผลิตครั้งต่อไป": เวลา + นับถอยหลัง · กำลังผลิต · ไม่เปิดผลิตไม่แสดง', () => {
+  const now = new Date(2026, 10, 19, 18, 48).getTime()
+  const settings = { count: 5, start: 'now', time: '22:00', delayMin: 120, delayMax: 120 }
+  const at = (h, m, day = 19) => new Date(2026, 10, day, h, m).getTime()
+  assert.equal(nextProductionLabel(null, now), null)
+  assert.equal(nextProductionLabel({ settings, state: { active: false, made: 5, run: null, nextAt: null } }, now), null)
+
+  const wait = nextProductionLabel({ settings, state: { active: true, made: 2, run: null, nextAt: at(22, 0) } }, now)
+  assert.deepEqual(wait, { mode: 'wait', main: 'ผลิตครั้งต่อไป 22:00 น.', sub: 'อีก 3 ชั่วโมง 12 นาที · ทำแล้ว 2/5 คลิป' })
+  assert.match(nextProductionLabel({ settings, state: { active: true, made: 0, run: null, nextAt: at(6, 30, 20) } }, now).main, /พรุ่งนี้ 06:30 น\./)
+  assert.match(nextProductionLabel({ settings, state: { active: true, made: 0, run: null, nextAt: at(6, 30, 21) } }, now).main, /21 พ\.ย\. 06:30 น\./)
+  assert.match(nextProductionLabel({ settings, state: { active: true, made: 0, run: null, nextAt: now + 20_000 } }, now).sub, /^อีก 1 นาที/)
+  assert.equal(nextProductionLabel({ settings, state: { active: true, made: 1, run: null, nextAt: now - 1000 } }, now).mode, 'due')
+
+  const run = nextProductionLabel({ settings, state: { active: true, made: 1, run: { startedAt: now }, nextAt: null } }, now)
+  assert.deepEqual(run, { mode: 'run', main: 'กำลังผลิตคลิปที่ 2/5', sub: 'คลิปถัดไปเริ่มหลังคลิปนี้เสร็จ เว้น 2 ชั่วโมง' })
+  const noGap = { ...settings, delayMin: 0, delayMax: 0 }
+  assert.match(nextProductionLabel({ settings: noGap, state: { active: true, made: 1, run: {}, nextAt: null } }, now).sub, /ต่อทันทีที่คลิปนี้เสร็จ/)
+  assert.match(nextProductionLabel({ settings: noGap, state: { active: true, made: 4, run: {}, nextAt: null } }, now).sub, /คลิปสุดท้ายของรอบนี้ — เสร็จแล้วหยุดผลิต/)
+  assert.match(nextProductionLabel({ settings: { ...noGap, start: 'daily' }, state: { active: true, made: 4, run: {}, nextAt: null } }, now).sub, /รอบถัดไป 22:00 น\./)
+  // ทำไปเรื่อยๆ (count 0): ไม่มี "/N" และไม่มีคลิปสุดท้าย
+  const loop = nextProductionLabel({ settings: { ...settings, count: 0 }, state: { active: true, made: 7, run: {}, nextAt: null } }, now)
+  assert.equal(loop.main, 'กำลังผลิตคลิปที่ 8')
+  assert.match(loop.sub, /เว้น 2 ชั่วโมง/)
 })
 
 test('ข้อความสรุปอ่านเข้าใจ', () => {

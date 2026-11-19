@@ -10,7 +10,7 @@ import { BLUEPRINT_FILE, topicsPrompt, scriptPrompt, parseTopics, cleanScript, e
 import { initIcons, setIconLabel } from './icons.js'
 import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed, SEA_ASSETS } from './agents.js'
 import { initPosting } from './posting.js'
-import { modeFields, scheduleFromMode, scheduleCopy } from './production-schedule.js'
+import { modeFields, scheduleFromMode, scheduleCopy, nextProductionLabel } from './production-schedule.js'
 
 initIcons()
 
@@ -2614,6 +2614,8 @@ refreshAgents()
   const sticky = $('agentSticky')
   const syncSticky = () => {
     sticky.hidden = hero.getBoundingClientRect().bottom > 0
+    // แถบ "ผลิตครั้งต่อไป" ค้างใต้แถว agent ลอย (ไม่ถูกบัง)
+    document.documentElement.style.setProperty('--prodnext-top', sticky.hidden ? '0px' : `${sticky.offsetHeight}px`)
   }
   addEventListener('scroll', syncSticky, { passive: true })
   addEventListener('resize', syncSticky, { passive: true })
@@ -3544,7 +3546,23 @@ function prodValidation(err, focus = false) {
   }
 }
 
+/** แถบ "ผลิตครั้งต่อไป" ค้างบนแผง — แสดงตลอดที่เปิดตั้งเวลาผลิตไว้ นับถอยหลังเองทุก 20 วิ */
+function renderProdNext() {
+  const label = nextProductionLabel(prod)
+  $('prodNext').hidden = !label
+  if (!label) return
+  $('prodNext').dataset.mode = label.mode
+  $('prodNextMain').textContent = label.main
+  $('prodNextSub').textContent = label.sub
+}
+$('prodNext').addEventListener('click', () => {
+  $('prodBox').open = true
+  $('prodBox').scrollIntoView({ behavior: 'smooth', block: 'center' })
+})
+setInterval(renderProdNext, 20_000)
+
 function renderProd() {
+  renderProdNext()
   if (!prod) return
   const { settings: s, state: st } = prod
   if (!prodFilled) {
@@ -3731,6 +3749,9 @@ chrome.runtime.sendMessage({ type: 'ENSURE_APP' }).then((app) => app?.ok && api(
   renderProd()
   if (p.state.active) $('prodBox').open = true
 }).catch(() => {})
+// ยังไม่ได้สถานะเลย (เปิดแผงตอนโปรแกรมในเครื่องยังเปิดไม่เสร็จ) → ลองใหม่เองช่วง 2 นาทีแรก
+// เดิมไม่ลองอีก: กล่อง 🏭 ค้างหน้าตาเริ่มต้น ปุ่ม "เริ่มผลิต" กดไม่ได้จนกว่าจะปิดแผงเปิดใหม่ (เจอ 18 พ.ย. 2026)
+let prodRetries = 6
 setInterval(() => {
-  if (prod?.state.active || $('prodBox').open) prodCall('/api/production')
+  if (prod?.state.active || $('prodBox').open || (!prod && prodRetries-- > 0)) prodCall('/api/production')
 }, 20_000)
