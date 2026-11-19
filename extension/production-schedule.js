@@ -73,6 +73,13 @@ function clockLabel(at, now) {
   return `${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} ${hm}`
 }
 
+/** เวลาที่คลิปหนึ่งใช้ผลิตโดยทั่วไป = ค่ากลางของคลิปที่เสร็จล่าสุด (สูงสุด 5 คลิป) · null ถ้ายังไม่มีคลิปเสร็จ */
+function typicalClipMs(history = []) {
+  const took = history.filter((h) => h.ok && h.startedAt && h.endedAt > h.startedAt)
+    .sort((a, b) => b.endedAt - a.endedAt).slice(0, 5).map((h) => h.endedAt - h.startedAt).sort((a, b) => a - b)
+  return took.length ? took[Math.floor(took.length / 2)] : null
+}
+
 /**
  * แถบ "ผลิตครั้งต่อไป" ที่ค้างอยู่บนแผง (ผู้ใช้ 19 พ.ย. 2026) — ข้อความจากสถานะของตัวตั้งเวลาผลิต
  * prod = คำตอบของ /api/production { settings, state } · คืน null เมื่อไม่ได้เปิดผลิต (ไม่ต้องแสดงแถบ)
@@ -83,16 +90,25 @@ export function nextProductionLabel(prod, now = Date.now()) {
   if (!st?.active || !s) return null
   const total = s.count ? `/${s.count}` : ''
   if (st.run) {
+    // ระหว่างทำคลิป ตัวตั้งเวลายังไม่รู้เวลาคลิปถัดไป (นับจากตอนคลิปนี้เสร็จ) — ผู้ใช้อยากเห็นเป็น "กี่โมง" เลย (19 พ.ย. 2026)
+    // → ประมาณจากเวลาที่คลิปก่อนๆ ใช้จริง: คลิปนี้น่าจะเสร็จ = เวลาเริ่ม + ค่ากลางของคลิปที่เสร็จแล้ว
     const n = st.made + 1
+    const doing = `กำลังผลิตคลิปที่ ${n}${total}`
     const last = s.count > 0 && n >= s.count
-    const gap = !s.delayMax ? 'ต่อทันทีที่คลิปนี้เสร็จ' : `หลังคลิปนี้เสร็จ เว้น ${s.delayMin === s.delayMax ? gapLabel(s.delayMin) : `${s.delayMin}–${s.delayMax} นาที`}`
-    const sub = !last ? `คลิปถัดไปเริ่ม${gap}`
-      : s.start === 'daily' ? `คลิปสุดท้ายของรอบนี้ · รอบถัดไป ${clockLabel(nextProductionStart(s.time, new Date(now)), now)}`
-        : 'คลิปสุดท้ายของรอบนี้ — เสร็จแล้วหยุดผลิต'
-    return { mode: 'run', main: `กำลังผลิตคลิปที่ ${n}${total}`, sub }
+    const gap = !s.delayMax ? 'ทำต่อทันที' : `เว้น ${s.delayMin === s.delayMax ? gapLabel(s.delayMin) : `${s.delayMin}–${s.delayMax} นาที`}`
+    if (last && s.start === 'daily') {
+      return { mode: 'run', main: `ผลิตครั้งต่อไป ${clockLabel(nextProductionStart(s.time, new Date(now)), now)}`, sub: `${doing} · คลิปสุดท้ายของรอบวันนี้` }
+    }
+    const typical = typicalClipMs(st.history)
+    const endAt = typical && st.run.startedAt ? Math.max(st.run.startedAt + typical, now + 60_000) : null
+    if (last) return { mode: 'run', main: endAt ? `คลิปสุดท้ายของรอบ — เสร็จประมาณ ${clockLabel(endAt, now)}` : `${doing} — คลิปสุดท้ายของรอบ`, sub: endAt ? `${doing} · เสร็จแล้วหยุดผลิต` : 'เสร็จแล้วหยุดผลิต' }
+    if (!endAt) return { mode: 'run', main: doing, sub: `ยังบอกเวลาคลิปถัดไปไม่ได้จนกว่าคลิปแรกจะเสร็จ · หลังคลิปนี้เสร็จ${gap}` }
+    const from = clockLabel(endAt + s.delayMin * 60_000, now)
+    const to = s.delayMax > s.delayMin ? `–${clockLabel(endAt + s.delayMax * 60_000, now)}` : ''
+    return { mode: 'run', main: `ผลิตครั้งต่อไปประมาณ ${to ? from.replace(/ น\.$/, '') : from}${to}`, sub: `${doing} · หลังคลิปนี้เสร็จ${gap}` }
   }
   const made = `ทำแล้ว ${st.made}${total} คลิป`
-  if (!st.nextAt || st.nextAt <= now) return { mode: 'due', main: 'กำลังจะเริ่มผลิตคลิปถัดไป', sub: made }
+  if (!st.nextAt || st.nextAt <= now) return { mode: 'due', main: 'ผลิตครั้งต่อไป: กำลังเริ่มตอนนี้', sub: made }
   const mins = Math.ceil((st.nextAt - now) / 60_000)
   return { mode: 'wait', main: `ผลิตครั้งต่อไป ${clockLabel(st.nextAt, now)}`, sub: `อีก ${mins < 1 ? 'ไม่ถึง 1 นาที' : gapLabel(mins)} · ${made}` }
 }

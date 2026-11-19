@@ -71,16 +71,35 @@ test('แถบ "ผลิตครั้งต่อไป": เวลา + น
   assert.match(nextProductionLabel({ settings, state: { active: true, made: 0, run: null, nextAt: now + 20_000 } }, now).sub, /^อีก 1 นาที/)
   assert.equal(nextProductionLabel({ settings, state: { active: true, made: 1, run: null, nextAt: now - 1000 } }, now).mode, 'due')
 
-  const run = nextProductionLabel({ settings, state: { active: true, made: 1, run: { startedAt: now }, nextAt: null } }, now)
-  assert.deepEqual(run, { mode: 'run', main: 'กำลังผลิตคลิปที่ 2/5', sub: 'คลิปถัดไปเริ่มหลังคลิปนี้เสร็จ เว้น 2 ชั่วโมง' })
-  const noGap = { ...settings, delayMin: 0, delayMax: 0 }
-  assert.match(nextProductionLabel({ settings: noGap, state: { active: true, made: 1, run: {}, nextAt: null } }, now).sub, /ต่อทันทีที่คลิปนี้เสร็จ/)
-  assert.match(nextProductionLabel({ settings: noGap, state: { active: true, made: 4, run: {}, nextAt: null } }, now).sub, /คลิปสุดท้ายของรอบนี้ — เสร็จแล้วหยุดผลิต/)
-  assert.match(nextProductionLabel({ settings: { ...noGap, start: 'daily' }, state: { active: true, made: 4, run: {}, nextAt: null } }, now).sub, /รอบถัดไป 22:00 น\./)
+})
+
+test('แถบ "ผลิตครั้งต่อไป" ระหว่างกำลังทำคลิป: บอกเป็นกี่โมง ประมาณจากเวลาที่คลิปก่อนๆ ใช้', () => {
+  const now = new Date(2026, 10, 19, 18, 48).getTime()
+  const at = (h, m, day = 19) => new Date(2026, 10, day, h, m).getTime()
+  const settings = { count: 5, start: 'now', time: '22:00', delayMin: 120, delayMax: 120 }
+  // คลิปก่อนใช้ 20, 30, 40 นาที (+1 คลิปที่ล้ม ไม่นับ) → ค่ากลาง 30 นาที
+  const history = [
+    { ok: true, startedAt: at(12, 0), endedAt: at(12, 20) }, { ok: true, startedAt: at(13, 0), endedAt: at(13, 40) },
+    { ok: true, startedAt: at(15, 0), endedAt: at(15, 30) }, { ok: false, startedAt: at(16, 0), endedAt: at(16, 2) },
+  ]
+  const run = (extra = {}, made = 1, startedAt = at(18, 40)) => nextProductionLabel({ settings: { ...settings, ...extra }, state: { active: true, made, run: { startedAt }, nextAt: null, history } }, now)
+
+  // เริ่ม 18:40 + 30 นาที = เสร็จ 19:10 · เว้น 2 ชม. → 21:10
+  assert.deepEqual(run(), { mode: 'run', main: 'ผลิตครั้งต่อไปประมาณ 21:10 น.', sub: 'กำลังผลิตคลิปที่ 2/5 · หลังคลิปนี้เสร็จเว้น 2 ชั่วโมง' })
+  // เว้นสุ่ม 20–40 นาที → บอกเป็นช่วงเวลา
+  assert.equal(run({ delayMin: 20, delayMax: 40 }).main, 'ผลิตครั้งต่อไปประมาณ 19:30–19:50 น.')
+  // ไม่เว้น → คลิปถัดไปเริ่มตอนคลิปนี้เสร็จ
+  assert.deepEqual(run({ delayMin: 0, delayMax: 0 }), { mode: 'run', main: 'ผลิตครั้งต่อไปประมาณ 19:10 น.', sub: 'กำลังผลิตคลิปที่ 2/5 · หลังคลิปนี้เสร็จทำต่อทันที' })
+  // คลิปนี้ช้ากว่าปกติ (เริ่ม 17:00 ควรเสร็จ 17:30 แต่ยังไม่เสร็จ) → ไม่บอกเวลาที่ผ่านไปแล้ว
+  assert.equal(run({ delayMin: 0, delayMax: 0 }, 1, at(17, 0)).main, 'ผลิตครั้งต่อไปประมาณ 18:49 น.')
+  // คลิปสุดท้ายของรอบ
+  assert.deepEqual(run({}, 4), { mode: 'run', main: 'คลิปสุดท้ายของรอบ — เสร็จประมาณ 19:10 น.', sub: 'กำลังผลิตคลิปที่ 5/5 · เสร็จแล้วหยุดผลิต' })
+  assert.deepEqual(run({ start: 'daily' }, 4), { mode: 'run', main: 'ผลิตครั้งต่อไป 22:00 น.', sub: 'กำลังผลิตคลิปที่ 5/5 · คลิปสุดท้ายของรอบวันนี้' })
   // ทำไปเรื่อยๆ (count 0): ไม่มี "/N" และไม่มีคลิปสุดท้าย
-  const loop = nextProductionLabel({ settings: { ...settings, count: 0 }, state: { active: true, made: 7, run: {}, nextAt: null } }, now)
-  assert.equal(loop.main, 'กำลังผลิตคลิปที่ 8')
-  assert.match(loop.sub, /เว้น 2 ชั่วโมง/)
+  assert.match(run({ count: 0 }, 7).sub, /^กำลังผลิตคลิปที่ 8 ·/)
+  // ยังไม่มีคลิปไหนเสร็จ → ยังบอกเวลาไม่ได้ บอกตรงๆ
+  const first = nextProductionLabel({ settings, state: { active: true, made: 0, run: { startedAt: at(18, 40) }, nextAt: null, history: [] } }, now)
+  assert.deepEqual(first, { mode: 'run', main: 'กำลังผลิตคลิปที่ 1/5', sub: 'ยังบอกเวลาคลิปถัดไปไม่ได้จนกว่าคลิปแรกจะเสร็จ · หลังคลิปนี้เสร็จเว้น 2 ชั่วโมง' })
 })
 
 test('ข้อความสรุปอ่านเข้าใจ', () => {
