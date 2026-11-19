@@ -74,6 +74,16 @@ function mergeAutopilotLog(run, bridgeEvents) {
   return [...run.entries.map((e) => ({ ...e, src: 'run' })), ...events].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).slice(-300)
 }
 
+/**
+ * API key ที่ผู้ใช้วางในแผงข้าง → ตัดของที่ติดมากับการคัดลอก (เว้นวรรค ขึ้นบรรทัด อักษรล่องหน เครื่องหมายคำพูด)
+ * รูปแบบ: ตัวอักษร ตัวเลข _ - และจุด — Gemini key รุ่นใหม่ขึ้นต้น "AQ." มีจุดอยู่ในตัว (เดิมรับแค่แบบ AIza… ไม่มีจุด
+ * ผู้ใช้วาง key ใหม่แล้วขึ้น "รูปแบบ API key ไม่ถูกต้อง" ทั้งที่ key ใช้ได้ — 19 พ.ย. 2026)
+ * ไม่รับอักษรอื่น: ค่านี้ถูกเขียนลง .env ตรงๆ
+ */
+export const cleanKey = (v) => String(v ?? '').replace(/[\s​-‍⁠﻿"'`]/g, '')
+export const validKey = (key) => /^[\w.-]{20,300}$/.test(key)
+const KEY_HINT = 'คัดลอก key มาให้ครบทั้งตัว ไม่มีข้อความอื่นปน'
+
 export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null, scheduler = true }) {
   const runner = createRunner({ log })
   // 🏭 ผลิตต่อเนื่อง — สั่ง autopilot ทีละคลิปตามเวลา (วนเฉพาะ bridge ตัวจริง)
@@ -465,8 +475,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
 
       // ผู้ใช้กรอก Gemini API key เองในแผงข้าง → เขียนลง .env (ไฟล์นี้ถูก gitignore)
       if (req.method === 'POST' && path === '/api/gemini-key') {
-        const key = String((await readBody(req)).key ?? '').trim()
-        if (!/^[\w-]{20,}$/.test(key)) return json(res, 400, { error: 'รูปแบบ API key ไม่ถูกต้อง' }), true
+        const key = cleanKey((await readBody(req)).key)
+        if (!validKey(key)) return json(res, 400, { error: `รูปแบบ Gemini API key ไม่ถูกต้อง — ${KEY_HINT}` }), true
         const envFile = join(ROOT, '.env')
         const text = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
         writeFileSync(envFile, /^GEMINI_API_KEY=.*$/m.test(text) ? text.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY=${key}`) : `${text.replace(/\n?$/, '\n')}GEMINI_API_KEY=${key}\n`)
@@ -478,10 +488,10 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       // ไม่ใช่ไปรู้ตอนทำเสียงกลางคลิป แล้วตั้งเป็นเสียงที่ใช้เลย
       if (req.method === 'POST' && path === '/api/elevenlabs') {
         const body = await readBody(req)
-        const key = String(body.key ?? '').trim()
+        const key = cleanKey(body.key)
         const voiceId = String(body.voiceId ?? '').trim()
         const model = ELEVEN_MODELS.some((m) => m.id === body.model) ? body.model : (loadConfig().tts.elevenlabs?.model ?? ELEVEN_MODELS[0].id)
-        if (key && !/^[\w-]{20,}$/.test(key)) return json(res, 400, { error: 'รูปแบบ ElevenLabs API key ไม่ถูกต้อง' }), true
+        if (key && !validKey(key)) return json(res, 400, { error: `รูปแบบ ElevenLabs API key ไม่ถูกต้อง — ${KEY_HINT}` }), true
         if (!key && !hasKey('ELEVENLABS_API_KEY')) return json(res, 400, { error: 'ใส่ ElevenLabs API key ก่อน' }), true
         let info
         try {
@@ -503,8 +513,8 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       }
 
       if (req.method === 'POST' && path === '/api/kie-key') {
-        const key = String((await readBody(req)).key ?? '').trim()
-        if (!/^[\w-]{20,}$/.test(key)) return json(res, 400, { error: 'รูปแบบ Kie API key ไม่ถูกต้อง' }), true
+        const key = cleanKey((await readBody(req)).key)
+        if (!validKey(key)) return json(res, 400, { error: `รูปแบบ Kie API key ไม่ถูกต้อง — ${KEY_HINT}` }), true
         const envFile = join(ROOT, '.env')
         const contents = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
         writeFileSync(envFile, /^KIE_API_KEY=.*$/m.test(contents)

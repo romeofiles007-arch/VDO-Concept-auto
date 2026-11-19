@@ -127,9 +127,29 @@ export function edgeVoiceFits(voice, language) {
   if (language === 'zh') return /^zh-/i.test(voice)
   return true
 }
+/**
+ * Microsoft ตอบ "No audio was received" ทั้งที่เสียงอ่านภาษานี้ได้ = เสียงนั้นล่มที่ฝั่ง Microsoft
+ * เจอจริง 19 พ.ย. 2026 กับ th-TH-PremwadeeNeural: ประโยคเดิมล้มซ้ำทุกครั้งนานหลายนาที (วัด 40 คำขอ ผ่าน 10)
+ * ขณะที่ Niwat อ่านข้อความเดียวกันผ่านหมด · เปลี่ยนความเร็ว/ข้อความเล็กน้อยไม่ช่วย · edge-tts เป็นรุ่นล่าสุดแล้ว
+ * ลูกค้าเห็นแค่ "เสียงพากย์ล้มเหลว" ไม่รู้ต้องทำอะไร → บอกสาเหตุและเสียงที่ใช้แทนได้ (เพศเดียวกันก่อน)
+ */
+export function edgeNoAudioMessage(voice, detail = '') {
+  const name = (id) => id.split('-').slice(2).join('-').replace(/(Multilingual)?Neural$/, '')
+  const female = EDGE_CATALOG.find((v) => v.id === voice)?.gender === 'Female'
+  const sentence = /ประโยค \d+/.exec(detail)?.[0]
+  const swap = female
+    ? 'เสียงหญิงที่ใช้แทนได้: Ava หรือ Emma (กลุ่ม "หลายภาษา" อ่านไทยได้ ไม่ต้องใช้ key) หรือเสียงหญิงของ Gemini (ต้องใส่ API key)'
+    : `เสียงชายที่ใช้แทนได้: ${voice === 'th-TH-NiwatNeural' ? '' : 'Niwat (ไทย) หรือ '}Andrew (กลุ่ม "หลายภาษา" อ่านไทยได้)`
+  return `Microsoft ไม่ส่งเสียงของ ${name(voice)} กลับมา${sentence ? ` (${sentence})` : ''} — เสียงนี้ใช้ไม่ได้ชั่วคราวที่ฝั่ง Microsoft ไม่ใช่ที่เครื่องคุณ · ${swap} · เปลี่ยนเสียงในกล่องเสียงพากย์แล้วกดทำต่อ`
+}
+
 export const defaultEdgeVoice = (language) => ({ th: 'th-TH-NiwatNeural', zh: 'zh-CN-YunyangNeural' })[language] ?? 'en-US-AndrewMultilingualNeural'
 
 export const GEMINI_MODELS = ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts']
+
+// เพศของเสียง Gemini (ผู้ใช้ 19 พ.ย. 2026: ลูกค้าอยากได้เสียงผู้หญิง แต่รายชื่อบอกแค่โทน) — ตามตารางเสียง Chirp 3 HD ของ Google
+// docs.cloud.google.com/text-to-speech/docs/chirp3-hd · ที่เหลือ 16 เสียงเป็นชาย
+const GEMINI_FEMALE = new Set(['Achernar', 'Aoede', 'Autonoe', 'Callirrhoe', 'Despina', 'Erinome', 'Gacrux', 'Kore', 'Laomedeia', 'Leda', 'Pulcherrima', 'Sulafat', 'Vindemiatrix', 'Zephyr'])
 
 export const GEMINI_VOICES = [
   ['Charon', 'ให้ข้อมูล'], ['Rasalgethi', 'ให้ข้อมูล'], ['Sadaltager', 'รอบรู้'], ['Iapetus', 'ชัดเจน'], ['Erinome', 'ชัดเจน'],
@@ -138,7 +158,10 @@ export const GEMINI_VOICES = [
   ['Algieba', 'นุ่มลื่น'], ['Despina', 'นุ่มลื่น'], ['Schedar', 'เรียบ'], ['Umbriel', 'สบายๆ'], ['Callirrhoe', 'สบายๆ'],
   ['Zubenelgenubi', 'เป็นกันเอง'], ['Aoede', 'โปร่ง'], ['Zephyr', 'สดใส'], ['Autonoe', 'สดใส'], ['Puck', 'ร่าเริง'],
   ['Laomedeia', 'ร่าเริง'], ['Sadachbia', 'มีชีวิตชีวา'], ['Fenrir', 'ตื่นเต้นง่าย'], ['Leda', 'วัยรุ่น'], ['Pulcherrima', 'ตรงไปตรงมา'],
-].map(([id, tone]) => ({ id, label: `${id} — ${tone}` }))
+].map(([id, tone]) => {
+  const gender = GEMINI_FEMALE.has(id) ? 'Female' : 'Male'
+  return { id, gender, label: `${id} — ${gender === 'Female' ? 'หญิง' : 'ชาย'} · ${tone}` }
+})
 
 /**
  * รุ่นของ ElevenLabs — ภาษาไทยมีเฉพาะ v4 / v3 (Multilingual v2 และ Flash v2.5 รองรับ 29–32 ภาษาที่ไม่มีไทย)
@@ -284,6 +307,8 @@ async function geminiOne(text, { model, voice, emotion, speed, key }) {
       continue
     }
     const message = data.error?.message ?? `HTTP ${res.status}`
+    // 401 = key ผิด/ถูกยกเลิก — ลองซ้ำก็ไม่ผ่าน (เดิมวนลอง 8 รอบกว่า 2 นาทีก่อนบอก)
+    if (res.status === 401) throw new Error(`Gemini ไม่รับ API key นี้ — สร้าง key ใหม่ที่ aistudio.google.com/apikey แล้วใส่ในแผงข้าง (${message})`)
     if (res.status === 400 || res.status === 403) throw new Error(`Gemini ปฏิเสธ: ${message}`)
     if (res.status === 429 && /per ?day|daily/i.test(message)) {
       throw new Error('โควตาฟรีของ Gemini วันนี้หมดแล้ว — รอพรุ่งนี้ หรือเปลี่ยนไปใช้เสียงอื่น')
@@ -344,6 +369,7 @@ export async function synthCloud(engine, segments, { voice, model, emotion, spee
         throw new Error('Edge TTS ปฏิเสธคำขอ (403) แม้อัปเดต edge-tts เป็นรุ่นล่าสุดแล้ว — Microsoft อาจปิดชั่วคราว ลองใหม่ภายหลังหรือเปลี่ยนไปใช้เสียงอื่น')
       }
     }
+    if (error && /No audio was received/i.test(error)) throw new Error(edgeNoAudioMessage(voice, error))
     if (error) throw new Error(error)
     for (const s of jobs) {
       const wav = s.out.replace(/\.mp3$/i, '.wav')
