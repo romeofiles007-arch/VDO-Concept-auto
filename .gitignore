@@ -5,6 +5,9 @@ projects/*/02_audio/segments/
 projects/*/05_images/
 projects/*/06_render/
 projects/_selftest/
+# เพลงพื้นหลังของเครื่องนี้ (โฟลเดอร์ music) — เก็บแค่ไฟล์อธิบาย
+music/*
+!music/README.txt
 .env
 bridge/bridge.log
 native/host.bat

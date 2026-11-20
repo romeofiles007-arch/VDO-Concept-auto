@@ -1859,7 +1859,7 @@ function renderMusic() {
   }
   const volLabel = m.options.volume.find((o) => o.id === m.volume)?.label
   $('musicHint').textContent = musicBusyText || (
-    !m.tracks.length ? `ยังไม่มีเพลง — อัปโหลด mp3, wav, m4a, aac หรือ ogg (ไม่เกิน ${m.maxMb} MB ต่อไฟล์)`
+    !m.tracks.length ? `ยังไม่มีเพลง — กด "แนบเพลง" หรือเปิดโฟลเดอร์ music แล้ววางไฟล์ mp3, wav, m4a, aac, ogg, flac (มีโฟลเดอร์ย่อยได้) แล้วกด 🔄`
       : m.mode === 'off' ? 'ไม่ใส่ดนตรี — กดเพลงในรายการหรือเลือก 🎲 เพื่อใช้'
         : `${m.mode === 'random' ? `สุ่มจาก ${m.tracks.length} เพลง ทีละคลิป` : `ใช้ "${m.file}"`} · ความดัง${volLabel} · ใช้กับคลิปใหม่ทุกคลิป รวมตั้งเวลาผลิต · เพลงสั้นกว่าคลิปเล่นวนซ้ำ`
   ) + (m.tracks.length ? ' · ใช้เพลงที่มีสิทธิ์ใช้เท่านั้น เพลงติดลิขสิทธิ์อาจถูกปิดเสียงหรือบล็อกคลิป' : '')
@@ -1903,11 +1903,13 @@ $('musicList').addEventListener('click', async (e) => {
     return renderMusic()
   }
   if (del) {
-    if (!confirm(`ลบเพลง "${del.dataset.del}" ออกจากเครื่อง?`)) return
+    if (!confirm(`ลบเพลง "${del.dataset.del}" ออกจากโฟลเดอร์ music?`)) return
     if (musicPlaying === del.dataset.del) { musicPlayer.pause(); musicPlaying = null }
     return musicCall('/api/music/delete', { name: del.dataset.del }, 'กำลังลบเพลง…')
   }
 })
+$('musicOpen').addEventListener('click', () => musicCall('/api/music/open', {}, 'กำลังเปิดโฟลเดอร์ music… วางไฟล์เพลงแล้วกด 🔄'))
+$('musicRefresh').addEventListener('click', () => musicCall('/api/music/list', {}, 'กำลังอ่านรายชื่อเพลง…'))
 $('musicFile').addEventListener('change', async (e) => {
   const files = [...e.target.files]
   e.target.value = ''

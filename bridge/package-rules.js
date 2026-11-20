@@ -42,7 +42,8 @@ const PROTECTED = [
   /^\.git\//,
 ]
 export const isProtected = (rel) => PROTECTED.some((re) => re.test(rel))
-export const isCustomerData = (rel) => rel.startsWith('projects/')
+// music/ = เพลงพื้นหลังที่ลูกค้าวางเอง (pipeline/lib/music.mjs) — ใส่ให้เฉพาะไฟล์ที่ยังไม่มี ไม่ลบทิ้งตอนอัปเดต
+export const isCustomerData = (rel) => rel.startsWith('projects/') || rel.startsWith('music/')
 
 /**
  * ค่าการตั้งค่าของเรา → ค่าเริ่มต้นของลูกค้า: ล้างสิ่งที่ผูกกับบัญชีของเรา และเปิดเฉพาะของที่ใช้ได้ทันทีโดยไม่ต้องมี key
@@ -55,7 +56,7 @@ export function customerDefaults(config) {
   // เสียงที่โคลนไว้ไม่ได้ติดไปด้วย → ลูกค้าเริ่มที่เสียง Edge ซึ่งใช้ได้ทันที
   if (c.tts) c.tts.engine = 'edge'
   if (c.clips) c.clips.provider = 'off' // Kie มีค่าใช้จ่าย — ให้ลูกค้าเปิดเองเมื่อมี key
-  if (c.music) c.music = { mode: 'off', file: null, volume: 'normal' } // เพลงของเราไม่ได้ติดไปด้วย — ลูกค้าอัปโหลดเอง
+  if (c.music) c.music = { mode: 'random', file: null, volume: 'normal' } // เพลงของเราไม่ได้ติดไปด้วย — ลูกค้าวางเพลงในโฟลเดอร์ music เอง แล้วสุ่มใช้ทีละคลิป
   return c
 }
 

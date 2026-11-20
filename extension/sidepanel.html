@@ -244,6 +244,8 @@
   .musicList .musicPlay, .musicList .musicDel { flex: none; min-width: 34px; padding: 0 8px; }
   .musicUpload { justify-self: start; display: inline-flex; align-items: center; margin: 8px 0 0; padding: 6px 12px; border: 1.5px dashed var(--line); border-radius: 9px; background: var(--bg); color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
   .musicUpload:hover { border-color: var(--accent); }
+  .musicTools { display: flex; flex-wrap: wrap; gap: 6px; }
+  .musicTools .musicUpload { font-family: inherit; }
   .musicVolumeRow { margin: 8px 0 0; font-size: 13px; }
   .musicVolumeRow[hidden] { display: none; }
   .clipSettings textarea { width: 100%; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
@@ -531,8 +533,12 @@
       </div>
       <div class="pick" id="musicBox" hidden>ดนตรีประกอบ
         <div class="seg" id="musicMode" role="group" aria-label="ดนตรีประกอบ"></div>
-        <ul class="musicList" id="musicList" aria-label="เพลงที่อัปโหลดไว้"></ul>
-        <label class="musicUpload"><input type="file" id="musicFile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg" multiple hidden />⬆ อัปโหลดเพลง</label>
+        <ul class="musicList" id="musicList" aria-label="เพลงในโฟลเดอร์ music"></ul>
+        <div class="musicTools">
+          <label class="musicUpload"><input type="file" id="musicFile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" multiple hidden />⬆ แนบเพลง</label>
+          <button type="button" class="musicUpload" id="musicOpen" title="เปิดโฟลเดอร์ music — ลากไฟล์เพลงไปวางได้เลย (มีโฟลเดอร์ย่อยได้)">📂 โฟลเดอร์ music</button>
+          <button type="button" class="musicUpload" id="musicRefresh" title="อ่านรายชื่อเพลงในโฟลเดอร์ music ใหม่" aria-label="อ่านรายชื่อเพลงใหม่">🔄</button>
+        </div>
         <div class="musicVolumeRow" id="musicVolumeRow">ความดังของเพลง
           <div class="seg" id="musicVolume" role="group" aria-label="ความดังของเพลง"></div>
         </div>

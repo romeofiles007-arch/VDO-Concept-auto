@@ -22,7 +22,7 @@ import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, ELEVEN_MODELS, edgePython, s
 import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText } from '../pipeline/lib/voxcpm.mjs'
 import { hasKey } from '../pipeline/lib/env.mjs'
 import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRoundPrompt } from '../pipeline/lib/shotlist.mjs'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { parseTimecodeFilename } from '../pipeline/lib/shotfile.mjs'
 import { listVideos, trashVideo, renameProject, revealVideo } from './videos.js'
 import { clipSource, postPrompt, parsePost, savePost } from '../pipeline/lib/post.mjs'
@@ -32,7 +32,7 @@ import { readCharacter, updateCharacter, addCharacterImage, removeCharacterImage
 import { PAUSE_PRESETS, MOTION_PRESETS } from '../pipeline/lib/ffmpeg.mjs'
 import { SUBTITLE_STYLES } from '../pipeline/lib/subtitles.mjs'
 import { ART_STYLES } from '../extension/prompts.js'
-import { MUSIC_MODES, MUSIC_VOLUMES, addTrack, listTracks, musicSettings, musicView, removeTrack } from '../pipeline/lib/music.mjs'
+import { MUSIC_DIR, MUSIC_MODES, MUSIC_VOLUMES, addTrack, listTracks, musicSettings, musicView, removeTrack, trackPath } from '../pipeline/lib/music.mjs'
 import { createProduction } from './production.js'
 import { clipSettings, CLIP_COVERAGES } from '../pipeline/lib/clips.mjs'
 import { KIE_TIERS, kieTier } from '../pipeline/lib/kie.mjs'
@@ -201,7 +201,16 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     const [, , slug, ...rest] = url.pathname.split('/').map(decodeURIComponent)
     const base = resolve(ROOT, 'projects', slug ?? '')
     const file = resolve(base, ...rest)
-    if (!slug || !rest.length || !file.startsWith(base + sep) || !existsSync(file)) {
+    if (!slug || !rest.length || !file.startsWith(base + sep)) {
+      res.writeHead(404)
+      return res.end()
+    }
+    sendFile(req, res, file)
+  }
+
+  /** ส่งไฟล์แบบ Range ได้ — ใช้ร่วมกันระหว่างไฟล์คลิป (/files/) และเพลงในโฟลเดอร์ music (/music/) */
+  function sendFile(req, res, file) {
+    if (!file || !existsSync(file)) {
       res.writeHead(404)
       return res.end()
     }
@@ -285,6 +294,12 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     if (req.method === 'GET' && path.startsWith('/files/')) {
       if (!localHost || url.searchParams.get('k') !== token) return json(res, 401, { error: 'token ไม่ถูกต้อง' }), true
       serveFile(req, res, url)
+      return true
+    }
+    // เพลงในโฟลเดอร์ music ของโปรแกรม (ปุ่ม ▶ ฟังเพลงในแผงข้าง)
+    if (req.method === 'GET' && path.startsWith('/music/')) {
+      if (!localHost || url.searchParams.get('k') !== token) return json(res, 401, { error: 'token ไม่ถูกต้อง' }), true
+      sendFile(req, res, trackPath(path.slice('/music/'.length).split('/').map(decodeURIComponent).join('/')))
       return true
     }
 
@@ -965,7 +980,14 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         return json(res, 200, { setup: setupStatus(loadConfig()) }), true
       }
 
-      // ── ดนตรีประกอบ: คลังเพลงของผู้ใช้ (projects/_music/) ──
+      // ── ดนตรีประกอบ: เพลงในโฟลเดอร์ music ของโปรแกรม (วางไฟล์เองหรืออัปโหลดจากแผงข้าง) ──
+      if (req.method === 'POST' && path === '/api/music/open') {
+        mkdirSync(MUSIC_DIR, { recursive: true })
+        if (process.platform === 'darwin') execFile('/usr/bin/open', [MUSIC_DIR])
+        else execFile('explorer.exe', [MUSIC_DIR], { windowsHide: false })
+        return json(res, 200, musicView(loadConfig())), true
+      }
+      if (req.method === 'POST' && path === '/api/music/list') return json(res, 200, musicView(loadConfig())), true
       if (req.method === 'POST' && path === '/api/music/upload') {
         const { name, base64 } = await readBody(req)
         const saved = addTrack(name, Buffer.from(String(base64 ?? ''), 'base64'))
@@ -984,7 +1006,7 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           const m = musicSettings(c)
           const left = listTracks()
           if (m.file === name) m.file = left[0]?.name ?? null
-          if (!left.length) m.mode = 'off'
+          if (!left.length && m.mode === 'one') m.mode = 'random' // วางเพลงใหม่ลงโฟลเดอร์ music เมื่อไหร่ก็ใช้ได้เลย
           c.music = m
         })
         return json(res, 200, musicView(loadConfig())), true
