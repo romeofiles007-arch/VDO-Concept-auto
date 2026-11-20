@@ -21,8 +21,14 @@ globalThis.__cartoon_flow_agent = true
 const VERSION = chrome.runtime.getManifest().version
 // flow-text.js โหลดก่อนไฟล์นี้ (manifest + CONTENT_FILES ใน background.js) — เทียบชื่อรุ่นไม่สนภาษา · ปิดเมนู · ตรวจหน้าที่ถูกแปล
 const { sameModel, labelText, pageTranslated, TRANSLATED_HINT, escapeMenus, strayMenu } = globalThis.CartoonFlowText
+/** กล่องข้อความของ Flow ที่ค้างคาหน้าอยู่ (เช่นประกาศรุ่นใหม่) — บอกผู้ใช้ให้ปิดเอง ไม่กดปุ่มในกล่องแทนผู้ใช้ */
+const blockingDialog = () => $$('mat-dialog-container').filter(visible).map((d) => text(d).slice(0, 60))[0] ?? ''
 /** ข้อความ error ที่ส่งกลับ — หน้าถูก Chrome แปลอยู่ให้บอกสาเหตุนี้ก่อน เพราะเป็นต้นเหตุที่ทำให้หาปุ่มไม่เจอ */
-const errorText = (err) => `[extension ${VERSION}] ${pageTranslated() ? `${TRANSLATED_HINT} · ` : ''}${err.message}`
+const errorText = (err) => {
+  const dialog = blockingDialog()
+  return `[extension ${VERSION}] ${pageTranslated() ? `${TRANSLATED_HINT} · ` : ''}${err.message}` +
+    (dialog ? ` · มีกล่องข้อความของ Flow ค้างอยู่บนหน้า ("${dialog}") ปิดกล่องนั้นก่อนแล้วสั่งใหม่` : '')
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const FLOW_PROMPT_GAP_MS = 2 * 60_000 // เว้นอย่างน้อย 2 นาทีระหว่างคำสั่งที่ส่งให้ Flow
 const FLOW_LAST_PROMPT_KEY = 'flowLastPromptAt'
@@ -79,7 +85,8 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
 const L = {
   newProject: /new project|โปรเจ็กต์ใหม่/i,
   settingsTrigger: ['Settings trigger', 'ทริกเกอร์การตั้งค่า'],
-  agentSettings: ['Settings', 'การตั้งค่า'],
+  // 19 พ.ย. 2026 Flow เปลี่ยนชื่อปุ่มเฟืองในช่องพิมพ์เป็น "Agent settings / การตั้งค่า Agent" (ชื่อเดิมไว้เผื่อหน้าเก่า)
+  agentSettings: ['Agent settings', 'การตั้งค่า Agent', 'Settings', 'การตั้งค่า'],
   send: ['Start generation', 'เริ่มสร้าง'],
   close: ['Close', 'ปิด'],
   back: ['Back', 'กลับ'],
@@ -87,12 +94,17 @@ const L = {
   save: ['Save', 'บันทึก'],
   image: ['Image', 'รูปภาพ'],
   modelFamily: ['Select model family', 'เลือกกลุ่มผลิตภัณฑ์โมเดล'],
-  agentImageModel: ['Image generation default model', 'โมเดลเริ่มต้นของการสร้างรูปภาพ'],
   editableText: ['Editable text', 'ข้อความที่แก้ไขได้'],
   creditsPane: /Generating will use|การสร้างจะใช้/i,
   credits: /(?:Generating will use|การสร้างจะใช้)\s*(\d+)\s*(?:credits?|เครดิต)/i,
-  imageDefault: /Image generation default|ค่าเริ่มต้นสำหรับการสร้างรูปภาพ/,
-  videoDefault: /Video generation default|ค่าเริ่มต้นของการสร้างวิดีโอ/,
+  // พ.ย. 2026 ข้อความสั้นลงเป็น "ค่าเริ่มต้นของรูปภาพ / Image defaults" (ของเดิมไว้เผื่อหน้าเก่า)
+  // Flow ตอบกลับว่ารับงานไม่ได้ — การ์ดคำตอบขึ้น "เกิดข้อผิดพลาด โปรดลองอีกครั้ง" พร้อมปุ่มลองอีกครั้ง
+  agentFailed: /Something went wrong|เกิดข้อผิดพลาด/i,
+  tryAgain: /Try again|ลองอีกครั้ง/i,
+  // Flow กันบอต: "We noticed some unusual activity… browser extensions that modify the page may cause issues"
+  unusualActivity: /unusual activity|กิจกรรมที่ผิดปกติ|การใช้งานที่ผิดปกติ|ผิดปกติ/i,
+  imageDefault: /Image (generation )?default|ค่าเริ่มต้น(สำหรับการสร้าง|ของ)รูปภาพ/,
+  videoDefault: /Video (generation )?default|ค่าเริ่มต้น(ของการสร้าง|ของ)วิดีโอ/,
   never: /^(Never|ไม่เลย)/,
   failedTile: /failed to generate|Something went wrong|สร้างไม่สำเร็จ|สร้างไม่ได้|เกิดข้อผิดพลาด/i,
   highDemand: /experiencing high demand|มีผู้ใช้งานจำนวนมาก|มีความต้องการสูง/gi,
@@ -102,18 +114,35 @@ const byAria = (labels, root = document, tag = 'button') => $$(tag, root).filter
 /** ข้อความท้ายปุ่มตรงกับคำใดคำหนึ่ง เช่น "image รูปภาพ" → "รูปภาพ" */
 const lastWordIs = (el, labels) => [labels].flat().includes(text(el).split(' ').pop())
 
+/** ช่องพิมพ์ของ Flow ทุกแบบ — ใช้แยกปุ่มในช่องพิมพ์ออกจากปุ่มชื่อซ้ำกันบนแถบหัว project */
+const PROMPT_BOX = 'flow-base-prompt-box, flow-creative-agent-prompt-box, flow-prompt-box'
+/** ไอคอนของปุ่มเฟือง — Flow เปลี่ยนจาก tune เป็น settings_2 เมื่อ 19 พ.ย. 2026 */
+const GEAR = ['settings_2', 'tune', 'settings']
+
 const SEL = {
   newProject: () => $$('button').find((b) => L.newProject.test(text(b)) && visible(b)),
-  agentChip: () => document.querySelector('button.agent-mode-chip'),
+  // 19 พ.ย. 2026 ปุ่ม Agent กลายเป็นสวิตช์ใน <flow-agent-mode-switch> คลาส .agent-mode-chip เดิมหายไป
+  // ผลคือ agentOn() ตอบ false ตลอด setAgent(false) จึงไม่ทำอะไร ช่องพิมพ์ค้างอยู่โหมด Agent
+  // แล้วหา "ปุ่มตั้งค่าโมเดล" ไม่เจอจนหมดเวลา (เจอจริง 20 พ.ย. 2026 — ผลิตล้มทุกรอบ)
+  agentChip: () =>
+    document.querySelector('flow-agent-mode-switch button[aria-pressed]') ??
+    document.querySelector('button.agent-mode-chip') ??
+    $$('button.switch').find((b) => b.hasAttribute('aria-pressed')),
   settingsTrigger: () => byAria(L.settingsTrigger).find(visible),
-  // ต.ค. 2026 หัวหน้า project มีปุ่มเฟือง "Settings/การตั้งค่า" (View mode · Grid size) เพิ่มมาชื่อซ้ำกัน และอยู่ก่อนใน DOM
-  // → เจาะจงปุ่มในช่องพิมพ์ (ไอคอน tune) ไม่งั้นไปเปิดแผงผิดแล้วรอ Agent settings จนหมดเวลา
+  // ต.ค. 2026 หัวหน้า project มีปุ่มเฟืองชื่อ/ไอคอนเดียวกันเพิ่มมา และอยู่ก่อนใน DOM
+  // → เจาะจงปุ่มที่อยู่ในช่องพิมพ์เท่านั้น ไม่งั้นไปเปิดแผงผิดแล้วรอ Agent settings จนหมดเวลา
   agentSettings: () => {
-    const btns = byAria(L.agentSettings).filter(visible)
-    return btns.find((b) => b.closest('flow-base-prompt-box, flow-creative-agent-prompt-box, flow-prompt-box')) ?? btns.find((b) => text(b) === 'tune')
+    const inBox = (b) => !!b.closest(PROMPT_BOX)
+    return byAria(L.agentSettings).filter(visible).find(inBox) ??
+      $$('button').filter((b) => visible(b) && inBox(b)).find((b) => GEAR.includes(text(b)))
   },
   agentPanel: () => document.querySelector('flow-agent-panel'),
-  editor: () => $$('flow-prompt-box .ProseMirror, flow-base-prompt-box .ProseMirror').find(visible) ?? $$('.ProseMirror[contenteditable="true"]').find(visible),
+  // แผง Agent มีช่องพิมพ์ของตัวเองแล้ว (พ.ย. 2026) → เลือกช่องพิมพ์ของหน้าหลักก่อนเสมอ
+  editor: () => {
+    const boxes = $$(`${PROMPT_BOX.split(', ').map((s) => `${s} .ProseMirror`).join(', ')}`).filter(visible)
+    const list = boxes.length ? boxes : $$('.ProseMirror[contenteditable="true"]').filter(visible)
+    return list.find((e) => !e.closest('flow-agent-panel')) ?? list[0]
+  },
   send: () => byAria(L.send).find(visible),
 }
 
@@ -286,78 +315,106 @@ async function waitSettled(getRoot, { quietMs = 1200, timeout = 15_000 } = {}) {
   return getRoot()
 }
 
+/**
+ * แผง Agent settings — Flow เปลี่ยนรูปแบบทั้งแผงเมื่อ 19 พ.ย. 2026 (ตรวจกับหน้าจริงแล้ว 20 พ.ย. 2026)
+ *   เดิม  ทุกอย่างอยู่หน้าเดียว เลือกรุ่นจากเมนู แล้วกดปุ่ม Save
+ *   ใหม่  หน้าหลัก <flow-unified-settings-view> = ยืนยันก่อนสร้าง + แถว "ค่าเริ่มต้นของรูปภาพ/วิดีโอ"
+ *         กดแถวรูปภาพ → หน้าย่อย <flow-generation-defaults-view> = รุ่น (label.radio-option) · สัดส่วน · จำนวน
+ *         ไม่มีปุ่ม Save แล้ว ค่าถูกบันทึกทันทีที่กด จึงกดปุ่มย้อนกลับแทน
+ */
+const AGENT = {
+  root: () => $$('flow-unified-settings-view', SEL.agentPanel() ?? document).find(visible),
+  sub: () => $$('flow-generation-defaults-view', SEL.agentPanel() ?? document).find(visible),
+  imageRow: () => $$('button.image-defaults-row', SEL.agentPanel() ?? document).find(visible),
+  back: () => {
+    const root = SEL.agentPanel() ?? document
+    return byAria(L.back, root).find(visible) ?? $$('button', root).find((b) => visible(b) && text(b) === 'arrow_back')
+  },
+  models: () => $$('label.radio-option', AGENT.sub() ?? document),
+  radios: (root) => $$('button[role="radio"]', root ?? document),
+}
+
 async function configureAgent(model, { dryRun, ratio = "16:9" }) {
   await setAgent(true)
-  const openPanel = () => (visible(SEL.agentPanel()) && L.imageDefault.test(text(SEL.agentPanel())) ? SEL.agentPanel() : null)
-  if (!openPanel()) realClick(await waitFor(SEL.agentSettings, { label: 'ปุ่ม Settings ของ Agent' }))
-  await waitFor(openPanel, { label: 'Agent settings' })
-  await waitSettled(openPanel)
+  const settingsOpen = () => (AGENT.root() || AGENT.sub() ? SEL.agentPanel() : null)
+  if (!settingsOpen()) realClick(await waitFor(SEL.agentSettings, { label: 'ปุ่ม Settings ของ Agent' }))
+  await waitFor(settingsOpen, { label: 'Agent settings' })
+  await waitSettled(settingsOpen)
 
-  // ทุกครั้งต้อง query ใหม่ — แผงวาดใหม่แล้ว element เดิมหลุดจากหน้า คลิกไปก็ไม่มีผล
-  const read = () => {
-    const panel = openPanel()
-    if (!panel) return null
-    const labels = $$('.settings-section-label', panel)
-    const imageLabel = labels.find((l) => L.imageDefault.test(text(l)))
-    const videoLabel = labels.find((l) => L.videoDefault.test(text(l)))
-    const inImage = (el) =>
-      imageLabel && imageLabel.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING &&
-      (!videoLabel || videoLabel.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING)
-    const imageButtons = $$('button[role="radio"]', panel).filter(inImage)
-    const never = $$('mat-radio-button', panel).find((r) => L.never.test(text(r)))
-    const modelBtn = byAria(L.agentImageModel, panel)[0]
-    const checked = (re) => text(imageButtons.find((b) => b.getAttribute('aria-checked') === 'true' && re.test(text(b)))).split(' ').pop()
+  // รอบก่อนอาจค้างอยู่หน้าย่อย → กลับหน้าหลักก่อน ไม่งั้นหาสวิตช์ "ยืนยันก่อนสร้าง" ไม่เจอ
+  for (let i = 0; i < 2 && AGENT.sub() && AGENT.back(); i++) {
+    realClick(AGENT.back())
+    await waitFor(() => !AGENT.sub(), { timeout: 4000, label: 'กลับหน้าหลักของ Agent settings' }).catch(() => null)
+  }
+
+  // 1) ยืนยันก่อนสร้าง = ไม่เลย → agent สร้างภาพต่อเนื่องเองโดยไม่ต้องรอกดยืนยันทีละชุด
+  const never = () => AGENT.radios(AGENT.root()).find((b) => L.never.test(labelText(b)))
+  for (let i = 0; i < 3 && never() && never().getAttribute('aria-checked') !== 'true'; i++) {
+    realClick(never())
+    await sleep(700)
+  }
+  const confirm = never()?.getAttribute('aria-checked') === 'true' ? 'Never' : 'Always'
+  if (confirm !== 'Never') {
+    throw new Error('ตั้ง "ยืนยันก่อนสร้าง" เป็น ไม่เลย/Never ไม่สำเร็จ — ตั้งเองในแผง Agent settings ของ Flow แล้วสั่งใหม่')
+  }
+
+  // 2) เข้าหน้าค่าเริ่มต้นของรูปภาพ
+  if (!AGENT.sub()) {
+    realClick(await waitFor(AGENT.imageRow, { label: 'แถวค่าเริ่มต้นของรูปภาพใน Agent settings' }))
+    await waitFor(AGENT.sub, { label: 'หน้าค่าเริ่มต้นของรูปภาพ' })
+    await waitSettled(AGENT.sub, { quietMs: 600, timeout: 6000 })
+  }
+
+  // 3) รุ่น · สัดส่วน · จำนวน — ทุกครั้งต้อง query ใหม่ แผงวาดใหม่แล้ว element เดิมหลุดจากหน้า คลิกไปก็ไม่มีผล
+  const picked = () => AGENT.models().find((o) => o.classList.contains('radio-option-selected'))
+  const state = () => {
+    const sub = AGENT.sub()
+    const checked = (re) => text(AGENT.radios(sub).find((b) => b.getAttribute('aria-checked') === 'true' && re.test(text(b)))).split(' ').pop()
     return {
-      panel,
-      imageButtons,
-      neverInput: never?.querySelector('input[type="radio"]'),
-      modelBtn,
-      state: {
-        confirm: never?.querySelector('input')?.checked ? 'Never' : 'Always',
-        ratio: checked(/:/),
-        count: checked(/(^|\s)x\d$/),
-        model: labelText(modelBtn).replace(/arrow_drop_down/, '').replace(/^\S+\s/, '').trim(),
-        sameModel: sameModel(labelText(modelBtn), model),
-      },
+      model: labelText(picked()),
+      sameModel: sameModel(labelText(picked()), model),
+      ratio: checked(/:/),
+      count: checked(/(^|\s)x\d$/),
     }
   }
-  const ok = (st) => st.confirm === 'Never' && st.ratio === ratio && st.count === 'x1' && st.sameModel
-
+  const ok = (st) => st.sameModel && st.ratio === ratio && st.count === 'x1'
   for (let attempt = 1; attempt <= 4; attempt++) {
-    let cur = read()
-    if (!cur) throw new Error('แผง Agent settings ปิดไปเอง')
-    if (ok(cur.state)) break
-
-    // Confirm before generating = Never → agent สร้างภาพต่อเนื่องเองโดยไม่ต้องรอกดยืนยันทีละชุด
-    if (cur.state.confirm !== 'Never' && cur.neverInput) {
-      realClick(cur.neverInput)
-      await sleep(400)
+    if (ok(state())) break
+    if (!state().sameModel) {
+      const want = AGENT.models().find((o) => sameModel(labelText(o), model))
+      if (!want) {
+        const have = AGENT.models().map((o) => labelText(o)).join(' · ') || 'อ่านรายการรุ่นไม่ได้'
+        throw new Error(`ไม่มีรุ่น ${model} ในหน้าค่าเริ่มต้นของรูปภาพ (มี: ${have})`)
+      }
+      realClick(want)
+      await sleep(900)
     }
     for (const label of [ratio, 'x1']) {
-      cur = read()
-      const btn = cur?.imageButtons.find((b) => text(b).split(' ').pop() === label)
-      if (!btn) throw new Error(`ไม่พบตัวเลือก ${label} ใน Agent settings`)
+      const btn = AGENT.radios(AGENT.sub()).find((b) => text(b).split(' ').pop() === label)
+      if (!btn) throw new Error(`ไม่พบตัวเลือก ${label} ในหน้าค่าเริ่มต้นของรูปภาพของ Agent`)
       if (btn.getAttribute('aria-checked') !== 'true') {
         realClick(btn)
-        await sleep(400)
+        await sleep(700)
       }
     }
-    cur = read()
-    if (cur?.modelBtn && !cur.state.sameModel) await pickModelFromMenu(cur.modelBtn, model)
-    await waitSettled(openPanel, { quietMs: 600, timeout: 5000 })
-    if (attempt === 4 && !ok(read()?.state ?? {})) {
-      const st = read()?.state ?? {}
-      throw new Error(`ตั้ง Agent settings ไม่สำเร็จ (ตอนนี้: ${st.confirm} · ${st.ratio} · ${st.count} · ${st.model}) — ตั้งเองในแผง Agent settings เป็น Never · ${ratio} · x1 · ${model} แล้วกด Save แล้วสั่งใหม่`)
+    if (attempt === 4 && !ok(state())) {
+      const st = state()
+      throw new Error(`ตั้งค่าเริ่มต้นของรูปภาพใน Agent settings ไม่สำเร็จ (ตอนนี้: ${st.model || '?'} · ${st.ratio || '?'} · ${st.count || '?'}) — ตั้งเองเป็น ${model} · ${ratio} · x1 แล้วสั่งใหม่`)
     }
   }
+  const summary = { confirm, ...state() }
 
-  const final = read()
-  const summary = final.state
-  if (dryRun) {
-    realClick(byAria(L.back, final.panel)[0])
-  } else {
-    realClick(await waitFor(() => $$('button', openPanel() ?? document).find((b) => L.save.includes(text(b))), { label: 'ปุ่ม Save/บันทึก' }))
-    await waitFor(() => !openPanel(), { timeout: 10_000, label: 'บันทึก Agent settings' })
+  // 4) ออกจากแผง — ไม่มีปุ่ม Save แล้ว ค่าบันทึกไปตั้งแต่ตอนกด (dryRun จึงกันการบันทึกไม่ได้อีกต่อไป)
+  for (let i = 0; i < 2 && (AGENT.sub() || AGENT.root()); i++) {
+    const back = AGENT.back()
+    if (!back) break
+    realClick(back)
+    await sleep(1200)
+  }
+  const close = byAria(L.close, SEL.agentPanel() ?? document).find(visible)
+  if (close) {
+    realClick(close)
+    await sleep(600)
   }
   await sleep(800)
   return summary
@@ -402,19 +459,52 @@ async function sendPrompt(prompt, attachments) {
     }
     return text(SEL.editor()) === String(prompt).replace(/\s+/g, ' ').trim()
   }
-  let pasted = false
-  for (let attempt = 0; attempt < 3 && !pasted; attempt++) {
-    pasted = await pasteText()
-    if (!pasted) await sleep(1500)
+  // ส่งแล้วต้องเห็นว่า Flow รับงานจริง ไม่ใช่แค่ช่องพิมพ์ว่าง — ว่างเพราะถูกปฏิเสธก็ว่างเหมือนกัน
+  let failure = ''
+  for (let round = 1; round <= 3; round++) {
+    let pasted = false
+    for (let attempt = 0; attempt < 3 && !pasted; attempt++) {
+      pasted = await pasteText()
+      if (!pasted) await sleep(1500)
+    }
+    if (!pasted) throw new Error('วาง prompt ลงช่องพิมพ์ของ Flow ไม่ได้')
+    await waitFor(() => (SEL.send() && !SEL.send().disabled ? SEL.send() : null), { label: 'ปุ่มส่งพร้อมใช้งาน' })
+    await chrome.storage.local.set({ [FLOW_LAST_PROMPT_KEY]: Date.now() })
+    await trustedEnter(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), prompt)
+    await waitFor(() => agentBusy() || agentFailed() || !text(SEL.editor()), { timeout: 15_000, label: 'Flow รับ prompt' })
+    // รอให้การ์ดคำตอบนิ่งก่อนตัดสิน — Flow ขึ้น "เกิดข้อผิดพลาด" ภายในไม่กี่วินาทีเมื่อไม่รับงาน
+    const failed = await waitFor(agentFailed, { timeout: 12_000, interval: 500, label: 'คำตอบของ Agent' }).catch(() => null)
+    if (!failed) return
+    failure = [labelText(failed), pageAlerts()].filter(Boolean).join(' · ').replace(/\s+/g, ' ').trim().slice(0, 220)
+    // Flow กันบอต — ลองใหม่กี่ครั้งก็เหมือนเดิม และคลิปถัดไปก็เจอเหมือนกัน หยุดทั้งชุดดีกว่าไล่ทำต่อให้พังหมด
+    if (L.unusualActivity.test(failure)) break
+    await sleep(5000 * round)
   }
-  if (!pasted) throw new Error('วาง prompt ลงช่องพิมพ์ของ Flow ไม่ได้')
-  await waitFor(() => (SEL.send() && !SEL.send().disabled ? SEL.send() : null), { label: 'ปุ่มส่งพร้อมใช้งาน' })
-  await chrome.storage.local.set({ [FLOW_LAST_PROMPT_KEY]: Date.now() })
-  await trustedEnter(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), prompt)
-  await waitFor(() => agentBusy() || !text(SEL.editor()), { timeout: 15_000, label: 'Flow รับ prompt' })
+  const blocked = L.unusualActivity.test(failure)
+  throw new Error(
+    `FLOW_BLOCKED: Google Flow ไม่รับคำสั่งของ Agent — "${failure}"` +
+    (blocked
+      ? ' · Flow มองว่าการใช้งานผิดปกติ (มันเตือนเรื่องส่วนขยายที่แก้หน้าเว็บด้วย) หยุดสั่งงานอัตโนมัติสักพัก แล้วเปิดหน้า Flow สั่งสร้างภาพเองด้วยมือสักครั้งให้ผ่านก่อน ค่อยเริ่มผลิตใหม่'
+      : ' · ลองส่งใหม่ครบ 3 ครั้งแล้วยังไม่ผ่าน เปิดหน้า Flow ดูว่ามีอะไรค้างอยู่')
+  )
 }
 
 const agentBusy = () => !!byAria(L.stop).find(visible)
+/** การ์ดคำตอบของ Agent บนหน้าโปรเจกต์ (ไม่ใช่แผงข้าง) */
+const agentCard = () => $$('flow-agent-response-header').find(visible) ?? null
+/**
+ * Flow ตอบกลับทันทีว่ารับงานไม่ได้ — ช่องพิมพ์ว่างเหมือนส่งสำเร็จ แต่ไม่มีงานเดินสักอย่าง
+ * ต้องมีทั้งข้อความผิดพลาดและปุ่ม "ลองอีกครั้ง" ถึงนับ ไม่งั้นคำตอบปกติที่บังเอิญมีคำว่าผิดพลาดจะโดนจับผิด
+ * ไม่จับตรงนี้ = ไปรอภาพที่ไม่มีวันมาอีกสิบกว่านาที แล้วรายงานผิดเรื่อง (เจอจริง 20 พ.ย. 2026)
+ */
+const agentFailed = () => {
+  const card = agentCard()
+  if (!card || !L.agentFailed.test(text(card))) return null
+  return $$('button', card).some((b) => visible(b) && L.tryAgain.test(text(b))) ? card : null
+}
+/** ข้อความเตือนของ Flow ที่ขึ้นบนหน้า (เช่นคำเตือนเรื่องการใช้งานผิดปกติ) */
+const pageAlerts = () =>
+  $$('[role="alert"], mat-snack-bar-container, flow-error-tile').filter(visible).map((el) => text(el)).filter(Boolean).join(' · ')
 
 // ── ภาพใน project ──
 // grid เป็น virtual scroll (แสดงเฉพาะที่อยู่บนจอ) → จำภาพทุกใบที่เคยโผล่ด้วย MutationObserver
