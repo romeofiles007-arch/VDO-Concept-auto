@@ -698,3 +698,12 @@ main .topDock .haltBar[data-halted='false'] .haltButton { width: auto; min-heigh
 .creditMoreAt { margin-top: 4px; opacity: .6; font-size: 11px; }
 .creditItem[data-level='low'] .creditMore > div:first-of-type > b { color: #b26a00; }
 .creditItem[data-level='out'] .creditMore > div:first-of-type > b { color: #c62828; }
+
+/* ── หยุดอยู่: แถวเดียวเล็กๆ (ป้ายแดง + ปุ่มทำงานต่อเล็ก) · ชี้เมาส์/โฟกัส → คำอธิบายเด้งเป็นกล่องลงมา ไม่ดันเนื้อหา (ผู้ใช้ 21 พ.ย. 2026) ── */
+.topDock .haltBar[data-halted='true'] { position: relative; flex-wrap: nowrap; gap: 8px; padding: 5px 6px 5px 10px; }
+.topDock .haltBar[data-halted='true'] .haltText { min-width: 0; }
+.topDock .haltBar[data-halted='true'] .haltText strong { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topDock .haltBar[data-halted='true'] #haltSub { display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; padding: 9px 12px; border-radius: 10px; background: #8e1515; color: #fff; font-size: 12px; line-height: 1.55; opacity: 1; box-shadow: 0 10px 28px rgba(0, 0, 0, .35); }
+.topDock .haltBar[data-halted='true']:is(:hover, :focus-within) #haltSub { display: block; }
+main .topDock .haltBar[data-halted='true'] .haltButton { flex: none; width: auto; min-height: 30px; padding: 4px 12px; font-size: 12.5px; border-radius: 8px; }
+@media (max-width: 380px) { .topDock .haltBar[data-halted='true'] { flex-wrap: nowrap; } main .topDock .haltBar[data-halted='true'] .haltButton { width: auto; } }
