@@ -664,3 +664,22 @@ main .haltButton:focus-visible { outline: 2px solid var(--accent); outline-offse
 .creditItem[data-level='error'] { border-style: dashed; opacity: .9; }
 main .creditRefresh { flex: none; width: 30px; height: 30px; min-height: 0; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 15px; cursor: pointer; }
 main .creditRefresh:disabled { opacity: .5; cursor: progress; }
+
+/* ── แถบบนสุดแบบย่อ (ผู้ใช้ 21 พ.ย. 2026: "ค้างเยอะไปมองไม่เห็น") ──
+   ปกติ = แถวเดียว: เครดิต · ↻ · ปุ่มหยุดเล็ก  +  บรรทัดบางๆ ผลิตครั้งต่อไป
+   หยุดอยู่ = แถบแดงเต็มแถวพร้อมคำอธิบาย (สถานะฉุกเฉิน ให้เห็นชัด) */
+.topDock { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+.topDock .creditBar { flex: 1 1 0; min-width: 0; padding: 4px 6px; gap: 4px; }
+.topDock .creditList { flex-wrap: nowrap; overflow: hidden; gap: 4px; }
+.topDock .creditItem { flex: none; padding: 2px 8px; font-size: 11.5px; white-space: nowrap; }
+.topDock main .creditRefresh, .topDock .creditRefresh { width: 26px; height: 26px; font-size: 13px; }
+.topDock .haltBar[data-halted='false'] { flex: none; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.topDock .haltBar[data-halted='false'] .haltText { display: none; }
+main .topDock .haltBar[data-halted='false'] .haltButton { width: auto; min-height: 100%; padding: 4px 10px; font-size: 12.5px; border-radius: 10px; }
+.topDock .haltBar[data-halted='true'] { flex: 1 1 100%; }
+.topDock .prodNext { flex: 1 1 100%; min-height: 0; padding: 4px 10px; gap: 8px; border-radius: 8px; box-shadow: none; }
+.topDock .prodNext .prodNextIcon { font-size: 14px; }
+.topDock .prodNext .prodNextText { flex-direction: row; align-items: baseline; gap: 6px; overflow: hidden; white-space: nowrap; }
+.topDock .prodNext strong { font-size: 12.5px; }
+.topDock .prodNext #prodNextSub { font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 380px) { main .topDock .haltBar[data-halted='false'] .haltButton { width: auto; } }

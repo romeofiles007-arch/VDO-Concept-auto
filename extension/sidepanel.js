@@ -3591,9 +3591,10 @@ function renderCredits() {
     } else {
       const ratio = s.limit ? s.remaining / s.limit : null
       li.dataset.level = s.remaining <= 0 ? 'out' : ratio != null && ratio < 0.15 ? 'low' : 'ok'
-      value.textContent = s.limit ? `${creditNum(s.remaining)} / ${creditNum(s.limit)}` : creditNum(s.remaining)
+      // แถบบนสุดต้องบาง — แสดงแค่ยอดคงเหลือ · โควตาเต็ม ใช้ไป วันรีเซ็ต อยู่ใน tooltip (ชี้เมาส์)
+      value.textContent = creditNum(s.remaining)
       const reset = s.resetAt ? `รีเซ็ต ${new Date(s.resetAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}` : ''
-      note.textContent = [s.remaining <= 0 ? 'หมดแล้ว' : 'เหลือ', reset].filter(Boolean).join(' · ')
+      note.textContent = s.remaining <= 0 ? 'หมด' : ''
       li.title = `${s.label}: เหลือ ${creditNum(s.remaining)} ${s.unit ?? ''}${s.limit ? ` จาก ${creditNum(s.limit)} (ใช้ไป ${creditNum(s.used)})` : ''}${reset ? ` · ${reset}` : ''}${s.tier ? ` · แพ็กเกจ ${s.tier}` : ''}`
     }
     li.append(name, value, note)
