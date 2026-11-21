@@ -3577,27 +3577,42 @@ function renderCredits() {
   const list = $('creditList')
   const services = credits?.services ?? []
   $('creditBar').hidden = !services.length
+  const readAt = credits?.at ? new Date(credits.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''
   list.replaceChildren(...services.map((s) => {
     const li = document.createElement('li')
     li.className = 'creditItem'
+    li.tabIndex = 0 // กดด้วยคีย์บอร์ด/แตะ ก็เปิดรายละเอียดได้ ไม่ใช่แค่เมาส์
     const name = Object.assign(document.createElement('span'), { textContent: s.label })
     const value = document.createElement('b')
     const note = document.createElement('small')
+    // รายละเอียดเต็ม — ซ่อนไว้ โผล่เป็นกล่องใต้ตัวเลขเมื่อชี้เมาส์/โฟกัส (แถบบนสุดจึงบางได้)
+    const more = document.createElement('div')
+    more.className = 'creditMore'
+    more.setAttribute('role', 'tooltip')
+    const row = (label, text, strong = false) => {
+      const line = document.createElement('div')
+      line.append(Object.assign(document.createElement('span'), { textContent: label }), Object.assign(document.createElement(strong ? 'b' : 'span'), { textContent: text }))
+      more.append(line)
+    }
+    more.append(Object.assign(document.createElement('strong'), { className: 'creditMoreTitle', textContent: s.label }))
     if (s.error) {
       li.dataset.level = 'error'
       value.textContent = 'อ่านไม่ได้'
-      li.title = s.error
       note.textContent = s.short ?? (s.error.length > 40 ? '' : s.error)
+      more.append(Object.assign(document.createElement('p'), { textContent: s.error }))
     } else {
       const ratio = s.limit ? s.remaining / s.limit : null
       li.dataset.level = s.remaining <= 0 ? 'out' : ratio != null && ratio < 0.15 ? 'low' : 'ok'
-      // แถบบนสุดต้องบาง — แสดงแค่ยอดคงเหลือ · โควตาเต็ม ใช้ไป วันรีเซ็ต อยู่ใน tooltip (ชี้เมาส์)
       value.textContent = creditNum(s.remaining)
-      const reset = s.resetAt ? `รีเซ็ต ${new Date(s.resetAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}` : ''
       note.textContent = s.remaining <= 0 ? 'หมด' : ''
-      li.title = `${s.label}: เหลือ ${creditNum(s.remaining)} ${s.unit ?? ''}${s.limit ? ` จาก ${creditNum(s.limit)} (ใช้ไป ${creditNum(s.used)})` : ''}${reset ? ` · ${reset}` : ''}${s.tier ? ` · แพ็กเกจ ${s.tier}` : ''}`
+      row('เหลือ', `${creditNum(s.remaining)}${s.limit ? ` / ${creditNum(s.limit)}` : ''} ${s.unit ?? ''}`.trim(), true)
+      if (s.limit) row('ใช้ไป', `${creditNum(s.used)} (${Math.round((s.used / s.limit) * 100)}%)`)
+      if (s.resetAt) row('รีเซ็ต', new Date(s.resetAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }))
+      if (s.tier) row('แพ็กเกจ', s.tier)
+      if (s.remaining <= 0) more.append(Object.assign(document.createElement('p'), { textContent: 'หมดแล้ว — งานที่ใช้บริการนี้จะหยุดจนกว่าจะเติมหรือถึงวันรีเซ็ต' }))
     }
-    li.append(name, value, note)
+    if (readAt) more.append(Object.assign(document.createElement('small'), { className: 'creditMoreAt', textContent: `อ่านเมื่อ ${readAt} น. · กด ↻ อ่านใหม่` }))
+    li.append(name, value, note, more)
     return li
   }))
 }
