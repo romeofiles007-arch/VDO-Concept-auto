@@ -629,3 +629,38 @@ main > section.step.agentSetting > h2 { min-height: 0; padding-top: 11px; paddin
 #voiceSettingsBox .pickRow select { min-width: 0; flex: 1; }
 .voiceMovedHint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .linkBtn { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
+
+/* ── ⏹ หยุดทุกอย่าง — ปกติเป็นแถบย่อ ปุ่มแดง · หยุดอยู่ = แถบแดงทึบ + ปุ่มทำงานต่อสีเขียว ── */
+.haltBar { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid color-mix(in srgb, #c62828 45%, var(--line)); background: var(--panel); color: var(--ink); }
+.haltText { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.haltText strong { font-size: 13.5px; line-height: 1.3; }
+.haltText span { font-size: 11.5px; line-height: 1.45; opacity: .8; }
+main .haltButton { flex: none; min-height: 40px; padding: 8px 14px; border-radius: 10px; font: inherit; font-weight: 800; font-size: 14px; cursor: pointer; border: 1.5px solid #c62828; background: #c62828; color: #fff; }
+main .haltButton:hover:not(:disabled) { background: #a51f1f; border-color: #a51f1f; }
+main .haltButton:disabled { opacity: .7; cursor: progress; }
+main .haltButton:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.haltBar[data-halted='true'] { background: #b71c1c; border-color: #b71c1c; color: #fff; }
+.haltBar[data-halted='true'] .haltText span { opacity: .92; }
+.haltBar[data-halted='true'] .haltButton { background: #fff; color: #1b5e20; border-color: #fff; }
+.haltBar[data-halted='true'] .haltButton:hover:not(:disabled) { background: #e8f5e9; }
+/* ปกติ: แถบหยุดแบบย่อ (ไม่กินที่) · หยุดอยู่: แสดงคำอธิบายเต็ม */
+.haltBar[data-halted='false'] { padding: 6px 8px 6px 12px; }
+.haltBar[data-halted='false'] #haltSub { display: none; }
+.haltBar[data-halted='false'] .haltButton { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+@media (max-width: 380px) { .haltBar[data-halted='true'] { flex-wrap: wrap; } .haltBar[data-halted='true'] .haltButton { width: 100%; } }
+
+/* ── แถบค้างบนสุด: เครดิตคงเหลือ + หยุดทุกอย่าง + ผลิตครั้งต่อไป (ค้างใต้แถว agent ลอย — --prodnext-top) ── */
+.topDock { position: sticky; top: var(--prodnext-top, 0px); z-index: 14; display: grid; gap: 8px; margin: 0 0 12px; }
+.topDock:not(:has(> :not([hidden]))) { display: none; }
+.topDock .prodNext { position: static; margin: 0; }
+.topDock .haltBar { box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 12%, transparent); }
+.creditBar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 10%, transparent); }
+.creditList { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.creditItem { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 12px; line-height: 1.4; border: 1px solid var(--line); background: color-mix(in srgb, var(--ink) 4%, var(--panel)); }
+.creditItem b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.creditItem small { opacity: .72; font-size: 11px; }
+.creditItem[data-level='low'] { border-color: #d98a1c; background: color-mix(in srgb, #f6b443 18%, var(--panel)); }
+.creditItem[data-level='out'] { border-color: #c62828; background: color-mix(in srgb, #e53935 18%, var(--panel)); }
+.creditItem[data-level='error'] { border-style: dashed; opacity: .9; }
+main .creditRefresh { flex: none; width: 30px; height: 30px; min-height: 0; padding: 0; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 15px; cursor: pointer; }
+main .creditRefresh:disabled { opacity: .5; cursor: progress; }

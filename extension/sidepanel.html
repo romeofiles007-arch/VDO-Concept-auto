@@ -260,6 +260,26 @@
 
 <main>
   <h1 class="brand-lockup"><img class="brand-icon" src="icons/cartoon-auto.svg" alt="" width="42" height="42" />Cartoon Auto</h1>
+  <!-- ค้างไว้บนสุดตลอด: เครดิตคงเหลือ · ปุ่มหยุดทุกอย่าง · ผลิตครั้งต่อไป (ยกมาจากตำนานจีน 21 พ.ย. 2026) -->
+  <div class="topDock" id="topDock">
+    <div class="creditBar" id="creditBar" hidden aria-label="เครดิตคงเหลือ">
+      <ul class="creditList" id="creditList"></ul>
+      <button type="button" class="creditRefresh" id="creditRefresh" title="อ่านเครดิตใหม่ตอนนี้" aria-label="อ่านเครดิตใหม่">↻</button>
+    </div>
+    <!-- ⏹ หยุดทุกอย่าง (bridge/halt.js) — ปุ่มเดียวหยุดทุกส่วนจริง และไม่กลับมาทำงานเองจนกด "ทำงานต่อ" -->
+    <div class="haltBar" id="haltBar" data-halted="false" hidden aria-label="หยุดทุกอย่าง">
+      <div class="haltText" role="status" aria-live="polite">
+        <strong id="haltTitle">ระบบทำงานปกติ</strong>
+        <span id="haltSub">กดหยุดทุกอย่างเมื่ออยากให้ทุกส่วนหยุดทันที: ผลิตต่อเนื่อง คลิปที่ทำอยู่ งานในแท็บ AI และโพสต์อัตโนมัติ</span>
+      </div>
+      <button type="button" class="haltButton" id="haltButton">⏹ หยุดทุกอย่าง</button>
+    </div>
+    <!-- 🏭 ผลิตครั้งต่อไปกี่โมง — ค้างติดขอบบนตลอดที่เปิดตั้งเวลาผลิตไว้ (เลื่อนไปไหนก็เห็น) · กด = ไปกล่องตั้งเวลาผลิต -->
+    <button type="button" class="prodNext" id="prodNext" hidden title="ไปที่กล่องตั้งเวลาผลิต">
+      <span class="pnIcon" aria-hidden="true">🏭</span>
+      <span class="pnText" role="status" aria-live="polite"><b id="prodNextMain"></b><small id="prodNextSub"></small></span>
+    </button>
+  </div>
 
   <!-- ฉากและอุปกรณ์อยู่ในส่วนขยาย เปลี่ยนตามแผนก -->
   <section class="studioHero" id="studioHero" aria-label="สถานะทีมงาน">
@@ -278,12 +298,6 @@
     </div>
     <ul class="heroCrew" id="heroCrew" aria-label="ทีมงานแต่ละแผนก"></ul>
   </section>
-
-  <!-- 🏭 ผลิตครั้งต่อไปกี่โมง — ค้างติดขอบบนตลอดที่เปิดตั้งเวลาผลิตไว้ (เลื่อนไปไหนก็เห็น) · กด = ไปกล่องตั้งเวลาผลิต -->
-  <button type="button" class="prodNext" id="prodNext" hidden title="ไปที่กล่องตั้งเวลาผลิต">
-    <span class="pnIcon" aria-hidden="true">🏭</span>
-    <span class="pnText" role="status" aria-live="polite"><b id="prodNextMain"></b><small id="prodNextSub"></small></span>
-  </button>
 
   <section class="updateBanner" id="updateBanner" hidden aria-label="อัปเดตจาก GitHub">
     <div class="updateHead">

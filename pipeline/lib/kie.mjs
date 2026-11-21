@@ -67,6 +67,17 @@ export function kieKey() {
   return key
 }
 
+/** เครดิต Kie คงเหลือ (แถบเครดิตบนสุดของแผงข้าง) — อ่านไม่ได้ = null ไม่ขวางงาน */
+export async function kieBalance(fetchImpl = fetch) {
+  try {
+    const r = await fetchImpl('https://api.kie.ai/api/v1/chat/credit', { headers: { Authorization: `Bearer ${kieKey()}` }, signal: AbortSignal.timeout(15_000) })
+    const data = await r.json()
+    return typeof data?.data === 'number' ? data.data : null
+  } catch {
+    return null
+  }
+}
+
 async function responseJson(response, label) {
   const data = await response.json().catch(() => null)
   if (!response.ok || !data || (data.code != null && data.code !== 200) || data.success === false) {

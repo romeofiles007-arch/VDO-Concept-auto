@@ -21,6 +21,8 @@ import { listVoices, readVoice, writeVoice, voiceDir, voiceId, voiceReady, AUDIO
 import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, ELEVEN_MODELS, edgePython, synthCloud, elevenVoiceInfo, isElevenVoiceId } from '../pipeline/lib/cloud_tts.mjs'
 import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText } from '../pipeline/lib/voxcpm.mjs'
 import { hasKey } from '../pipeline/lib/env.mjs'
+import { killStray } from './halt.js'
+import { allCredits } from '../pipeline/lib/credits.mjs'
 import { shotlistFiles, readRounds, resetRounds, mergeRounds, saveRound, nextRoundPrompt } from '../pipeline/lib/shotlist.mjs'
 import { execFile, execFileSync } from 'node:child_process'
 import { parseTimecodeFilename } from '../pipeline/lib/shotfile.mjs'
@@ -84,10 +86,11 @@ export const cleanKey = (v) => String(v ?? '').replace(/[\s​-‍⁠﻿"'`]/g, 
 export const validKey = (key) => /^[\w.-]{20,300}$/.test(key)
 const KEY_HINT = 'คัดลอก key มาให้ครบทั้งตัว ไม่มีข้อความอื่นปน'
 
-export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null, scheduler = true }) {
-  const runner = createRunner({ log })
+export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody, log, recentLog = () => [], updater = null, scheduler = true, halt = null }) {
+  const halted = () => !!halt?.on()
+  const runner = createRunner({ log, halted })
   // 🏭 ผลิตต่อเนื่อง — สั่ง autopilot ทีละคลิปตามเวลา (วนเฉพาะ bridge ตัวจริง)
-  const production = createProduction({ runner, log, json, readBody, scheduler })
+  const production = createProduction({ runner, log, json, readBody, scheduler, halted })
 
   /**
    * ยกเลิกทั้งงานที่รอคิว และงานที่ ChatGPT/Flow กำลังทำอยู่ — เดิมยกเลิกแค่ที่รอคิว
@@ -112,6 +115,30 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
     if (st?.status !== 'running') return
     for (const d of Object.values(st.departments ?? {})) if (d.status === 'working') Object.assign(d, { status: 'waiting', detail: 'หยุดไว้ — กดทำต่อ' })
     writeFileSync(file, JSON.stringify({ ...st, status: 'stopped', stoppedAt: Date.now(), updatedAt: Date.now() }, null, 2))
+  }
+
+  /**
+   * หยุดคลิปที่กำลังทำ + ยกเลิกงานที่แท็บ ChatGPT/Flow รับไปหรือรอคิวอยู่
+   * (ใช้ร่วมกันระหว่างปุ่มหยุดคลิป และปุ่มหยุดทุกอย่าง) — all: ยกเลิกงานในแท็บแม้ไม่มีขั้นไหนกำลังทำ
+   */
+  function cancelRun(reason = 'หยุดโดยผู้ใช้', { all = false } = {}) {
+    const run = runner.snapshot()
+    const stopped = runner.stop() ?? {}
+    if (all || run?.status === 'running') cancelJobs(reason)
+    markAutopilotStopped(run)
+    return stopped
+  }
+
+  /** ⏹ หยุดทุกอย่าง (ดู bridge/halt.js) — ผลิตต่อเนื่อง · คลิปที่ทำอยู่ · งานในแท็บทุกแท็บ · process ที่หลุดการควบคุม */
+  function stopEverything() {
+    halt?.set(true)
+    const run = runner.snapshot() // ก่อน production.stop() ปิด runner — ยังรู้ว่าคลิปอัตโนมัติกำลังทำอยู่
+    production.stop()
+    cancelRun('หยุดทุกอย่างโดยผู้ใช้', { all: true })
+    markAutopilotStopped(run)
+    // process ที่ bridge ไม่รู้จัก (เช่นเริ่มก่อนโปรแกรมรีสตาร์ท) — รอให้ตัวปิดของ runner ทำงานก่อนแล้วค่อยกวาดที่เหลือ
+    setTimeout(() => killStray(ROOT, log), 1500)
+    log('⏹ หยุดทุกอย่างโดยผู้ใช้')
   }
 
   function state({ freshSetup = false } = {}) {
@@ -747,12 +774,26 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         }
       }
 
+      // ⏹ หยุดทุกอย่าง / ทำงานต่อ — GET ดูสถานะ · POST { on: true|false }
+      if (path === '/api/halt') {
+        if (req.method === 'POST') {
+          const { on } = await readBody(req)
+          if (on) stopEverything()
+          else {
+            halt?.set(false)
+            log('▶ ทำงานต่อ — ปลดหยุดทุกอย่าง (ยังไม่เริ่มอะไรเอง)')
+          }
+        }
+        return json(res, 200, { ...(halt?.view() ?? { halted: false }), run: runner.snapshot()?.status ?? null, production: production.active() }), true
+      }
+
+      // เครดิตคงเหลือ (ElevenLabs, Kie) — แถบบนสุดของแผงข้าง · ?refresh=1 อ่านใหม่ทันที (ปกติจำไว้ 5 นาที)
+      if (req.method === 'GET' && path === '/api/credits') {
+        return json(res, 200, await allCredits({ refresh: url.searchParams.get('refresh') === '1' })), true
+      }
+
       if (req.method === 'POST' && path === '/api/run/stop') {
-        const run = runner.snapshot()
-        const stopped = runner.stop() ?? {}
-        if (run?.status === 'running') cancelJobs()
-        markAutopilotStopped(run)
-        return json(res, 200, stopped), true
+        return json(res, 200, cancelRun()), true
       }
 
       // ── 🧹 ล้างทั้งหมด: คนที่ไม่รู้จะแก้ยังไง กดแล้วเริ่มจากศูนย์ ──

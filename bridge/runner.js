@@ -16,34 +16,38 @@ export function playDoneSound() {
   spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object Media.SoundPlayer '${wav.replace(/'/g, "''")}').PlaySync()`], { windowsHide: true, stdio: 'ignore' }).on('error', () => {})
 }
 
+// path เต็มของสคริปต์ — บรรทัดคำสั่งของ process จะบอกได้ว่าเป็นของโปรแกรมนี้ (ปุ่มหยุดทุกอย่างใช้หา process ที่หลุดการควบคุม)
+// เดิมเป็น 'pipeline/x.mjs' แบบสั้น แยกไม่ออกจากโปรแกรมอื่นที่โครงเดียวกันบนเครื่องเดียวกัน
+const P = (file) => join(ROOT, 'pipeline', file)
+
 // process.execPath แทน 'node' — แพ็กเกจลูกค้าใช้ node ที่แถมไว้ใน runtime/ ซึ่งอาจไม่อยู่ใน PATH ของเครื่อง
 const MAX_LINES = 400
 
 export const STEPS = {
-  tts: { label: 'ทำเสียงพากย์', cmd: (slug) => [process.execPath, ['pipeline/2_tts.mjs', slug]] },
-  timecode: { label: 'ทำ Timecode', cmd: (slug) => [process.execPath, ['pipeline/3_timecode.mjs', slug]] },
-  shotlist: { label: 'เขียน Shot List', cmd: (slug) => [process.execPath, ['pipeline/4_shotlist.mjs', slug]] },
-  images: { label: 'สร้างภาพ', cmd: (slug) => [process.execPath, ['pipeline/5_images.mjs', slug]] },
-  clips: { label: 'ทำแอนิเมชัน Kie', cmd: (slug) => [process.execPath, ['pipeline/5b_clips.mjs', slug]] },
+  tts: { label: 'ทำเสียงพากย์', cmd: (slug) => [process.execPath, [P('2_tts.mjs'), slug]] },
+  timecode: { label: 'ทำ Timecode', cmd: (slug) => [process.execPath, [P('3_timecode.mjs'), slug]] },
+  shotlist: { label: 'เขียน Shot List', cmd: (slug) => [process.execPath, [P('4_shotlist.mjs'), slug]] },
+  images: { label: 'สร้างภาพ', cmd: (slug) => [process.execPath, [P('5_images.mjs'), slug]] },
+  clips: { label: 'ทำแอนิเมชัน Kie', cmd: (slug) => [process.execPath, [P('5b_clips.mjs'), slug]] },
   render: {
     label: 'ตัดต่อวิดีโอ',
-    cmd: (slug, { bgm } = {}) => [process.execPath, ['pipeline/6_render.mjs', slug, ...(bgm ? ['--bgm', bgm] : [])]],
+    cmd: (slug, { bgm } = {}) => [process.execPath, [P('6_render.mjs'), slug, ...(bgm ? ['--bgm', bgm] : [])]],
   },
   importAudio: {
     label: 'นำเข้าและถอดเสียงพากย์',
-    cmd: (slug, { file, language } = {}) => [process.execPath, ['pipeline/import_audio.mjs', slug, file, '--language', language ?? 'th']],
+    cmd: (slug, { file, language } = {}) => [process.execPath, [P('import_audio.mjs'), slug, file, '--language', language ?? 'th']],
   },
   trainVoice: {
     label: 'เทรนเสียง',
-    cmd: (_slug, { voice, epochs } = {}) => [process.execPath, ['pipeline/train_voice.mjs', voice, '--epochs', String(epochs)]],
+    cmd: (_slug, { voice, epochs } = {}) => [process.execPath, [P('train_voice.mjs'), voice, '--epochs', String(epochs)]],
   },
-  cover: { label: 'สร้างภาพปกคลิป', cmd: (slug) => [process.execPath, ['pipeline/5_images.mjs', slug, '--cover-only']] },
-  retime: { label: 'ปรับช่วงเงียบ', cmd: (slug) => [process.execPath, ['pipeline/retime_audio.mjs', slug]] },
+  cover: { label: 'สร้างภาพปกคลิป', cmd: (slug) => [process.execPath, [P('5_images.mjs'), slug, '--cover-only']] },
+  retime: { label: 'ปรับช่วงเงียบ', cmd: (slug) => [process.execPath, [P('retime_audio.mjs'), slug]] },
   autopilot: {
     label: 'ทำคลิปอัตโนมัติ',
     cmd: (_slug, { title, autoTopic, genre, language, titleLanguage, minutes, restartFrom } = {}) => [
       process.execPath,
-      ['pipeline/autopilot.mjs', ...(autoTopic ? ['--auto-topic', ...(genre ? ['--genre', genre] : [])] : [title]), '--lang', language, '--title-lang', titleLanguage, '--minutes', String(minutes), ...(restartFrom ? ['--restart', restartFrom] : [])],
+      [P('autopilot.mjs'), ...(autoTopic ? ['--auto-topic', ...(genre ? ['--genre', genre] : [])] : [title]), '--lang', language, '--title-lang', titleLanguage, '--minutes', String(minutes), ...(restartFrom ? ['--restart', restartFrom] : [])],
     ],
   },
   setupTts: {
@@ -58,7 +62,7 @@ export const STEPS = {
 const CR = '\r'
 const LINE_BREAK = /[\r\n]/
 
-export function createRunner({ log }) {
+export function createRunner({ log, halted = () => false }) {
   let current = null // { step, slug, status, lines, exitCode, startedAt, endedAt, proc }
 
   /**
@@ -95,6 +99,7 @@ export function createRunner({ log }) {
   }
 
   function start(step, slug, opts) {
+    if (halted()) throw new Error('หยุดทุกอย่างไว้อยู่ — กด "ทำงานต่อ" ในแผงข้างก่อน')
     if (current?.status === 'running') throw new Error(`กำลัง${STEPS[current.step].label}อยู่ — รอให้เสร็จก่อน`)
     const def = STEPS[step]
     if (!def) throw new Error(`ไม่รู้จักขั้น ${step}`)

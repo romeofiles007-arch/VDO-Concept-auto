@@ -134,7 +134,7 @@ export function prepareReady(items, now = Date.now()) {
   return { dir, files, at: now }
 }
 
-export function createProduction({ runner, log, json, readBody, scheduler = true }) {
+export function createProduction({ runner, log, json, readBody, scheduler = true, halted = () => false }) {
   let data = readJson(FILE, null) ?? {}
   let settings = cleanSettings(data.settings ?? {})
   let state = { ...blankState(), ...(data.state ?? {}) }
@@ -254,7 +254,8 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
   }
 
   function tick(now = Date.now()) {
-    if (!state.active) return
+    // หยุดทุกอย่างอยู่ → ไม่เริ่มคลิปเอง (bridge/halt.js)
+    if (!state.active || halted()) return
     if (state.run) {
       const result = runResult(state.run)
       if (result) finishRun(result, now)
@@ -321,6 +322,7 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
       save()
       return json(res, 200, view()), true
     }
+    if ((path === '/api/production/start' || path === '/api/production/resume') && halted()) return json(res, 423, { error: 'หยุดทุกอย่างไว้อยู่ — กด "ทำงานต่อ" ก่อน แล้วค่อยเริ่มผลิต' }), true
     if (path === '/api/production/start') {
       if (body.settings) settings = cleanSettings(body.settings, settings)
       startBatch()
@@ -361,6 +363,6 @@ export function createProduction({ runner, log, json, readBody, scheduler = true
     save()
   }
 
-  const api = { handle, tick, view, current, reset, busy: () => !!state.run, active: () => !!state.active, onClipReady: null }
+  const api = { handle, tick, view, current, reset, stop, busy: () => !!state.run, active: () => !!state.active, onClipReady: null }
   return api
 }

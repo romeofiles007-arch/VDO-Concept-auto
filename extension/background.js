@@ -361,6 +361,16 @@ async function checkExtensionUpdate() {
   chrome.runtime.reload()
 }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // ⏹ หยุดทุกอย่าง (แผงข้าง) — สั่งทุกแท็บที่ส่วนขยายคุมอยู่ให้เลิกทำทันที ไม่ต้องรอ heartbeat รอบถัดไป
+  // แท็บที่ไม่มีตัวรับ STOP (Flow) จะเลิกเองเมื่อ heartbeat เห็นว่างานถูกยกเลิก (≤20 วิ)
+  if (msg.type === 'STOP_ALL_TABS') {
+    ;(async () => {
+      const tabs = (await Promise.all(Object.values(AGENTS).map((a) => chrome.tabs.query({ url: a.pattern }).catch(() => [])))).flat()
+      await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: 'STOP' }).catch(() => null)))
+      sendResponse({ ok: true, tabs: tabs.length })
+    })()
+    return true
+  }
   if (msg.type === 'FLOW_TRUSTED_ENTER') {
     const sender = _sender
     if (!sender.tab?.id || !/^https:\/\/flow\.google\.com\//.test(sender.tab.url ?? '')) {

@@ -21,6 +21,10 @@ import { watchBridgeCode, extensionVersion } from './selfupdate.js'
 import { createUpdater } from './update.js'
 import { createPosting } from './posting.js'
 import { createKeepAwake } from './keepawake.js'
+import { createHalt, HALTED_MESSAGE } from './halt.js'
+
+// ⏹ หยุดทุกอย่าง — สวิตช์เก็บลงไฟล์ รอดการรีสตาร์ท (bridge/halt.js)
+const halt = createHalt(join(ROOT, 'runtime', 'halt.json'))
 
 loadEnv()
 
@@ -162,6 +166,8 @@ function writeFiles(job, files) {
 
 /** ส่งงานให้ extension ที่กำลังรออยู่ ถ้าไม่มีคนรอก็ค้างในคิว */
 function dispatch(job) {
+  // หยุดทุกอย่างอยู่ → ไม่ส่งงานให้แท็บ (bridge/halt.js)
+  if (halt?.on()) return
   const idx = waiting.findIndex((w) => w.agent === job.agent)
   if (idx === -1) return
   const [w] = waiting.splice(idx, 1)
@@ -175,6 +181,8 @@ function dispatch(job) {
 
 function enqueue(agent, kind, payload) {
   const job = { id: randomUUID(), agent, kind, payload, status: 'queued', progress: null, createdAt: Date.now(), touchedAt: Date.now(), attempts: 1 }
+  // หยุดทุกอย่างอยู่ → งานใหม่จบเป็น error ทันที ไม่เข้าคิว (ฝั่งที่สั่งได้คำตอบเร็ว ไม่ค้างรอ)
+  if (halt?.on()) Object.assign(job, { status: 'error', error: HALTED_MESSAGE, cancelled: true })
   jobs.set(job.id, job)
   saveJobs()
   log(`รับงาน ${kind} → ${agent} (${job.id.slice(0, 8)})`)
@@ -184,9 +192,9 @@ function enqueue(agent, kind, payload) {
 
 // อัปเดตจาก GitHub — ห้ามดึงโค้ดใหม่ระหว่างมีงานค้าง (workInProgress ประกาศด้านล่าง เรียกตอนใช้งานจริงเท่านั้น)
 const updater = createUpdater({ log, busy: () => busyReason() })
-const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater, scheduler: PORT === 8765 })
+const ui = createUi({ jobs, enqueue, lastPoll, token: TOKEN, port: PORT, json, readBody, log, recentLog: () => recentLog, updater, scheduler: PORT === 8765, halt })
 // โหมดโพสต์อัตโนมัติ (แผนกนกนางนวล) — ตัวตั้งเวลาโพสต์วนเฉพาะ bridge ตัวจริง
-const posting = createPosting({ jobs, enqueue, json, readBody, log, port: PORT, token: TOKEN, pipelineBusy: () => ui.busy(), scheduler: PORT === 8765 })
+const posting = createPosting({ jobs, enqueue, json, readBody, log, port: PORT, token: TOKEN, pipelineBusy: () => ui.busy(), scheduler: PORT === 8765, halted: () => halt.on() })
 // 🏭 ผลิตต่อเนื่อง: คลิปเสร็จ → จ่อคิวโพสต์ทันที
 ui.production.onClipReady = (slug, mode) => posting.enqueueAuto(slug, mode)
 
@@ -248,7 +256,7 @@ const server = createServer(async (req, res) => {
       const agent = url.searchParams.get('agent')
       lastPoll[agent] = Date.now()
       for (const j of jobs.values()) if (j.agent === agent && j.status === 'queued' && isOrphan(j)) dropOrphan(j)
-      const pending = [...jobs.values()].find((j) => j.agent === agent && j.status === 'queued')
+      const pending = halt.on() ? null : [...jobs.values()].find((j) => j.agent === agent && j.status === 'queued')
       if (pending) {
         pending.status = 'running'
         pending.touchedAt = Date.now()

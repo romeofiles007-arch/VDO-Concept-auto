@@ -37,7 +37,17 @@ window.fetch = async (input, init) => {
     return originalFetch('/fixture-agents?'+params)
   }
   if (url.pathname.startsWith('/api/')) {
-    const payload = url.pathname === '/api/voices' ? {voices:[],selected:null,choice:null}
+    // หยุดทุกอย่าง: จำค่าที่กด (?halt=on เริ่มแบบหยุดอยู่) · เครดิต: ?eleven=error = key ไม่มีสิทธิ์อ่าน
+    let sent = {}
+    try { sent = JSON.parse(init?.body || '{}') } catch {}
+    if (url.pathname === '/api/halt' && 'on' in sent) window.fixtureHalt = !!sent.on
+    const haltOn = window.fixtureHalt ?? params.get('halt') === 'on'
+    const payload = url.pathname === '/api/halt' ? {halted: haltOn, at: haltOn ? Date.now() - 600000 : null, run: null, production: false}
+      : url.pathname === '/api/credits' ? {at: Date.now(), services: [
+        params.get('eleven') === 'error' ? {id:'elevenlabs', label:'ElevenLabs', unit:'เครดิต', error:'key นี้ไม่มีสิทธิ์อ่านเครดิต — สร้าง key ใหม่ที่เปิด "User: Read" ด้วย', short:'key ไม่มีสิทธิ์อ่าน'}
+          : {id:'elevenlabs', label:'ElevenLabs', unit:'เครดิต', used: 27450, limit: 30000, remaining: 2550, tier:'starter', resetAt: Date.now() + 26 * 86400000},
+        {id:'kie', label:'Kie', unit:'เครดิต', remaining: 1240}]}
+      : url.pathname === '/api/voices' ? {voices:[],selected:null,choice:null}
       : url.pathname === '/api/character' ? {images:[],description:''}
       : url.pathname === '/api/autopilot' ? (params.get('log')==='on' ? (() => {
           // ?log=on — คลิปที่ติดปัญหาพร้อม log จำลอง สำหรับดูหน้าต่าง terminal
