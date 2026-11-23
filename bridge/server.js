@@ -101,6 +101,7 @@ setInterval(() => {
   }
 }, 20_000).unref()
 const waiting = [] // ผู้รอ job ฝั่ง extension: {agent, respond, timer}
+let staleExtensionAt = 0 // เวลาที่ extension รุ่นค้างมาของานล่าสุด (ถูกปัดด้วย 409)
 const lastPoll = {} // agent → เวลาที่ extension มาถามหางานล่าสุด ใช้บอกหน้า UI ว่าต่ออยู่ไหม
 
 const LOG = join(ROOT, 'bridge', 'bridge.log')
@@ -214,7 +215,9 @@ const server = createServer(async (req, res) => {
   try {
     // extension เทียบลายนิ้วมือไฟล์ของตัวเอง — เปลี่ยนแล้ว reload ตัวเองเมื่อไม่มีงานค้าง
     if (req.method === 'GET' && path === '/ext-version') {
-      return json(res, 200, { version: extensionVersion(), busy: workInProgress() })
+      // extension รุ่นเก่าที่เพิ่งถูกปัดงาน (409) ต้อง reload ได้แม้มีคลิปกำลังทำ — ไม่งั้นคลิปรองานที่มันไม่ยอมรับ ส่วนมันก็รอคลิปจบ ค้างกันทั้งคู่
+      // (ตัว extension ยังเช็ก busy ของตัวเองก่อน reload งานที่ถืออยู่จึงไม่หลุด)
+      return json(res, 200, { version: extensionVersion(), busy: workInProgress() && Date.now() - staleExtensionAt > 90_000 })
     }
 
     // ── ฝั่ง pipeline ────────────────────────────────────────────
@@ -261,6 +264,7 @@ const server = createServer(async (req, res) => {
       const have = url.searchParams.get('v') ?? ''
       if (want && have !== want) {
         const reply = () => json(res, 409, { reload: true, version: want, error: `extension รุ่น ${have || 'เก่า'} ไม่ตรงกับไฟล์ (${want}) — reload extension ก่อนรับงาน` })
+        staleExtensionAt = Date.now()
         if (have) return reply()
         const timer = setTimeout(reply, 25_000)
         req.on('close', () => clearTimeout(timer))
