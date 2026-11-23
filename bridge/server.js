@@ -17,7 +17,7 @@ import { join, dirname } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 import { loadEnv } from '../pipeline/lib/env.mjs'
 import { createUi } from './ui.js'
-import { watchBridgeCode, extensionVersion } from './selfupdate.js'
+import { watchBridgeCode, extensionVersion, extensionManifestVersion } from './selfupdate.js'
 import { createUpdater } from './update.js'
 import { createPosting } from './posting.js'
 import { createKeepAwake } from './keepawake.js'
@@ -254,6 +254,18 @@ const server = createServer(async (req, res) => {
     // ── ฝั่ง extension ───────────────────────────────────────────
     if (req.method === 'GET' && path === '/job') {
       const agent = url.searchParams.get('agent')
+      // extension รุ่นค้าง (เช่นติดตั้งไว้ในอีกโปรไฟล์ Chrome ที่ยังไม่ reload) ห้ามรับงาน — เจอจริง 23 พ.ย. 2026:
+      // 0.27.8 ในอีกโปรไฟล์แย่งงาน Flow ไปทำด้วยบัญชี Google อื่น เปิด project ไม่ได้ ล้มทั้งคลิป
+      // ตัวใหม่ส่ง v มาด้วย → ตอบทันทีให้ reload ตัวเอง · ตัวเก่าไม่ส่ง v → ค้างสายไว้ 25 วิก่อนตอบ กันมันวนถามถี่
+      const want = extensionManifestVersion()
+      const have = url.searchParams.get('v') ?? ''
+      if (want && have !== want) {
+        const reply = () => json(res, 409, { reload: true, version: want, error: `extension รุ่น ${have || 'เก่า'} ไม่ตรงกับไฟล์ (${want}) — reload extension ก่อนรับงาน` })
+        if (have) return reply()
+        const timer = setTimeout(reply, 25_000)
+        req.on('close', () => clearTimeout(timer))
+        return
+      }
       lastPoll[agent] = Date.now()
       for (const j of jobs.values()) if (j.agent === agent && j.status === 'queued' && isOrphan(j)) dropOrphan(j)
       const pending = halt.on() ? null : [...jobs.values()].find((j) => j.agent === agent && j.status === 'queued')

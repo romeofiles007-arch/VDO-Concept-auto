@@ -19,7 +19,7 @@ const test = async (name, fn) => {
 }
 
 /** chrome จำลอง: tabs = [{ id, windowId, url, incognito }] · windows = [{ id, incognito }] · focused = id หน้าต่างล่าสุด */
-function makeChrome({ tabs, windows, focused }) {
+function makeChrome({ tabs, windows, focused, redirects }) {
   const calls = []
   const rec = (name, value) => (...args) => {
     calls.push([name, ...args])
@@ -41,7 +41,13 @@ function makeChrome({ tabs, windows, focused }) {
     sidePanel: { setPanelBehavior: async () => {}, setOptions: rec('sidePanel.setOptions'), open: async () => {} },
     tabs: {
       query: rec('tabs.query', (q) => (q.windowId != null ? tabs.filter((t) => t.windowId === q.windowId) : tabs)),
-      update: rec('tabs.update', (id) => tabs.find((t) => t.id === id)),
+      update: rec('tabs.update', (id, props) => {
+        const tab = tabs.find((t) => t.id === id)
+        // Flow พา project ของบัญชีอื่นไปหน้า /404 เอง (redirects = { url ที่เปิด: url ที่ไปลงจริง })
+        if (tab && props?.url) tab.url = redirects?.[props.url] ?? props.url
+        return tab
+      }),
+      get: rec('tabs.get', (id) => tabs.find((t) => t.id === id)),
       create: rec('tabs.create', () => tabs[0]),
       move: rec('tabs.move', (id, { windowId }) => Object.assign(tabs.find((t) => t.id === id), { windowId })),
       sendMessage: rec('tabs.sendMessage', { ok: true }),
@@ -131,6 +137,37 @@ await test('งานสร้างภาพ: ปิดแผงข้างบ
   assert.ok(panelOff >= 0 && load > panelOff, 'ต้องปิดแผงข้างก่อนโหลดหน้า Flow')
   assert.deepEqual(JSON.parse(JSON.stringify(calls[load].slice(1))), [7, { url: 'https://flow.google.com/?hl=en', active: true }])
   assert.equal(calls.find((c) => c[0] === 'tabs.sendMessage')[1], 7)
+})
+
+const loads = (calls) => calls.filter((c) => c[0] === 'tabs.update' && c[2]?.url).map((c) => c[2].url)
+
+await test('ลองซ้ำ: กลับ project เดิมของคลิป (รับลิงก์ /u/N/project/ ด้วย)', async () => {
+  const tabs = [{ id: 7, windowId: 1, url: 'https://flow.google.com/' }]
+  const { ctx, calls } = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1 })
+  await ctx.handleJob({ id: 'j2', agent: 'flow', kind: 'generate-images', payload: { agent: 'flow', projectUrl: 'https://flow.google.com/u/2/project/abc' } })
+  assert.deepEqual(loads(calls), ['https://flow.google.com/u/2/project/abc?hl=en'])
+})
+
+await test('project เดิมเป็นของบัญชีอื่น (Flow พาไป /404) → โหลดหน้าแรกของบัญชีเดิมแทน ไม่ล้มทั้งคลิป', async () => {
+  const tabs = [{ id: 7, windowId: 1, url: 'https://flow.google.com/' }]
+  const redirects = {
+    'https://flow.google.com/project/abc?hl=en': 'https://flow.google.com/404?reason=project',
+    'https://flow.google.com/u/1/project/xyz?hl=en': 'https://flow.google.com/u/1/404?reason=project',
+  }
+  const a = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1, redirects })
+  await a.ctx.handleJob({ id: 'j3', agent: 'flow', kind: 'generate-images', payload: { agent: 'flow', projectUrl: 'https://flow.google.com/project/abc' } })
+  assert.deepEqual(loads(a.calls), ['https://flow.google.com/project/abc?hl=en', 'https://flow.google.com/?hl=en'])
+
+  const b = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1, redirects })
+  await b.ctx.handleJob({ id: 'j4', agent: 'flow', kind: 'generate-images', payload: { agent: 'flow', projectUrl: 'https://flow.google.com/u/1/project/xyz' } })
+  assert.deepEqual(loads(b.calls), ['https://flow.google.com/u/1/project/xyz?hl=en', 'https://flow.google.com/u/1/?hl=en'])
+})
+
+await test('project เดิมเปิดได้ปกติ → ไม่โหลดซ้ำ', async () => {
+  const tabs = [{ id: 7, windowId: 1, url: 'https://flow.google.com/' }]
+  const { ctx, calls } = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1 })
+  await ctx.handleJob({ id: 'j5', agent: 'flow', kind: 'generate-images', payload: { agent: 'flow', projectUrl: 'https://flow.google.com/project/abc' } })
+  assert.deepEqual(loads(calls), ['https://flow.google.com/project/abc?hl=en'])
 })
 
 await test('โค้ดไม่มีการเปิดหน้าต่างใหม่แล้ว · ไม่ขอสิทธิ์อ่านจอ (system.display) ที่ไม่ใช้แล้ว', () => {

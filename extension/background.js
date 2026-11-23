@@ -157,10 +157,19 @@ async function handleJob(job) {
   // Flow: เริ่มจากหน้าแรกทุกครั้ง → content script กด New project ได้ project ใหม่ต่อคลิป
   if (agent === 'flow' && job.kind === 'generate-images') {
     // คลิปนี้เคยมี project ใน Flow แล้ว → กลับไป project เดิม (ตัวละครเดิม ไม่เปิด project ใหม่ทุกครั้งที่ลองซ้ำ)
-    const url = /^https:\/\/flow\.google\.com\/project\//.test(job.payload.projectUrl ?? '') ? withEnglish(job.payload.projectUrl) : AGENTS.flow.match
+    // ลิงก์ project มีได้ทั้ง /project/<id> และ /u/<N>/project/<id> (บัญชีที่ 2 ขึ้นไป)
+    const url = /^https:\/\/flow\.google\.com\/(?:u\/\d+\/)?project\//.test(job.payload.projectUrl ?? '') ? withEnglish(job.payload.projectUrl) : AGENTS.flow.match
     await keepFlowInTab(tab) // เป็นแท็บ ไม่ใช่หน้าต่างใหม่ · แผงข้างหลบบนแท็บนี้ หน้า Flow จึงกว้างพอมีปุ่ม Agent
     await loadInTab(tab.id, url, 3000)
     await reloadIfTranslated(tab.id, url, 3000)
+    // project เดิมเปิดไม่ได้ (เป็นของบัญชี Google อื่น/ถูกลบ) → Flow พาไปหน้า /404 "Project not found" ที่ไม่มีปุ่ม New project
+    // → กลับหน้าแรกแล้วเปิด project ใหม่แทน ไม่ล้มทั้งคลิป (เจอจริง 23 พ.ย. 2026)
+    const landed = url === AGENTS.flow.match ? '' : ((await chrome.tabs.get(tab.id).catch(() => null))?.url ?? '')
+    if (/^https:\/\/flow\.google\.com\/(?:u\/\d+\/)?404\b/.test(landed)) {
+      console.warn('เปิด project เดิมของ Flow ไม่ได้ (Project not found) — เปิด project ใหม่แทน', url)
+      // หน้าแรกของบัญชีเดียวกัน (/u/N/ ถ้ามี) — content script กด New project ต่อเอง
+      await loadInTab(tab.id, withEnglish(url.split('?')[0].replace(/project\/.*$/, '')), 3000)
+    }
   }
 
   // ChatGPT: แชตใหม่ = โหลดหน้าแรกใหม่ (แบบเดียวกับแผงข้าง) — กดปุ่ม New chat จาก content script ไม่ได้ผลกับหน้ารุ่นใหม่ (ต.ค. 2026)
@@ -230,8 +239,9 @@ async function pollLoop() {
       const results = await Promise.all(
         free.map(async (agent) => {
           try {
-            const res = await fetch(`${base}/job?agent=${agent}`, { headers: { 'x-bridge-token': token } })
+            const res = await fetch(`${base}/job?agent=${agent}&v=${encodeURIComponent(chrome.runtime.getManifest().version)}`, { headers: { 'x-bridge-token': token } })
             if (res.status === 401) return 'auth'
+            if (res.status === 409) return 'stale' // ไฟล์ extension เป็นรุ่นใหม่แล้ว แต่ตัวที่โหลดอยู่ยังเป็นรุ่นเก่า
             if (res.status !== 200) return 'idle'
             const job = await res.json()
             busy.add(agent)
@@ -251,6 +261,19 @@ async function pollLoop() {
           }
         }),
       )
+      if (results.includes('stale')) {
+        // ไม่รับงานด้วยโค้ดเก่า — ว่างเมื่อไหร่ reload ตัวเอง (งานที่ทำค้างอยู่ทำต่อจนจบก่อน)
+        // reload แล้วยังไม่ตรง (เช่นโหลด extension จากคนละโฟลเดอร์กับโปรแกรม) → ไม่ reload วนซ้ำ บอกผู้ใช้แทน
+        const { staleReloadAt = 0 } = await chrome.storage.local.get('staleReloadAt')
+        if (!busy.size && Date.now() - staleReloadAt > 5 * 60_000) {
+          await setStatus('extension มีรุ่นใหม่ — กำลังโหลดใหม่')
+          await chrome.storage.local.set({ staleReloadAt: Date.now() })
+          return chrome.runtime.reload()
+        }
+        await setStatus(busy.size ? 'extension มีรุ่นใหม่ — จะโหลดใหม่เมื่องานนี้เสร็จ' : 'extension ไม่ตรงรุ่นกับโปรแกรม — กด reload ที่ chrome://extensions')
+        await new Promise((r) => setTimeout(r, 30_000))
+        continue
+      }
       if (results.includes('auth')) {
         await setStatus('token ไม่ตรงกับ .env')
         return
@@ -390,10 +413,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve())
         })
         attached = true
+        // ต่อ debugger แล้ว Chrome ขึ้นแถบ "กำลังแก้ไขข้อบกพร่อง" หน้าเว็บหดลง → รอ layout นิ่งก่อน แล้วโฟกัสช่องพิมพ์ใหม่
+        await new Promise((r) => setTimeout(r, 400))
+        if (msg.click) {
+          // ทางสำรอง: กดปุ่มส่ง (ลูกศร) ด้วยเมาส์จริง — หาตำแหน่งหลังต่อ debugger แล้ว เพราะหน้าเลื่อนไปตามแถบ
+          const labels = JSON.stringify(Array.isArray(msg.labels) ? msg.labels : [])
+          const probe = await command('Runtime.evaluate', {
+            returnByValue: true,
+            expression: `(() => {
+              const labels = ${labels}
+              const b = [...document.querySelectorAll('button')].find((el) => labels.includes(el.getAttribute('aria-label')) && el.getBoundingClientRect().width > 0 && !el.disabled)
+              if (!b) return null
+              b.scrollIntoView({ block: 'center' })
+              const r = b.getBoundingClientRect()
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+            })()`,
+          })
+          const at = probe?.result?.value
+          if (!at) return { ok: false, error: 'ไม่เจอปุ่มส่งที่กดได้' }
+          const mouse = { x: at.x, y: at.y, button: 'left', clickCount: 1 }
+          await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y })
+          await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...mouse })
+          await command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...mouse })
+          return { ok: true, method: 'click' }
+        }
+        await command('Runtime.evaluate', {
+          expression: `(() => {
+            const ed = [...document.querySelectorAll('flow-base-prompt-box .ProseMirror, flow-creative-agent-prompt-box .ProseMirror, flow-prompt-box .ProseMirror')]
+              .find((e) => e.getBoundingClientRect().width > 0 && !e.closest('flow-agent-panel'))
+            if (!ed || document.activeElement === ed) return
+            ed.focus()
+            const sel = getSelection(); sel.selectAllChildren(ed); sel.collapseToEnd()
+          })()`,
+        })
         const enter = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }
         await command('Input.dispatchKeyEvent', { type: 'keyDown', ...enter, text: '\r', unmodifiedText: '\r' })
         await command('Input.dispatchKeyEvent', { type: 'keyUp', ...enter })
-        return { ok: true }
+        return { ok: true, method: 'enter' }
       } catch (err) {
         return { ok: false, error: err?.message ?? String(err) }
       } finally {

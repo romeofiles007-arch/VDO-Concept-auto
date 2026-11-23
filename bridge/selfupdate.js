@@ -10,7 +10,7 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { ROOT } from '../pipeline/lib/config.mjs'
 
@@ -73,4 +73,13 @@ export function watchBridgeCode({ busy, server, log }) {
     setTimeout(() => process.exit(0), 500)
   }, 10_000)
   timer.unref?.()
+}
+
+/** รุ่นใน extension/manifest.json บนดิสก์ — extension ที่โหลดค้างรุ่นอื่นไว้ (เช่นอีกโปรไฟล์ Chrome ที่ไม่ได้ reload) ต้องไม่รับงาน */
+export function extensionManifestVersion() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, 'extension', 'manifest.json'), 'utf8')).version ?? ''
+  } catch {
+    return ''
+  }
 }

@@ -63,15 +63,33 @@ function realClick(el) {
   el.dispatchEvent(new MouseEvent('click', opts))
 }
 
-/** ส่ง Enter ให้ช่อง prompt ผ่านอินพุตของเบราว์เซอร์ หลังตรวจว่าข้อความและปุ่มส่งพร้อมแล้ว */
-async function trustedEnter(editor, prompt) {
+/**
+ * ส่ง prompt ผ่านอินพุตจริงของเบราว์เซอร์ (debugger) หลังตรวจว่าข้อความพร้อมแล้ว
+ *   click = false → กด Enter ในช่องพิมพ์ · click = true → กดปุ่มลูกศรส่ง (ทางสำรองเมื่อ Enter ไม่ติด)
+ */
+async function trustedSend(editor, prompt, { click = false } = {}) {
   editor.scrollIntoView({ block: 'center' })
   editor.focus()
   await sleep(150)
   if (document.activeElement !== editor) throw new Error('โฟกัสช่อง prompt ของ Flow ไม่ได้')
-  if (text(editor) !== String(prompt).replace(/\s+/g, ' ').trim()) throw new Error('ข้อความในช่อง prompt เปลี่ยนก่อนกด Enter — ยังไม่ได้ส่ง')
-  const result = await chrome.runtime.sendMessage({ type: 'FLOW_TRUSTED_ENTER' })
-  if (!result?.ok) throw new Error(`กด Enter เพื่อส่ง prompt ไม่สำเร็จ: ${result?.error ?? 'ไม่มีคำตอบจาก service worker'}`)
+  if (text(editor) !== String(prompt).replace(/\s+/g, ' ').trim()) throw new Error('ข้อความในช่อง prompt เปลี่ยนก่อนกดส่ง — ยังไม่ได้ส่ง')
+  const result = await chrome.runtime.sendMessage({ type: 'FLOW_TRUSTED_ENTER', click, labels: L.send })
+  if (!result?.ok) throw new Error(`${click ? 'กดปุ่มส่ง' : 'กด Enter เพื่อส่ง'} prompt ไม่สำเร็จ: ${result?.error ?? 'ไม่มีคำตอบจาก service worker'}`)
+}
+
+/** สภาพช่องพิมพ์ตอนส่งไม่ติด — ใส่ใน error ไว้ดูว่าหน้า Flow ค้างที่อะไร (รอบหน้าหน้าเปลี่ยนจะได้แก้ตรงจุด) */
+function sendDiagnosis() {
+  const editor = SEL.editor()
+  const send = SEL.send()
+  const parts = [
+    `ช่องพิมพ์ ${text(editor).length} ตัวอักษร`,
+    send ? `ปุ่มส่ง${send.disabled ? 'กดไม่ได้' : 'กดได้'}` : 'ไม่เห็นปุ่มส่ง',
+    `โหมด Agent ${agentOn() ? 'เปิด' : 'ปิด'}`,
+    document.activeElement === editor ? 'โฟกัสอยู่ที่ช่องพิมพ์' : `โฟกัสอยู่ที่ ${document.activeElement?.tagName?.toLowerCase() ?? '-'}`,
+    document.hasFocus() ? '' : 'หน้าต่าง Chrome ไม่ได้อยู่ด้านหน้า',
+    pageAlerts(),
+  ]
+  return parts.filter(Boolean).join(' · ').slice(0, 300)
 }
 
 const text = (el) => (el?.innerText ?? '').replace(/\s+/g, ' ').trim()
@@ -212,9 +230,23 @@ async function pickModelFromMenu(modelBtn, model) {
   await sleep(700)
 }
 
+/** หน้า "Project not found" (/404?reason=project) — project ของบัญชี Google อื่น/ถูกลบ ไม่มีปุ่ม New project บนหน้านี้ */
+const projectNotFound = () => /^(?:\/u\/\d+)?\/404\b/.test(location.pathname) || /Project not found|ไม่พบโปรเจ็?กต์/i.test(text(document.body).slice(0, 300))
+
 async function openProject() {
   if (/\/project\//.test(location.pathname)) return
-  const btn = await waitFor(SEL.newProject, { timeout: 30_000, label: 'ปุ่ม New project / โปรเจ็กต์ใหม่' })
+  if (projectNotFound()) {
+    // กลับหน้ารายการ project ของบัญชีเดียวกันในหน้าเดิม (SPA ไม่โหลดหน้าใหม่ ตัวขับจึงยังอยู่) แล้วเปิด project ใหม่
+    console.warn('[cartoon-auto] project เดิมเปิดไม่ได้ (Project not found) — เปิด project ใหม่แทน')
+    const back = $$('a, button').find((el) => visible(el) && /Back to projects|กลับไปที่โปรเจ็?กต์/i.test(text(el)))
+    if (back) realClick(back)
+  }
+  const btn = await waitFor(SEL.newProject, { timeout: 30_000, label: 'ปุ่ม New project / โปรเจ็กต์ใหม่' }).catch((err) => {
+    const signIn = $$('a, button').some((el) => visible(el) && /^\s*sign in\s*$|เข้าสู่ระบบ/i.test(text(el)))
+    if (signIn) throw new Error('Chrome โปรไฟล์นี้ยังไม่ได้ลงชื่อเข้าใช้ Google Flow — ลงชื่อเข้าใช้ในแท็บ Flow ก่อนแล้วกดทำต่อ')
+    if (projectNotFound()) throw new Error(`เปิด project ของ Flow ไม่ได้ (Project not found — น่าจะเป็นของบัญชี Google อื่น) และกลับหน้ารายการ project ไม่สำเร็จ (${location.href.split('?')[0]})`)
+    throw new Error(`${err.message} (หน้าที่เปิดอยู่: ${location.href.split('?')[0]})`)
+  })
   realClick(btn)
   await waitFor(() => /\/project\//.test(location.pathname), { timeout: 30_000, label: 'project ใหม่' })
   await waitFor(SEL.editor, { timeout: 30_000, label: 'ช่องพิมพ์ของ project' })
@@ -359,11 +391,16 @@ async function configureAgent(model, { dryRun, ratio = "16:9" }) {
   }
 
   // 2) เข้าหน้าค่าเริ่มต้นของรูปภาพ
-  if (!AGENT.sub()) {
-    realClick(await waitFor(AGENT.imageRow, { label: 'แถวค่าเริ่มต้นของรูปภาพใน Agent settings' }))
-    await waitFor(AGENT.sub, { label: 'หน้าค่าเริ่มต้นของรูปภาพ' })
-    await waitSettled(AGENT.sub, { quietMs: 600, timeout: 6000 })
+  // แผงยังโหลดค่าจาก server แล้ววาดใหม่ได้ — คลิกแรกหายไปกับแถวเก่า (เจอจริง 23 พ.ย. 2026 "รอ หน้าค่าเริ่มต้นของรูปภาพ ไม่เจอ")
+  // → หาแถวใหม่ทุกรอบ สลับวิธีคลิก ลองได้ 4 ครั้ง
+  for (let attempt = 0; attempt < 4 && !AGENT.sub(); attempt++) {
+    const row = await waitFor(AGENT.imageRow, { label: 'แถวค่าเริ่มต้นของรูปภาพใน Agent settings' })
+    if (attempt % 2 === 0) realClick(row)
+    else row.click()
+    await waitFor(AGENT.sub, { timeout: 6000, label: 'หน้าค่าเริ่มต้นของรูปภาพ' }).catch(() => null)
   }
+  if (!AGENT.sub()) await waitFor(AGENT.sub, { timeout: 4000, label: 'หน้าค่าเริ่มต้นของรูปภาพ' })
+  await waitSettled(AGENT.sub, { quietMs: 600, timeout: 6000 })
 
   // 3) รุ่น · สัดส่วน · จำนวน — ทุกครั้งต้อง query ใหม่ แผงวาดใหม่แล้ว element เดิมหลุดจากหน้า คลิกไปก็ไม่มีผล
   const picked = () => AGENT.models().find((o) => o.classList.contains('radio-option-selected'))
@@ -441,24 +478,33 @@ async function sendPrompt(prompt, attachments) {
   await waitBeforeNextPrompt()
   await attachImages(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), attachments)
   // แนบรูปแล้ว Flow วาดช่องพิมพ์ใหม่ (element เดิมหลุดจากหน้า — ตรวจกับหน้าจริงแล้ว) → ต้องหาช่องพิมพ์ใหม่ทุกครั้ง
+  const want = String(prompt).replace(/\s+/g, ' ').trim()
+  const clearEditor = () => {
+    SEL.editor()?.focus()
+    document.execCommand('selectAll', false)
+    document.execCommand('delete', false)
+  }
   const pasteText = async () => {
     const editor = await waitFor(SEL.editor, { label: 'ช่องพิมพ์' })
     editor.focus()
     // รอบก่อนส่งไม่สำเร็จอาจทิ้ง prompt ไว้ในช่อง อย่าวางต่อท้ายจนยาวเป็นสองเท่า
-    document.execCommand('selectAll', false)
-    document.execCommand('delete', false)
+    clearEditor()
+    if (text(SEL.editor())) return false
+    // 23 พ.ย. 2026 Flow ไม่รับข้อความจาก paste event ที่สร้างเองแล้ว (กินเหตุการณ์แต่ช่องว่างเปล่า — รูปภาพยังรับอยู่)
+    // → พิมพ์ด้วย insertText เป็นหลัก (ตรวจกับหน้าจริงแล้ว ยาว 25,000 ตัวอักษรก็ได้) · paste เหลือไว้เป็นทางสำรอง
+    document.execCommand('insertText', false, prompt)
+    await sleep(400)
+    if (text(SEL.editor()) === want) return true
+    clearEditor()
     if (text(SEL.editor())) return false
     const data = new DataTransfer()
     data.setData('text/plain', prompt)
-    editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-    await sleep(500)
-    if (!text(SEL.editor())) {
-      SEL.editor()?.focus()
-      document.execCommand('insertText', false, prompt)
-      await sleep(400)
-    }
-    return text(SEL.editor()) === String(prompt).replace(/\s+/g, ' ').trim()
+    SEL.editor()?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    await sleep(800)
+    return text(SEL.editor()) === want
   }
+  // Flow รับงานแล้ว = มีปุ่ม Stop · การ์ดคำตอบขึ้นว่าผิดพลาด · หรือช่องพิมพ์ถูกล้าง
+  const accepted = () => agentBusy() || agentFailed() || !text(SEL.editor())
   // ส่งแล้วต้องเห็นว่า Flow รับงานจริง ไม่ใช่แค่ช่องพิมพ์ว่าง — ว่างเพราะถูกปฏิเสธก็ว่างเหมือนกัน
   let failure = ''
   for (let round = 1; round <= 3; round++) {
@@ -470,8 +516,16 @@ async function sendPrompt(prompt, attachments) {
     if (!pasted) throw new Error('วาง prompt ลงช่องพิมพ์ของ Flow ไม่ได้')
     await waitFor(() => (SEL.send() && !SEL.send().disabled ? SEL.send() : null), { label: 'ปุ่มส่งพร้อมใช้งาน' })
     await chrome.storage.local.set({ [FLOW_LAST_PROMPT_KEY]: Date.now() })
-    await trustedEnter(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), prompt)
-    await waitFor(() => agentBusy() || agentFailed() || !text(SEL.editor()), { timeout: 15_000, label: 'Flow รับ prompt' })
+    await trustedSend(await waitFor(SEL.editor, { label: 'ช่องพิมพ์' }), prompt)
+    let took = await waitFor(accepted, { timeout: 8000, label: 'Flow รับ prompt' }).catch(() => false)
+    // Enter ไม่ติด (ข้อความยังค้างในช่อง ไม่มีงานเดิน) → กดปุ่มลูกศรส่งด้วยเมาส์จริงแทน (เจอจริง 23 พ.ย. 2026 ทั้งสามระบบ)
+    if (!took && text(SEL.editor()) === want && SEL.send() && !SEL.send().disabled) {
+      console.warn('[cartoon-auto] Enter ไม่ส่ง prompt — กดปุ่มส่งแทน')
+      await trustedSend(SEL.editor(), prompt, { click: true })
+      took = await waitFor(accepted, { timeout: 15_000, label: 'Flow รับ prompt' }).catch(() => false)
+    }
+    if (!took) took = await waitFor(accepted, { timeout: 7000, label: 'Flow รับ prompt' }).catch(() => false)
+    if (!took) throw new Error(`Flow ไม่รับ prompt หลังกด Enter และกดปุ่มส่งแล้ว (${sendDiagnosis()}) — เปิดแท็บ Flow ดูว่ามีอะไรค้างอยู่`)
     // รอให้การ์ดคำตอบนิ่งก่อนตัดสิน — Flow ขึ้น "เกิดข้อผิดพลาด" ภายในไม่กี่วินาทีเมื่อไม่รับงาน
     const failed = await waitFor(agentFailed, { timeout: 12_000, interval: 500, label: 'คำตอบของ Agent' }).catch(() => null)
     if (!failed) return
@@ -730,10 +784,14 @@ async function renameProject(title) {
   if (!input || input.value === name) return
   input.focus()
   input.select()
-  // Angular อ่านค่าจาก event — ตั้งค่าผ่าน setter ของ input จริง แล้วยิง input/change ให้ครบ
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, name)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  input.dispatchEvent(new Event('change', { bubbles: true }))
+  // 23 พ.ย. 2026 ตั้งค่าผ่าน setter แล้วชื่อไม่เปลี่ยน → พิมพ์ทับด้วย insertText แล้วกด Enter (ตรวจกับหน้าจริงแล้ว ต้องมี Enter ชื่อถึงบันทึก)
+  // insertText ไม่ได้ผล → ตั้งผ่าน setter ของ input จริงแล้วยิง input/change ให้ครบเหมือนเดิม
+  if (!document.execCommand('insertText', false, name) || input.value !== name) {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, name)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  await sleep(200)
   for (const type of ['keydown', 'keyup']) input.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
   input.blur()
   input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
