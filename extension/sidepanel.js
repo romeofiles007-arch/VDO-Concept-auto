@@ -11,6 +11,7 @@ import { initIcons, setIconLabel } from './icons.js'
 import { portrait, DEPARTMENTS, HANDOFF, AGENT_WORD, elapsed, SEA_ASSETS } from './agents.js'
 import { initPosting } from './posting.js'
 import { modeFields, scheduleFromMode, scheduleCopy, nextProductionLabel } from './production-schedule.js'
+import { createTabClaims } from './tab-claim.js'
 
 initIcons()
 
@@ -85,11 +86,13 @@ function waitTabLoaded(tabId) {
  * แท็บเว็บที่ใช้ร่วมกับ background — แท็บที่จำไว้ > แท็บที่เปิดอยู่แล้ว > เปิดใหม่ (มีไม่มีจริงๆ เท่านั้น)
  * ไม่ต้องเปิดแท็บ ChatGPT/Flow เพิ่มทุกครั้งที่สั่งงาน
  */
+// แท็บที่ระบบอื่นในโปรไฟล์ Chrome เดียวกันถือป้ายอยู่ (ดู tab-claim.js) → ไม่ยืม เปิดแท็บของตัวเองแทน
+const claims = createTabClaims({ scripting: chrome.scripting, id: chrome.runtime.id, name: chrome.runtime.getManifest().name })
 async function reuseTab(key, patterns) {
   const { [key]: savedId } = await chrome.storage.session.get(key)
   const saved = savedId ? await chrome.tabs.get(savedId).catch(() => null) : null
-  if (saved) return saved
-  const tabs = await chrome.tabs.query({ url: patterns })
+  if (saved && (await claims.free([saved])).length) return saved
+  const tabs = await claims.free(await chrome.tabs.query({ url: patterns }))
   const tab = tabs.find((t) => !t.discarded) ?? tabs[0] ?? null
   if (tab) await chrome.storage.session.set({ [key]: tab.id })
   return tab
@@ -118,7 +121,24 @@ async function askChatGPT(prompt, attachments) {
 }
 
 async function askChatGPTNow(prompt, attachments) {
-  const tabId = await freshChatTab()
+  let tabId = await freshChatTab()
+  // ติดป้ายระหว่างถาม — ระบบอื่นในโปรไฟล์เดียวกันจะไม่ส่ง prompt ลงแท็บนี้ · ถูกแย่งพร้อมกันพอดี → เปิดแท็บใหม่ของตัวเอง
+  if (!(await claims.claim(tabId))) {
+    const tab = await chrome.tabs.create({ url: CHATGPT_URL, active: false })
+    await chrome.storage.session.set({ chatTabId: tab.id })
+    await waitTabLoaded(tab.id)
+    await new Promise((r) => setTimeout(r, 2500))
+    tabId = tab.id
+    await claims.claim(tabId)
+  }
+  try {
+    return await askOnTab(tabId, prompt, attachments)
+  } finally {
+    claims.release(tabId).catch(() => {})
+  }
+}
+
+async function askOnTab(tabId, prompt, attachments) {
   stopIfRequested()
   const send = () => chrome.tabs.sendMessage(tabId, { type: 'ASK', prompt, newChat: false, attachments })
   let res = await send().catch(() => null)

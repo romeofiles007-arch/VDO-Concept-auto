@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
+import * as tabClaim from '../extension/tab-claim.js'
 
 const EXT = join(fileURLToPath(new URL('..', import.meta.url)), 'extension')
 const bgSource = readFileSync(join(EXT, 'background.js'), 'utf8')
@@ -19,7 +20,7 @@ const test = async (name, fn) => {
 }
 
 /** chrome จำลอง: tabs = [{ id, windowId, url, incognito }] · windows = [{ id, incognito }] · focused = id หน้าต่างล่าสุด */
-function makeChrome({ tabs, windows, focused, redirects }) {
+function makeChrome({ tabs, windows, focused, redirects, pages = null }) {
   const calls = []
   const rec = (name, value) => (...args) => {
     calls.push([name, ...args])
@@ -31,7 +32,7 @@ function makeChrome({ tabs, windows, focused, redirects }) {
     removeListener: () => {},
   }
   const chrome = {
-    runtime: { onInstalled: event(), onStartup: event(), onMessage: event(), getManifest: () => manifest, reload: () => {} },
+    runtime: { id: 'this-ext', onInstalled: event(), onStartup: event(), onMessage: event(), getManifest: () => manifest, reload: () => {} },
     alarms: { onAlarm: event(), create: () => {} },
     notifications: { onClicked: event() },
     storage: {
@@ -48,7 +49,12 @@ function makeChrome({ tabs, windows, focused, redirects }) {
         return tab
       }),
       get: rec('tabs.get', (id) => tabs.find((t) => t.id === id)),
-      create: rec('tabs.create', () => tabs[0]),
+      create: rec('tabs.create', (props) => {
+        if (!pages) return tabs[0]
+        const tab = { id: 99, windowId: 1, url: props.url }
+        tabs.unshift(tab)
+        return tab
+      }),
       move: rec('tabs.move', (id, { windowId }) => Object.assign(tabs.find((t) => t.id === id), { windowId })),
       sendMessage: rec('tabs.sendMessage', { ok: true }),
       onUpdated,
@@ -59,15 +65,24 @@ function makeChrome({ tabs, windows, focused, redirects }) {
       getLastFocused: rec('windows.getLastFocused', () => windows.find((w) => w.id === focused) ?? null),
       get: rec('windows.get', (id) => windows.find((w) => w.id === id)),
     },
-    scripting: { executeScript: rec('scripting.executeScript', [{ result: false }]) },
+    // pages = { tabId: Map } → จำลอง sessionStorage ของแต่ละแท็บ (ป้ายเจ้าของแท็บ tab-claim.js)
+    scripting: {
+      executeScript: rec('scripting.executeScript', ({ target, func, args = [] }) => {
+        if (!pages || !/sessionStorage/.test(String(func))) return [{ result: false }]
+        const m = (pages[target.tabId] ??= new Map())
+        const saved = globalThis.sessionStorage
+        globalThis.sessionStorage = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) }
+        try { return [{ result: func(...args) }] } finally { globalThis.sessionStorage = saved }
+      }),
+    },
   }
   return { chrome, calls }
 }
 
 function loadBackground(env) {
   const { chrome, calls } = makeChrome(env)
-  const ctx = vm.createContext({ chrome, console: { log() {}, warn() {} }, setTimeout, clearTimeout, queueMicrotask, URL, fetch: async () => ({ ok: false, status: 500 }) })
-  vm.runInContext(bgSource, ctx)
+  const ctx = vm.createContext({ ...tabClaim, chrome, console: { log() {}, warn() {} }, setTimeout, clearTimeout, setInterval: (...a) => setInterval(...a).unref(), clearInterval, queueMicrotask, URL, fetch: async () => ({ ok: false, status: 500 }) })
+  vm.runInContext(bgSource.replace(/^import \{[^\n]+\} from '\.\/tab-claim\.js'\r?\n/m, ''), ctx)
   return { ctx, calls }
 }
 const names = (calls) => calls.map((c) => c[0])
@@ -168,6 +183,32 @@ await test('project เดิมเปิดได้ปกติ → ไม่�
   const { ctx, calls } = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1 })
   await ctx.handleJob({ id: 'j5', agent: 'flow', kind: 'generate-images', payload: { agent: 'flow', projectUrl: 'https://flow.google.com/project/abc' } })
   assert.deepEqual(loads(calls), ['https://flow.google.com/project/abc?hl=en'])
+})
+
+await test('แท็บ ChatGPT ที่ระบบอื่นในโปรไฟล์เดียวกันถืออยู่ → เปิดแท็บของตัวเองแทน ไม่ส่ง prompt ลงแท็บนั้น', async () => {
+  const other = new Map([['__autoBridgeTabOwner', JSON.stringify({ id: 'dhamma-ext', at: Date.now() })]])
+  const tabs = [{ id: 5, windowId: 1, url: 'https://chatgpt.com/' }]
+  const pages = { 5: other }
+  const { ctx, calls } = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1, pages })
+  const tab = await ctx.ensureTab('chatgpt')
+  assert.equal(tab.id, 99)
+  assert.ok(names(calls).includes('tabs.create'))
+  assert.equal(JSON.parse(pages[99].get('__autoBridgeTabOwner')).id, 'this-ext')
+  assert.equal(JSON.parse(other.get('__autoBridgeTabOwner')).id, 'dhamma-ext', 'ห้ามทับป้ายของระบบอื่น')
+  ctx.releaseTab('chatgpt')
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(pages[99].get('__autoBridgeTabOwner'), undefined, 'งานจบแล้วต้องถอดป้าย')
+})
+
+await test('แท็บ ChatGPT ว่าง → ใช้แท็บเดิม ติดป้ายของเรา ไม่เปิดแท็บใหม่', async () => {
+  const tabs = [{ id: 5, windowId: 1, url: 'https://chatgpt.com/' }]
+  const pages = {}
+  const { ctx, calls } = loadBackground({ tabs, windows: [{ id: 1 }], focused: 1, pages })
+  const tab = await ctx.ensureTab('chatgpt')
+  assert.equal(tab.id, 5)
+  assert.ok(!names(calls).includes('tabs.create'))
+  assert.equal(JSON.parse(pages[5].get('__autoBridgeTabOwner')).id, 'this-ext')
+  ctx.releaseTab('chatgpt')
 })
 
 await test('โค้ดไม่มีการเปิดหน้าต่างใหม่แล้ว · ไม่ขอสิทธิ์อ่านจอ (system.display) ที่ไม่ใช้แล้ว', () => {

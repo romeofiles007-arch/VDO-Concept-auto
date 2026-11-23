@@ -7,6 +7,7 @@
  */
 
 const NATIVE_HOST = 'com.cartoon_auto.bridge'
+import { createTabClaims, CLAIM_REFRESH_MS } from './tab-claim.js'
 
 const AGENTS = {
   chatgpt: { match: 'https://chatgpt.com/', pattern: ['https://chatgpt.com/*', 'https://chat.openai.com/*'], key: 'chatTabId' },
@@ -59,9 +60,40 @@ async function setStatus(text) {
  * เลขแท็บเก็บใน storage.session ร่วมกับแผงข้าง (chatTabId / flowTabId)
  */
 const opening = {} // agent → Promise ระหว่างเปิดแท็บใหม่ กันเปิดซ้อนสองแท็บ
+// แท็บ ChatGPT / Flow ห้ามใช้ร่วมกับระบบอื่นในโปรไฟล์ Chrome เดียวกัน (ดู tab-claim.js)
+const SHARED_AGENTS = new Set(['chatgpt', 'flow'])
+const claims = createTabClaims({ scripting: chrome.scripting, id: chrome.runtime.id, name: chrome.runtime.getManifest().name })
+const touchedAt = {} // tabId → เวลาต่ออายุป้ายล่าสุดจาก PROGRESS
+const held = {} // agent → { tabId, timer } แท็บที่เราถือป้ายอยู่ระหว่างทำงาน
+function holdTab(agent, tabId) {
+  clearInterval(held[agent]?.timer)
+  held[agent] = { tabId, timer: setInterval(() => claims.touch(tabId), CLAIM_REFRESH_MS) }
+}
+/** งานของเว็บนี้จบ → ปล่อยแท็บให้ระบบอื่นใช้ได้ */
+function releaseTab(agent) {
+  const h = held[agent]
+  if (!h) return
+  clearInterval(h.timer)
+  delete held[agent]
+  claims.release(h.tabId).catch(() => {})
+}
 async function ensureTab(agent) {
+  if (!SHARED_AGENTS.has(agent)) return pickTab(agent)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tab = await pickTab(agent)
+    if (await claims.claim(tab.id)) {
+      holdTab(agent, tab.id)
+      return tab
+    }
+    // ระบบอื่นติดป้ายแท็บนี้พร้อมกันพอดี → รอบหน้า pickTab จะข้ามแท็บนี้ไปเอง
+  }
+  throw new Error(`แท็บ ${agent === 'flow' ? 'Google Flow' : 'ChatGPT'} ถูกระบบอื่นในโปรไฟล์ Chrome เดียวกันใช้อยู่ทุกแท็บ และเปิดแท็บใหม่ให้ตัวเองไม่สำเร็จ`)
+}
+async function pickTab(agent) {
   const { pattern, match, key } = AGENTS[agent]
-  const tabs = await chrome.tabs.query({ url: pattern })
+  const all = await chrome.tabs.query({ url: pattern })
+  // แท็บที่ระบบอื่น (ธรรมะ/ตำนานจีน/Ebook ในโปรไฟล์เดียวกัน) ถืออยู่ → ไม่แตะ
+  const tabs = SHARED_AGENTS.has(agent) ? await claims.free(all) : all
   const { [key]: savedId } = await chrome.storage.session.get(key)
   const existing = tabs.find((t) => t.id === savedId) ?? tabs.find((t) => !t.discarded) ?? tabs[0]
   if (existing) {
@@ -254,7 +286,10 @@ async function pollLoop() {
                 }
                 return postReliable('/error', { id: job.id, message })
               })
-              .finally(() => busy.delete(agent))
+              .finally(() => {
+                busy.delete(agent)
+                releaseTab(agent)
+              })
             return 'job'
           } catch {
             return 'offline'
@@ -499,6 +534,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // PROGRESS ทุก 20 วิ = heartbeat ด้วย — ปลุก service worker และบอก bridge ว่างานยังไม่หลุด
   if (msg.type === 'PROGRESS') {
     if (!polling) pollLoop()
+    // งาน Flow ยาวเป็นสิบนาที — ต่ออายุป้ายเจ้าของแท็บทุกครั้งที่มีความคืบหน้า (service worker อาจถูกปลุกใหม่ ตัวจับเวลาหาย)
+    if (_sender.tab?.id && Date.now() - (touchedAt[_sender.tab.id] ?? 0) > CLAIM_REFRESH_MS) {
+      touchedAt[_sender.tab.id] = Date.now()
+      claims.touch(_sender.tab.id).catch(() => {})
+    }
     post('/progress', msg.body)
       .then((res) => res.json())
       .then((data) => sendResponse({ ok: true, cancelled: !!data?.cancelled }))
