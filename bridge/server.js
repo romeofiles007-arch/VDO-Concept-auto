@@ -22,6 +22,7 @@ import { createUpdater } from './update.js'
 import { createPosting } from './posting.js'
 import { createKeepAwake } from './keepawake.js'
 import { createHalt, HALTED_MESSAGE } from './halt.js'
+import { createChromeWake } from './chrome-wake.js'
 
 // ⏹ หยุดทุกอย่าง — สวิตช์เก็บลงไฟล์ รอดการรีสตาร์ท (bridge/halt.js)
 const halt = createHalt(join(ROOT, 'runtime', 'halt.json'))
@@ -400,6 +401,15 @@ if (PORT === 8765) watchBridgeCode({ busy: workInProgress, server, log })
 
 // กันเครื่องหลับเองระหว่างมีงาน หรือเปิดโหมดผลิตต่อเนื่องไว้ (รอคลิปถัดไป) — เฉพาะตัวจริง
 if (PORT === 8765) createKeepAwake({ busy: () => workInProgress() || ui.production.active(), log })
+
+// มีงานรอ ChatGPT/Flow แต่ Chrome ที่ลง extension ปิดอยู่ → เปิด Chrome โปรไฟล์นั้นให้เอง (bridge/chrome-wake.js) — เฉพาะตัวจริง
+if (PORT === 8765) {
+  let extensionId = ''
+  try {
+    extensionId = readFileSync(join(ROOT, 'native', 'extension-id.txt'), 'utf8').trim()
+  } catch {}
+  createChromeWake({ jobs, lastPoll, halted: () => halt.on(), log, url: `http://127.0.0.1:${PORT}/`, id: extensionId, extensionDir: join(ROOT, 'extension') })
+}
 
 // ตอนรีสตาร์ทตัวเอง ตัวเก่าอาจยังไม่ปล่อย port — ลองใหม่ทุกครึ่งวินาทีสูงสุด 15 วิ
 let listenTries = 0
