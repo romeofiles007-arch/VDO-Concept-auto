@@ -104,7 +104,7 @@ export function findExtensionProfile({ dataDir, id, extensionDir, fs = { existsS
  * ตอนนี้ควรปลุก Chrome ไหม → ชื่อ agent ที่มีงานรอ (null = ไม่ต้อง)
  * jobs: Map ของงานใน bridge · lastPoll: agent → เวลาที่ extension มาถามหางานล่าสุด
  */
-export function waitingAgent({ jobs, lastPoll, now, since, halted = false }) {
+export function waitingAgent({ jobs, lastPoll, now, since, halted = false, agents = null }) {
   if (halted) return null
   // extension ยังอยู่ = มาถามหางาน หรือส่ง heartbeat ของงานที่กำลังทำ (ตอนทั้งสองเว็บไม่ว่าง จะไม่มาถามหางานเลย)
   let seen = since
@@ -113,6 +113,7 @@ export function waitingAgent({ jobs, lastPoll, now, since, halted = false }) {
   if (now - seen < WAKE.silentMs) return null
   for (const j of jobs.values()) {
     if (j.status !== 'queued' || j.cancelled) continue
+    if (agents && !agents.has(j.agent)) continue // งานทดสอบ (flow-selftest ฯลฯ) ไม่ต้องปลุก Chrome
     if (j.watchedAt != null && now - j.watchedAt > WAKE.orphanMs) continue // ไม่มีใครรองานนี้แล้ว
     if (now - (j.touchedAt ?? j.createdAt) < WAKE.jobWaitMs) continue
     return j.agent
@@ -134,12 +135,13 @@ function launchChrome(exe, args) {
   })
 }
 
-const AGENT_NAME = { chatgpt: 'ChatGPT', flow: 'Google Flow', meta: 'Meta AI' }
+const AGENT_NAME = { chatgpt: 'ChatGPT', gemini: 'Gemini', flow: 'Google Flow', meta: 'Meta AI', tiktok: 'TikTok' }
 
 export function createChromeWake({
   jobs,
   lastPoll,
   halted = () => false,
+  agents = null, // Set ของ agent ที่ extension รับงานจริง (null = ทุกตัว)
   log = () => {},
   url = null, // หน้าที่เปิดพร้อม Chrome (หน้าโปรแกรม) — ผู้ใช้กลับมาเห็นว่าระบบเปิดให้เพราะอะไร
   id,
@@ -167,7 +169,7 @@ export function createChromeWake({
       lastLaunchAt = 0
       gaveUp = false
     }
-    const agent = waitingAgent({ jobs, lastPoll, now: now(), since, halted: halted() })
+    const agent = waitingAgent({ jobs, lastPoll, now: now(), since, halted: halted(), agents })
     if (!agent) return null
     if (gaveUp || (lastLaunchAt && now() - lastLaunchAt < WAKE.retryMs)) return null
     if (tries >= WAKE.maxTries) {

@@ -38,6 +38,13 @@ test('งานกำพร้า (ไม่มีใครรอ) / งาน�
   assert.equal(waitingAgent({ jobs: mapOf(job({ watchedAt: now - 1000 })), lastPoll: {}, now, since: 0 }), 'chatgpt', 'pipeline ยังรออยู่')
 })
 
+test('งานของ agent ทดสอบ (ไม่ใช่เว็บที่ extension รับงานจริง) → ไม่ปลุก', () => {
+  const now = 10 * 60_000
+  const agents = new Set(['chatgpt', 'flow'])
+  assert.equal(waitingAgent({ jobs: mapOf(job({ agent: 'flow-selftest' })), lastPoll: {}, now, since: 0, agents }), null)
+  assert.equal(waitingAgent({ jobs: mapOf(job({ agent: 'flow-selftest' }), job({ agent: 'flow' })), lastPoll: {}, now, since: 0, agents }), 'flow')
+})
+
 test('เปิด Chrome โปรไฟล์ที่ลง extension + หน้าโปรแกรม · ลองซ้ำทุก 4 นาที สูงสุด 3 ครั้ง · extension กลับมา → นับใหม่', async () => {
   let t = 0
   const lastPoll = {}
@@ -139,5 +146,5 @@ test('ที่อยู่ Chrome: Windows / Mac / Linux (ไม่รองร
 
 test('bridge ตัวจริงต่อสายตัวปลุก Chrome ไว้ (port 8765 เท่านั้น)', () => {
   const server = readFileSync(new URL('../bridge/server.js', import.meta.url), 'utf8')
-  assert.match(server, /if \(PORT === 8765\) \{[^}]*extension-id\.txt[\s\S]*?createChromeWake\(\{ jobs, lastPoll, halted: \(\) => halt\.on\(\)/)
+  assert.match(server, /if \(PORT === 8765\) \{[^}]*extension-id\.txt[\s\S]*?createChromeWake\(\{ jobs, lastPoll, halted: \(\) => halt\.on\(\), agents: REAL_AGENTS/)
 })

@@ -408,7 +408,7 @@ if (PORT === 8765) {
   try {
     extensionId = readFileSync(join(ROOT, 'native', 'extension-id.txt'), 'utf8').trim()
   } catch {}
-  createChromeWake({ jobs, lastPoll, halted: () => halt.on(), log, url: `http://127.0.0.1:${PORT}/`, id: extensionId, extensionDir: join(ROOT, 'extension') })
+  createChromeWake({ jobs, lastPoll, halted: () => halt.on(), agents: REAL_AGENTS, log, url: `http://127.0.0.1:${PORT}/`, id: extensionId, extensionDir: join(ROOT, 'extension') })
 }
 
 // ตอนรีสตาร์ทตัวเอง ตัวเก่าอาจยังไม่ปล่อย port — ลองใหม่ทุกครึ่งวินาทีสูงสุด 15 วิ
