@@ -10,7 +10,8 @@ import { ART_STYLES, isPhotoStyle } from '../../extension/prompts.js'
 const STYLES = Object.keys(ART_STYLES).filter((k) => k !== 'random')
 // 🎲 สุ่ม = สุ่มเฉพาะลายเส้นภาพวาด — คนที่ตั้งสุ่มไว้ทำช่องการ์ตูน ไม่ควรจู่ๆ ได้คลิปภาพคนจริง
 // (เลือกภาพเสมือนจริง/แบบหนังได้ตามปกติ แค่ต้องเลือกเอง)
-const RANDOM_POOL = STYLES.filter((k) => !isPhotoStyle(k))
+// โหมดเฉพาะ (noRandom เช่น Stickman) ก็ต้องเลือกเองเหมือนกัน
+const RANDOM_POOL = STYLES.filter((k) => !isPhotoStyle(k) && !ART_STYLES[k].noRandom)
 
 export function artStyleOf(slug, config = loadConfig()) {
   const dir = slug ? join(ROOT, 'projects', slug) : null
@@ -37,8 +38,11 @@ export const artImageRule = (style) => (ART_STYLES[style]?.rule ? `\n${ART_STYLE
 export const artFlowNote = (style, fallback, hasRef = false) =>
   `${variant(ART_STYLES[style]?.bodyFlow, hasRef) ?? fallback}${ART_STYLES[style]?.flow ? `\n${ART_STYLES[style].flow}` : ''}`
 
-/** ข้อยกเว้นของกฎ "สีสดอิ่ม ห้ามสีซีด" ใน Flow — ลายเส้นที่ให้ช็อตเล่าอดีตสีจางลง (ไม่มี = '') */
-export const artPastNote = (style) => ART_STYLES[style]?.past ?? ''
+/**
+ * ข้อยกเว้นของกฎ "ลงสีเต็มทั้งตัวละครและฉาก ห้ามสีซีด" ใน Flow (ไม่มี = '')
+ *   past  — ช็อตเล่าอดีตสีจางลง · color — ตัวละครไม่ลงสีโดยตั้งใจ (Stickman: ตัวเป็นเส้นดำ)
+ */
+export const artPastNote = (style) => [ART_STYLES[style]?.past, ART_STYLES[style]?.color].filter(Boolean).join(' · ')
 
 /** ลายเส้นนี้เป็นภาพถ่ายไหม — ใช้ปลดกฎ "ต้องเป็นการ์ตูน/สีสด/ห้ามโทนหม่น" ที่เขียนไว้ให้ภาพวาด */
 export const artIsPhoto = (style) => isPhotoStyle(style)
