@@ -24,6 +24,9 @@ test('กฎ ChatGPT: ตัวก้างจริง + ประกาศช�
   assert.match(rule, /single bold black lines/)
   assert.match(rule, /expressive face/)
   assert.match(rule, /ลงสีแบนสดใสเต็มภาพ/)
+  // ทดสอบจริงใน Flow 26 พ.ย. 2026: 1 ใน 6 ภาพฉากออกมาเป็นลายเส้นขาวเทาไม่ลงสี → ย้ำทั้งกฎ ChatGPT และ Flow
+  assert.match(rule, /ห้ามฉากเป็นลายเส้นขาว\/เทาไม่ลงสี/)
+  assert.match(ART_STYLES.stickman.flow, /ห้ามฉากเป็นลายเส้นขาว\/เทาไม่ลงสี/)
   // แทน SIMPLE MODE (doodle แขนขาเป็นหลอด) — ไม่มีข้อ "ห้ามตัวก้าง" หลุดมา
   const body = artBodyRule('stickman', 'FALLBACK-ห้ามวาดเป็นตัวก้าง', false)
   assert.match(body, /STICKMAN/)
