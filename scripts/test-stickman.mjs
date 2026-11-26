@@ -21,8 +21,11 @@ test('กฎ ChatGPT: ตัวก้างจริง + ประกาศช�
   const rule = artImageRule('stickman')
   assert.match(rule, /NEVER stick figures/)
   assert.match(rule, /มีผลเหนือ/)
-  assert.match(rule, /single bold black lines/)
+  assert.match(rule, /arms and legs drawn as single bold black lines/)
   assert.match(rule, /expressive face/)
+  // ผู้ใช้ 26 พ.ย. 2026 หลังเห็นภาพจริง: "เอามีลำตัวสิ" → ลำตัวทรงมนลงสี ไม่ใช่เส้นขีด
+  assert.match(rule, /solid torso/)
+  assert.match(rule, /ห้ามลำตัวเป็นเส้นขีดเดียว/)
   assert.match(rule, /ลงสีแบนสดใสเต็มภาพ/)
   // ทดสอบจริงใน Flow 26 พ.ย. 2026: 1 ใน 6 ภาพฉากออกมาเป็นลายเส้นขาวเทาไม่ลงสี → ย้ำทั้งกฎ ChatGPT และ Flow
   assert.match(rule, /ห้ามฉากเป็นลายเส้นขาว\/เทาไม่ลงสี/)
@@ -42,19 +45,20 @@ test('คำสั่ง Shot List จริง: กฎ stickman อยู่ห
   assert.doesNotMatch(p, /SIMPLE MODE \(ไม่มีรูปตัวละครแนบ\)/)
 })
 
-test('คำสั่ง Flow: ตัวก้าง + ข้อยกเว้นกฎ "ลงสีเต็มทั้งตัวละคร" (ตัวเป็นเส้นดำโดยตั้งใจ) · ไม่มีข้อห้ามตัวก้างของ doodle', () => {
+test('คำสั่ง Flow: stickman มีลำตัวลงสี แขนขาเส้นเดียว + ข้อยกเว้นกฎ "ลงสีเต็มทั้งตัวละคร" (แขนขาเป็นเส้นดำโดยตั้งใจ) · ไม่มีข้อห้ามตัวก้างของ doodle', () => {
   const p = flowPrompt('00_00_00.png | SHOT 01 | test', withStyle('stickman'), null)
-  assert.match(p, /ตัวก้าง \(stick figure\)/)
-  assert.match(p, /ยกเว้นตัวละครตัวก้าง/)
+  assert.match(p, /ลำตัวทรงมน/)
+  assert.match(p, /แขนขาเป็นเส้นดำเส้นเดียว/)
+  assert.match(p, /ยกเว้นแขนขาของตัวก้าง/)
   assert.doesNotMatch(p, /ห้ามวาดเป็นตัวก้าง/)
   assert.equal(artPastNote('stickman'), ART_STYLES.stickman.color)
-  assert.match(artFlowNote('stickman', 'x', false), /^ตัวละครทุกตัวเป็นตัวก้าง/)
+  assert.match(artFlowNote('stickman', 'x', false), /^ตัวละครทุกตัวเป็น stickman มีลำตัว/)
 })
 
 test('ลายเส้นเดิมไม่เปลี่ยน: doodle ยังห้ามตัวก้าง · สีน้ำไม่มีข้อยกเว้นสี', () => {
   const p = flowPrompt('00_00_00.png | SHOT 01 | test', withStyle('doodle'), null)
   assert.match(p, /ห้ามวาดเป็นตัวก้าง/)
-  assert.doesNotMatch(p, /ยกเว้นตัวละครตัวก้าง/)
+  assert.doesNotMatch(p, /ยกเว้นแขนขาของตัวก้าง/)
   assert.equal(artPastNote('watercolor'), '')
 })
 
