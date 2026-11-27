@@ -17,8 +17,7 @@ import { probeDuration, concatAudio, trimSilence, eachLimit, run } from './lib/f
 import { hhmmss } from './lib/timecode.mjs'
 import { selectedVoice } from './lib/voices.mjs'
 import { synthCloud, edgeVoiceFits, defaultEdgeVoice, elevenModelFits } from './lib/cloud_tts.mjs'
-import { synthVoxcpm, voxcpmSettings, voxcpmJobSettings } from './lib/voxcpm.mjs'
-import { enqueueJob, waitForJob, workerStatus } from './lib/tts_queue.mjs'
+import { synthVoxcpm } from './lib/voxcpm.mjs'
 import { clearAsrTimeline } from './lib/asr.mjs'
 
 const slug = process.argv[2]
@@ -153,29 +152,13 @@ TTS ล้มเหลว: ${err.message}`)
 
 if (vox) {
   const shared = config.tts.myVoice ?? {}
-  const used = voxcpmSettings(vox.voice, { speed: shared.speed ?? 1, eq: vox.eq, cfg: vox.cfg, steps: vox.steps })
-  console.log(`เสียง VoxCPM2 · ${vox.voice} · อารมณ์ ${shared.emotion ?? 'calm'} · ความเร็ว ${used.speed} · โทน ${used.eq ?? 'clear'} · cfg ${used.cfg ?? 2} · steps ${used.steps ?? 10}${vox.remote ? ' · พากย์ที่เครื่องการ์ดจอแรง (คิว)' : ''}`)
-  const voxSegments = segments.map((s) => ({ index: s.index, text: s.text, out: join(partsDir, `${String(s.index).padStart(4, '0')}.wav`) }))
-  const voxOptions = { voice: vox.voice, emotion: shared.emotion, speed: shared.speed, cfg: vox.cfg, steps: vox.steps, eq: vox.eq }
+  console.log(`เสียง VoxCPM2 · ${vox.voice} · อารมณ์ ${shared.emotion ?? 'calm'} · ความเร็ว ${shared.speed ?? 1}`)
   try {
-    if (vox.remote) {
-      // การ์ดเครื่องนี้รัน VoxCPM2 ไม่ได้ (1080 Ti หลุด) → ฝากคิวให้เครื่องการ์ดจอแรงพากย์ (scripts/tts-worker.mjs)
-      // เครื่องนั้นปิดอยู่ = รอในคิวจนเปิด · ขั้นนี้รอไปเรื่อยๆ จนกว่าผู้ใช้กดหยุด
-      const { ref, settings } = await voxcpmJobSettings(voxOptions)
-      const id = enqueueJob({ refWav: ref.wav, refText: ref.text, settings, segments: voxSegments, label: slug })
-      const w = workerStatus()
-      console.log(`ฝากงานพากย์ ${id} ไว้ในคิว · เครื่องพากย์${w.name ? ` ${w.name}` : ''} ${w.online ? 'ออนไลน์' : 'ปิดอยู่'}`)
-      const done = await waitForJob(id, voxSegments, {
-        onStatus: (text, state) => {
-          // autopilot อ่าน "n/m segments" เป็น progress ของแผนกเสียง · "⏳" เป็นรายละเอียดที่แสดงในแผงข้าง
-          if (state.state === 'working' && state.total) process.stdout.write(`\r  ${state.done ?? 0}/${state.total} segments`)
-          console.log(`\n⏳ ${text}`)
-        },
-      })
-      console.log(`\nได้เสียงจาก ${done.worker ?? 'เครื่องพากย์'} · ${segments.length} segments ใน ${done.seconds ?? '?'} วิ`)
-    } else {
-      await synthVoxcpm(voxSegments, voxOptions, printEvent)
-    }
+    await synthVoxcpm(
+      segments.map((s) => ({ index: s.index, text: s.text, out: join(partsDir, `${String(s.index).padStart(4, '0')}.wav`) })),
+      { voice: vox.voice, emotion: shared.emotion, speed: shared.speed, cfg: vox.cfg, steps: vox.steps, eq: vox.eq },
+      printEvent,
+    )
   } catch (err) {
     console.error(`\nTTS ล้มเหลว: ${err.message}`)
     process.exit(3)

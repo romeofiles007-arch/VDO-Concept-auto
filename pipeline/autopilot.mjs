@@ -331,9 +331,6 @@ async function voiceDepartment() {
       onText: (t) => {
         const m = [...t.matchAll(/(\d+)\/(\d+) segments/g)].pop()
         if (m) progress('voice', Number(m[1]), Number(m[2]))
-        // พากย์ที่เครื่องการ์ดจอแรง (คิว) — "รอเครื่องพากย์เปิด…" / "กำลังพากย์ 5/18" ให้เห็นในแผงข้าง
-        const wait = [...t.matchAll(/⏳ ([^\r\n]+)/g)].pop()
-        if (wait) dept('voice', { detail: wait[1].trim() })
       },
     })
     if (run.ok && existsSync(voiceover) && existsSync(slots)) {
