@@ -14,7 +14,8 @@ import { run, trimSilence } from './ffmpeg.mjs'
 import { voiceDir, readVoice, writeVoice, VOICES_DIR, AUDIO_EXT } from './voices.mjs'
 import { ttsPython } from './config.mjs'
 
-export const VOXCPM_PYTHON = join(ROOT, 'tts', '.venv-voxcpm', 'Scripts', 'python.exe')
+// VOXCPM_PYTHON = ใช้ VoxCPM2 ที่ติดตั้งไว้ในโปรเจกต์อื่นของเครื่องเดียวกัน (ไม่ต้องลง torch ซ้ำอีก ~3 GB) — เครื่องพากย์ใช้ผ่าน --python
+export const VOXCPM_PYTHON = process.env.VOXCPM_PYTHON || join(ROOT, 'tts', '.venv-voxcpm', 'Scripts', 'python.exe')
 export const voxcpmInstalled = () => existsSync(VOXCPM_PYTHON)
 
 const selectionsFile = (id) => {
@@ -88,9 +89,36 @@ export const VOICE_EQ = {
   bright: { label: 'สว่างชัดมาก', filter: 'highpass=f=90,lowshelf=f=200:g=-5,equalizer=f=1200:t=o:w=1:g=2.5,equalizer=f=2800:t=o:w=1.2:g=6,highshelf=f=6000:g=3' },
 }
 
-export async function synthVoxcpm(segments, { voice, emotion = 'calm', speed = 1, cfg = 2.0, steps = 10, eq = 'clear' }, onEvent = () => {}) {
-  if (!voxcpmInstalled()) throw new Error('ยังไม่ได้ติดตั้ง VoxCPM2 — รัน scripts/setup-voxcpm.ps1')
+/**
+ * ค่าที่เสียงกำหนดเองใน voice.json → "voxcpmSettings": { speed, eq, cfg, steps, maxPause } ชนะค่ารวมของ config
+ * ใช้กับเสียงที่คลิปต้นแบบมีจังหวะ/โทนสำเร็จแล้ว เช่น khathawuth_eleven (ต้นแบบเป็นเสียง ElevenLabs ที่พูดช้า 0.85 อยู่แล้ว
+ * ถ้าโดนชะลอซ้ำตามจังหวะเล่าเรื่องจะช้าเกิน และ EQ "สว่าง" ทำให้โทนเพี้ยนจากต้นแบบ)
+ */
+export function voxcpmSettings(voice, options = {}) {
+  const own = readVoice(voice)?.voxcpmSettings
+  const picked = {}
+  if (own && typeof own === 'object') {
+    for (const key of ['speed', 'eq', 'cfg', 'steps', 'maxPause']) if (own[key] !== undefined && own[key] !== null) picked[key] = own[key]
+  }
+  return { ...options, ...picked }
+}
+
+/**
+ * ค่าทั้งหมดที่ใช้พากย์เสียงนี้ (ค่ารวม + ค่าเฉพาะเสียง) + คลิปอ้างอิง — ส่งไปพากย์ที่เครื่องอื่นได้โดยไม่ต้องมีเสียงนั้นในเครื่อง
+ */
+export async function voxcpmJobSettings(options) {
+  const { voice, emotion = 'calm', speed = 1, cfg = 2.0, steps = 10, eq = 'clear', maxPause = 0.35 } = voxcpmSettings(options.voice, options)
   const ref = await voxcpmReference(voice, emotion)
+  return { ref, settings: { speed, cfg, steps, eq, maxPause } }
+}
+
+/**
+ * options.ref = { wav, text } → ใช้คลิปอ้างอิงนี้ตรงๆ ไม่อ่าน tts/voices (เครื่องพากย์ที่รับงานจากเครื่องอื่น)
+ */
+export async function synthVoxcpm(segments, options, onEvent = () => {}) {
+  const { voice, emotion = 'calm', speed = 1, cfg = 2.0, steps = 10, eq = 'clear', maxPause = 0.35 } = options.ref ? options : voxcpmSettings(options.voice, options)
+  if (!voxcpmInstalled()) throw new Error('ยังไม่ได้ติดตั้ง VoxCPM2 — รัน scripts/setup-voxcpm.ps1')
+  const ref = options.ref ?? (await voxcpmReference(voice, emotion))
   mkdirSync(dirname(segments[0].out), { recursive: true })
   // "..." ในบท = ช่วงหยุด แต่ VoxCPM2 อ่านเป็นเสียงแปลก (ทดสอบแล้ว: "ห้อง... แล้ว" → "ห่องถือก", "ชัด... แต่" → "ชัด เนี่ย")
   // → แยกท่อนตรง "..." อ่านทีละท่อน แล้วต่อกันด้วยความเงียบจริง
@@ -102,7 +130,7 @@ export async function synthVoxcpm(segments, { voice, emotion = 'calm', speed = 1
     for (const p of s.pieces) pieces.push({ index: pieces.length, text: p.text, out: p.out })
   }
   const jobFile = join(dirname(segments[0].out), '.voxcpm_job.json')
-  writeFileSync(jobFile, JSON.stringify({ model: 'openbmb/VoxCPM2', ref_wav: ref.wav, ref_text: ref.text, cfg_value: cfg, inference_timesteps: steps, segments: pieces }, null, 2))
+  writeFileSync(jobFile, JSON.stringify({ model: 'openbmb/VoxCPM2', ref_wav: ref.wav, ref_text: ref.text, cfg_value: cfg, inference_timesteps: steps, max_pause: maxPause, segments: pieces }, null, 2))
   // progress ต่อประโยคของบท ไม่ใช่ต่อท่อนย่อย
   const pieceToSeg = pieces.map((p) => segments.findIndex((s) => s.pieces.some((x) => x.out === p.out)))
   const userOnEvent = onEvent

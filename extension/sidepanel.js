@@ -1319,6 +1319,8 @@ function voiceLabel() {
   if (V.choice?.startsWith('edge:')) return `Edge · ${V.choice.slice(5)}`
   if (V.choice?.startsWith('gemini:')) return `Gemini · ${V.choice.slice(7)}`
   if (V.choice?.startsWith('elevenlabs:')) return `ElevenLabs · ${V.elevenlabs?.voiceName || V.choice.slice(11)}`
+  if (V.choice?.startsWith('voxcpm-remote:')) return `VoxCPM2 (ส่งไปพากย์) · ${V.choice.slice(14)}`
+  if (V.choice?.startsWith('voxcpm:')) return `VoxCPM2 · ${V.choice.slice(7)}`
   return V.selected ? `เสียงของเรา · ${V.voices.find((v) => v.id === V.selected)?.label ?? V.selected}` : null
 }
 
@@ -2957,6 +2959,14 @@ function renderVoices() {
     }
     pick.prepend(g)
   }
+  // VoxCPM2 ที่เครื่องการ์ดจอแรง (คิว) — เครื่องนี้การ์ดอ่อน/รันไม่ได้ ส่งไปพากย์ที่เครื่องอื่น ปิดอยู่ก็เลือกได้ งานรอคิว
+  const remote = V.voxcpmRemote
+  if (V.voxcpm?.voices?.length && (remote?.seen || V.choice?.startsWith('voxcpm-remote:'))) {
+    const where = remote?.name ? `${remote.name}${remote.gpu ? ` · ${remote.gpu}` : ''}` : 'เครื่องการ์ดจอแรง'
+    const g = group(`VoxCPM2 — พากย์ที่ ${where} (${remote?.online ? 'ออนไลน์' : 'ปิดอยู่ · งานจะรอคิวจนเปิด'})`)
+    for (const v of V.voxcpm.voices) g.append(new Option(`${v.label} · VoxCPM2 ส่งไปพากย์`, `voxcpm-remote:${v.id}`))
+    pick.prepend(g)
+  }
   if (V.edge) {
     // พากย์ไทย: ซ่อนเสียงอังกฤษล้วน — อ่านไทยไม่ออก (Microsoft ไม่ส่งเสียงกลับมา) · พากย์อังกฤษ: แสดงครบทุกเสียง
     // พากย์จีน: แสดงเสียงจีน + หลายภาษา · พากย์ไทย: ไทย + หลายภาษา · อังกฤษ: ทุกกลุ่มยกเว้นจีน
@@ -2999,6 +3009,9 @@ function renderVoices() {
   $('voiceNote').textContent = {
     'my-voice': 'ปรับได้ทั้งอารมณ์และความเร็ว · ใช้การ์ดจอ',
     voxcpm: 'อ่านไทย ตัวเลข คำอังกฤษได้แม่นที่สุด · เลือกอารมณ์และความเร็วได้ · ใช้การ์ดจอ (ฟังตัวอย่างครั้งแรกรอโหลดโมเดล ~30 วิ)',
+    'voxcpm-remote': remote?.online
+      ? `เสียงเดียวกับ VoxCPM2 แต่พากย์ที่ ${remote.name ?? 'เครื่องการ์ดจอแรง'} · ไม่ใช้การ์ดจอเครื่องนี้ (ฟังตัวอย่างรอ ~1 นาที)`
+      : `พากย์ที่ ${remote?.name ?? 'เครื่องการ์ดจอแรง'} ซึ่งปิดอยู่ — ทำคลิปได้ ขั้นเสียงจะรอคิวจนเครื่องนั้นเปิด แล้วพากย์ส่งกลับเอง`,
     edge: 'ปรับได้แค่ความเร็ว (Edge ไม่มีอารมณ์เสียงภาษาไทย) · เร็วมาก ไม่ใช้การ์ดจอ',
     gemini: `อารมณ์และความเร็วส่งเป็นคำสั่งให้ Gemini · โควตาฟรีจำกัดต่อวัน · รุ่น ${V.gemini?.model ?? ''}`,
     elevenlabs: el?.model === 'eleven_v3'
