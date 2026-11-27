@@ -19,7 +19,8 @@ import { createRunner } from './runner.js'
 import { projectStatus, setupStatus, bgmFile, BGM_EXT, listProjects } from './project.js'
 import { listVoices, readVoice, writeVoice, voiceDir, voiceId, voiceReady, AUDIO_EXT } from '../pipeline/lib/voices.mjs'
 import { EDGE_VOICES, GEMINI_VOICES, GEMINI_MODELS, ELEVEN_MODELS, edgePython, synthCloud, elevenVoiceInfo, isElevenVoiceId } from '../pipeline/lib/cloud_tts.mjs'
-import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText } from '../pipeline/lib/voxcpm.mjs'
+import { voxcpmInstalled, voxcpmVoices, synthVoxcpm, voxcpmVoiceFromRaw, setVoxcpmRefText, voxcpmJobSettings } from '../pipeline/lib/voxcpm.mjs'
+import { enqueueJob, waitForJob, workerStatus } from '../pipeline/lib/tts_queue.mjs'
 import { hasKey } from '../pipeline/lib/env.mjs'
 import { killStray } from './halt.js'
 import { allCredits } from '../pipeline/lib/credits.mjs'
@@ -437,8 +438,10 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
           voices: listVoices(),
           selected: loadConfig().tts.myVoice?.voice ?? null,
           // ตัวเลือกที่ใช้อยู่จริง รูปแบบ "<engine>:<id>" — เสียงของเรา / Edge / Gemini
-          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : engine === 'elevenlabs' ? `elevenlabs:${config.tts.elevenlabs?.voiceId ?? ''}` : engine === 'voxcpm' ? `voxcpm:${config.tts.voxcpm?.voice ?? 'my_voice'}` : `my-voice:${config.tts.myVoice?.voice}`,
+          choice: ['edge', 'gemini'].includes(engine) ? `${engine}:${config.tts[engine]?.voice}` : engine === 'elevenlabs' ? `elevenlabs:${config.tts.elevenlabs?.voiceId ?? ''}` : engine === 'voxcpm' ? `${config.tts.voxcpm?.remote ? 'voxcpm-remote' : 'voxcpm'}:${config.tts.voxcpm?.voice ?? 'my_voice'}` : `my-voice:${config.tts.myVoice?.voice}`,
           voxcpm: { ready: voxcpmInstalled(), voices: voxcpmVoices() },
+          // พากย์ VoxCPM2 ที่เครื่องการ์ดจอแรงผ่านคิว (scripts/tts-worker.mjs) — เครื่องนั้นปิดอยู่ก็เลือกได้ งานจะรอคิว
+          voxcpmRemote: workerStatus(),
           edge: { ready: existsSync(edgePython()), voices: EDGE_VOICES },
           language: config.script.language,
           gemini: { hasKey: hasKey('GEMINI_API_KEY'), model: config.tts.gemini?.model, models: GEMINI_MODELS, voices: GEMINI_VOICES },
@@ -457,13 +460,13 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
 
       if (req.method === 'POST' && path === '/api/voices/select') {
         const { id, engine = 'my-voice' } = await readBody(req)
-        if (engine === 'voxcpm') {
+        if (engine === 'voxcpm' || engine === 'voxcpm-remote') {
           if (!voxcpmVoices().some((v) => v.id === id)) return json(res, 400, { error: `เสียง ${id} ไม่มีคลิปต้นแบบสำหรับ VoxCPM2` }), true
           updateConfig((c) => {
             c.tts.engine = 'voxcpm'
-            c.tts.voxcpm = { ...(c.tts.voxcpm ?? {}), voice: id }
+            c.tts.voxcpm = { ...(c.tts.voxcpm ?? {}), voice: id, remote: engine === 'voxcpm-remote' }
           })
-          return json(res, 200, { choice: `voxcpm:${id}` }), true
+          return json(res, 200, { choice: `${engine}:${id}` }), true
         }
         if (engine === 'elevenlabs') {
           if (!isElevenVoiceId(loadConfig().tts.elevenlabs?.voiceId)) return json(res, 400, { error: 'ใส่ Voice ID ของ ElevenLabs แล้วกดบันทึกก่อน' }), true
@@ -490,11 +493,12 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
       // ฟังตัวอย่างเสียงออนไลน์ก่อนเลือก — เก็บไฟล์ไว้ใน projects/_previews ให้ /files เสิร์ฟได้
       if (req.method === 'POST' && path === '/api/voices/preview') {
         const { engine, id, text, emotion = 'calm', speed = 1 } = await readBody(req)
-        if (!['edge', 'gemini', 'voxcpm', 'elevenlabs'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์และ VoxCPM2' }), true
+        if (!['edge', 'gemini', 'voxcpm', 'voxcpm-remote', 'elevenlabs'].includes(engine)) return json(res, 400, { error: 'ฟังตัวอย่างได้เฉพาะเสียงออนไลน์และ VoxCPM2' }), true
+        if (engine === 'voxcpm-remote' && !workerStatus().online) return json(res, 400, { error: 'เครื่องพากย์ปิดอยู่ — ฟังตัวอย่างไม่ได้ตอนนี้ (ใช้ทำคลิปได้ งานจะรอคิวจนเครื่องเปิด)' }), true
         if (engine === 'elevenlabs') {
           if (!isElevenVoiceId(id)) return json(res, 400, { error: 'Voice ID ของ ElevenLabs ไม่ถูกต้อง' }), true
         } else {
-          const catalog = engine === 'edge' ? EDGE_VOICES : engine === 'voxcpm' ? voxcpmVoices() : GEMINI_VOICES
+          const catalog = engine === 'edge' ? EDGE_VOICES : engine.startsWith('voxcpm') ? voxcpmVoices() : GEMINI_VOICES
           if (!catalog.some((v) => v.id === id)) return json(res, 400, { error: `ไม่มีเสียง ${id}` }), true
         }
         // เสียงอังกฤษล้วนอ่านไทยไม่ออก → ตัวอย่างเป็นภาษาอังกฤษ
@@ -509,7 +513,13 @@ export function createUi({ jobs, enqueue, lastPoll, token, port, json, readBody,
         const file = join(dir, name)
         if (!existsSync(file)) {
           const config = loadConfig()
-          if (engine === 'voxcpm') await synthVoxcpm([{ index: 0, text: sample, out: file }], { voice: id, emotion, speed, cfg: config.tts.voxcpm?.cfg, steps: config.tts.voxcpm?.steps, eq: config.tts.voxcpm?.eq })
+          const voxOptions = { voice: id, emotion, speed, cfg: config.tts.voxcpm?.cfg, steps: config.tts.voxcpm?.steps, eq: config.tts.voxcpm?.eq }
+          if (engine === 'voxcpm-remote') {
+            // ส่งประโยคเดียวไปเครื่องพากย์ — โหลดโมเดล ~30–60 วิ + พากย์ไม่กี่วิ
+            const { ref, settings } = await voxcpmJobSettings(voxOptions)
+            const segs = [{ index: 0, text: sample, out: file }]
+            await waitForJob(enqueueJob({ refWav: ref.wav, refText: ref.text, settings, segments: segs, label: 'ฟังตัวอย่าง' }), segs, { timeoutMs: 5 * 60_000 })
+          } else if (engine === 'voxcpm') await synthVoxcpm([{ index: 0, text: sample, out: file }], voxOptions)
           else await synthCloud(engine, [{ index: 0, text: sample, out: file }], { voice: id, model: config.tts[engine]?.model, emotion, speed }, () => {})
         }
         return json(res, 200, { url: `/files/_previews/${encodeURIComponent(name)}?v=${Math.round(statSync(file).mtimeMs)}` }), true
