@@ -169,6 +169,24 @@ export function describeWait(state, worker) {
  * เครื่องผลิต: รอจนงานเสร็จ แล้วคัดลอกเสียงไปตาม segments[].out
  * onStatus(text, state) เรียกเมื่อสถานะเปลี่ยน · timeoutMs = 0 รอไม่จำกัด (เครื่องพากย์อาจปิดทั้งคืน)
  */
+/**
+ * พากย์ที่เครื่องพากย์เท่านั้น — ทำไม่ได้ (เครื่องพากย์ปิด / พากย์พัง / ส่งเสียงกลับไม่ครบ / งานหายจากคิว) ก็ฝากงานใหม่แล้วรอต่อ
+ * ห้ามพากย์เองบนเครื่องผลิต หรือสลับไปใช้เสียงอื่นแทน (ผู้ใช้ 27 พ.ย. 2026) — เลิกรอได้ทางเดียวคือผู้ใช้กดหยุดคลิป
+ */
+export async function narrateRemote(job, segments, { onStatus = () => {}, onQueued = () => {}, retryMs = 60_000, pollMs, root = QUEUE_DIR } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const id = enqueueJob({ ...job, segments }, root)
+    onQueued(id, attempt)
+    try {
+      return { ...(await waitForJob(id, segments, { onStatus, pollMs, root })), id, attempts: attempt }
+    } catch (err) {
+      removeJob(id, root)
+      onStatus(`เครื่องพากย์ทำไม่สำเร็จ (${err.message}) — ฝากงานใหม่ใน ${Math.round(retryMs / 1000)} วิ แล้วรอเครื่องพากย์ต่อ (รอบที่ ${attempt + 1})`, { state: 'retry', attempt })
+      await new Promise((r) => setTimeout(r, retryMs))
+    }
+  }
+}
+
 export async function waitForJob(id, segments, { onStatus = () => {}, timeoutMs = 0, pollMs = 3000, root = QUEUE_DIR } = {}) {
   const started = now()
   let lastText = ''

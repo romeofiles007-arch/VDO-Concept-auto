@@ -11,6 +11,7 @@
  *   node scripts/tts-queue.mjs status
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { claimNext, heartbeat, writeProgress, finishJob, failJob, workerStatus, jobState, QUEUE_DIR } from '../pipeline/lib/tts_queue.mjs'
 
 const [cmd, ...args] = process.argv.slice(2)
@@ -18,6 +19,10 @@ const stdin = () => readFileSync(0)
 const out = (data) => process.stdout.write(JSON.stringify(data) + '\n')
 
 try {
+  // งานพากย์ต้องไปที่เครื่องการ์ดจอแรงเท่านั้น — เครื่องผลิตเองรับงานไม่ได้ (การ์ด 1080 Ti หลุดทุกครั้งที่รัน VoxCPM2)
+  if ((cmd === 'poll' || cmd === 'heartbeat') && String(args[0] ?? '').toLowerCase() === hostname().toLowerCase()) {
+    throw new Error(`${hostname()} คือเครื่องผลิตเอง — รับงานพากย์ไม่ได้ ต้องเป็นเครื่องการ์ดจอแรงที่เชื่อมเข้ามาทาง SSH`)
+  }
   if (cmd === 'poll') {
     const got = claimNext(args[0], { gpu: args[1] ?? null })
     out(got ? { job: got.job, refWav: readFileSync(got.refWav).toString('base64') } : { job: null })

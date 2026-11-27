@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { heartbeat, enqueueJob, claimNext, writeProgress, finishJob, failJob, jobState, workerStatus, waitForJob, describeWait, CLIENT_STALE_MS, CLAIM_STALE_MS } from '../pipeline/lib/tts_queue.mjs'
+import { heartbeat, enqueueJob, claimNext, writeProgress, finishJob, failJob, jobState, workerStatus, waitForJob, narrateRemote, describeWait, CLIENT_STALE_MS, CLAIM_STALE_MS } from '../pipeline/lib/tts_queue.mjs'
 
 let passed = 0
 const test = async (name, fn) => {
@@ -116,6 +116,36 @@ await test('heartbeat ระหว่างพากย์ไม่ลบชื�
   assert.match(describeWait(jobState(id, root), workerStatus(root)), /กำลังพากย์งานอื่นอยู่/, 'พากย์งานของโปรแกรมอื่นอยู่ ไม่ใช่ปิด')
   claimNext('PC4070', {}, root)
   assert.equal(workerStatus(root).busy, null, 'เช็กคิวใหม่ = ว่างแล้ว')
+})
+
+await test('เครื่องพากย์ทำพัง / งานหายจากคิว → ฝากงานใหม่แล้วรอต่อ ไม่เลิกรอ (ห้ามส่งไปพากย์ที่อื่น)', async () => {
+  const root = fresh('j')
+  const segs = segsIn(base)
+  const queued = []
+  const statuses = []
+  // เครื่องพากย์จำลอง: งานแรกพัง · งานที่สองหายจากคิว · งานที่สามสำเร็จ
+  const worker = setInterval(() => {
+    const got = claimNext('PC4070', {}, root)
+    if (!got) return
+    const n = queued.indexOf(got.job.id) + 1
+    if (n === 1) failJob(got.job.id, 'CUDA out of memory', 'PC4070', root)
+    else if (n === 2) rmSync(join(root, got.job.id), { recursive: true, force: true })
+    else finishJob(got.job.id, { '0000.wav': Buffer.alloc(500, 7), '0001.wav': Buffer.alloc(500, 8) }, { worker: 'PC4070', seconds: 1 }, root)
+  }, 5)
+  try {
+    const done = await narrateRemote({ refWav: ref, refText: 't', settings: {} }, segs, {
+      root, pollMs: 5, retryMs: 5,
+      onQueued: (id) => queued.push(id),
+      onStatus: (text, state) => statuses.push(state.state),
+    })
+    assert.equal(done.attempts, 3)
+    assert.equal(queued.length, 3, 'ฝากงานใหม่ทุกครั้งที่พัง')
+    assert.equal(statuses.filter((s) => s === 'retry').length, 2)
+    assert.equal(readFileSync(segs[1].out)[0], 8)
+    assert.ok(queued.every((id) => !existsSync(join(root, id))), 'ไม่มีงานค้างในคิว')
+  } finally {
+    clearInterval(worker)
+  }
 })
 
 rmSync(base, { recursive: true, force: true })

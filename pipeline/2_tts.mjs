@@ -18,7 +18,7 @@ import { hhmmss } from './lib/timecode.mjs'
 import { selectedVoice } from './lib/voices.mjs'
 import { synthCloud, edgeVoiceFits, defaultEdgeVoice, elevenModelFits } from './lib/cloud_tts.mjs'
 import { synthVoxcpm, voxcpmSettings, voxcpmJobSettings } from './lib/voxcpm.mjs'
-import { enqueueJob, waitForJob, workerStatus } from './lib/tts_queue.mjs'
+import { narrateRemote, workerStatus } from './lib/tts_queue.mjs'
 import { clearAsrTimeline } from './lib/asr.mjs'
 
 const slug = process.argv[2]
@@ -160,12 +160,13 @@ if (vox) {
   try {
     if (vox.remote) {
       // การ์ดเครื่องนี้รัน VoxCPM2 ไม่ได้ (1080 Ti หลุด) → ฝากคิวให้เครื่องการ์ดจอแรงพากย์ (scripts/tts-worker.mjs)
-      // เครื่องนั้นปิดอยู่ = รอในคิวจนเปิด · ขั้นนี้รอไปเรื่อยๆ จนกว่าผู้ใช้กดหยุด
+      // เครื่องนั้นปิดอยู่ = รอในคิวจนเปิด · พากย์พัง = ฝากใหม่แล้วรอต่อ · ไม่พากย์เองหรือสลับเสียง รอจนกว่าผู้ใช้กดหยุด
       const { ref, settings } = await voxcpmJobSettings(voxOptions)
-      const id = enqueueJob({ refWav: ref.wav, refText: ref.text, settings, segments: voxSegments, label: slug })
-      const w = workerStatus()
-      console.log(`ฝากงานพากย์ ${id} ไว้ในคิว · เครื่องพากย์${w.name ? ` ${w.name}` : ''} ${w.online ? 'ออนไลน์' : 'ปิดอยู่'}`)
-      const done = await waitForJob(id, voxSegments, {
+      const done = await narrateRemote({ refWav: ref.wav, refText: ref.text, settings, label: slug }, voxSegments, {
+        onQueued: (id) => {
+          const w = workerStatus()
+          console.log(`ฝากงานพากย์ ${id} ไว้ในคิว · เครื่องพากย์${w.name ? ` ${w.name}` : ''} ${w.online ? 'ออนไลน์' : 'ปิดอยู่'}`)
+        },
         onStatus: (text, state) => {
           // autopilot อ่าน "n/m segments" เป็น progress ของแผนกเสียง · "⏳" เป็นรายละเอียดที่แสดงในแผงข้าง
           if (state.state === 'working' && state.total) process.stdout.write(`\r  ${state.done ?? 0}/${state.total} segments`)
