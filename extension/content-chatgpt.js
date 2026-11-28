@@ -246,18 +246,22 @@ async function runPrompt(prompt, { newChat = true, attachments = [] } = {}) {
   // โหมดคิดนานพิมพ์เป็นช่วงๆ เว้นได้เกิน 2 วิ → เคยดึงไปก่อนท่อนสุดท้าย (บทขาด "…พัฒนาเ" เสียงท้ายคลิปขาด)
   // จึงต้องนิ่ง 5 วิ · ปุ่ม stop โผล่ = นับใหม่ · ผ่านแล้วรออีก 1.5 วิเช็คซ้ำว่าไม่มีข้อความเพิ่ม
   const STABLE_MS = 5000
+  const DONE_QUIET_SEC = 15
   let lastText = ''
   let stableSince = Date.now()
+  let textSince = Date.now() // ข้อความเปลี่ยนล่าสุด (ไม่นับปุ่มหยุด) — ใช้กับทางสำรองด้านล่าง
   let errorSince = Date.now()
   let retries = 0
+  let fallback = null
   const lastTurnText = () => turnText(newTurns().at(-1))
   for (;;) {
     await waitFor(
       () => {
         const last = newTurns().at(-1) ?? null
         const current = turnText(last)
-        if (current !== lastText) errorSince = Date.now()
-        if (current !== lastText || pick(S.stop)) {
+        const stopBtn = pick(S.stop)
+        if (current !== lastText) errorSince = textSince = Date.now()
+        if (current !== lastText || stopBtn) {
           lastText = current
           stableSince = Date.now()
         }
@@ -275,15 +279,28 @@ async function runPrompt(prompt, { newChat = true, attachments = [] } = {}) {
           errorSince = stableSince = Date.now()
           return false
         }
-        const finished = !!last && turnFinished(last) && !pick(S.stop)
-        return finished && current && Date.now() - stableSince >= STABLE_MS
+        const done = !!last && turnFinished(last)
+        if (done && !stopBtn && current && Date.now() - stableSince >= STABLE_MS) return true
+        // ทางสำรอง (ยกมาจากธรรมะ Auto 1.0.70/1.0.72 — เจอจริง 26–27 พ.ย. 2026):
+        // ปุ่ม aria-label "Stop" ค้างบนหน้าหลังตอบจบ → เดิมรอจนหมดเวลา 30 นาทีแล้วล้ม
+        // แถบปุ่มใต้คำตอบขึ้นแล้ว (โผล่เมื่อตอบจบเท่านั้น) + ข้อความนิ่ง 15 วิ = จบ แม้ปุ่มหยุดค้าง
+        const quietSec = Math.round((Date.now() - textSince) / 1000)
+        if (done && current && quietSec >= DONE_QUIET_SEC) return (fallback = 'แถบปุ่มขึ้นแล้วแต่ปุ่มหยุดยังค้าง'), true
+        // หาแถบปุ่มใต้คำตอบไม่เจอ: ไม่มีปุ่มหยุด + นิ่ง 90 วิ · หรือนิ่ง 4 นาทีแม้ปุ่มหยุดค้าง
+        // ต้องยาว ≥ 200 ตัวอักษร — หัว "Thinking…" ช่วงคิดนานนิ่งได้หลายนาทีแต่สั้น ไม่เอาไปเป็นคำตอบ
+        const long = current.length >= 200
+        if (long && !stopBtn && quietSec >= 90) return (fallback = 'ไม่เจอแถบปุ่มใต้คำตอบ'), true
+        if (long && quietSec >= 240) return (fallback = 'ปุ่มหยุดยังอยู่'), true
+        return false
       },
       { timeout: 30 * 60_000, interval: 1000, label: 'ChatGPT ตอบจบ' },
     )
     await sleep(1500)
-    if (lastTurnText() === lastText && !pick(S.stop)) break
+    if (lastTurnText() === lastText && (fallback || !pick(S.stop))) break
+    fallback = null
     stableSince = Date.now() // ยังพิมพ์ต่อ → รอรอบใหม่
   }
+  if (fallback) console.warn(`[cartoon] รับคำตอบด้วยทางสำรอง: ${fallback}`)
 
   const turns = newTurns()
   if (!turns.length) throw new Error('ไม่พบข้อความตอบกลับ — selector assistantTurns อาจเปลี่ยน')
